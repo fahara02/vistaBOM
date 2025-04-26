@@ -3,6 +3,7 @@ import { storybookTest } from '@storybook/experimental-addon-test/vitest-plugin'
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
+import fs from 'fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
@@ -19,6 +20,11 @@ export default defineConfig({
       outdir: './src/lib/paraglide'
     })
   ],
+  server: {
+    // Use plain HTTP on localhost for dev so cookies work without Secure flag
+    host: 'localhost',
+    port: 5173
+  },
   test: {
     workspace: [
       {

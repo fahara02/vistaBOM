@@ -1,10 +1,12 @@
+//src/routes/auth/google/+server.ts
 import { GOOGLE_CLIENT_ID } from '$lib/env';
 import { redirect } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 
-export function GET() {
+export function GET({ url }: RequestEvent) {
   console.log('Reached /auth/google');
   // Build OAuth URL with properly encoded parameters
-  const redirectUri = 'http://localhost:5173/auth/google/callback';
+  const redirectUri = url.origin + '/auth/google/callback';
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: redirectUri,

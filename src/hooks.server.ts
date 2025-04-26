@@ -1,30 +1,15 @@
-// import type { Handle } from '@sveltejs/kit';
-// import { paraglideMiddleware } from '$lib/paraglide/server';
-
-// const handleParaglide: Handle = ({ event, resolve }) =>
-// 	paraglideMiddleware(event.request, ({ request, locale }) => {
-// 		event.request = request;
-
-// 		return resolve(event, {
-// 			transformPageChunk: ({ html }) => html.replace('%paraglide.lang%', locale)
-// 		});
-// 	});
-
-// export const handle: Handle = handleParaglide;
-import { prisma } from '$lib/server/db/prisma';
+//src/hooks.server.ts
+import { validateSessionToken, sessionCookieName } from '$lib/server/auth';
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
-  const token = event.cookies.get('auth-session');
+  const token = event.cookies.get(sessionCookieName);
   if (token) {
-    const session = await prisma.session.findUnique({
-      where: { id: token },
-      include: { user: true }
-    });
-    if (session && session.expiresAt > new Date()) {
-      event.locals.user = session.user;
+    const { session, user } = await validateSessionToken(token);
+    if (session && user) {
+      event.locals.user = user;
     } else {
-      event.cookies.delete('auth-session', { path: '/' });
+      event.cookies.delete(sessionCookieName, { path: '/' });
     }
   }
   return resolve(event);
