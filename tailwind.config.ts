@@ -1,8 +1,8 @@
 // tailwind.config.js
 module.exports = {
-    // …
-    plugins: [
-      require('@tailwindcss/typography'),
-      // other plugins…
-    ],
-  }
+	// …
+	plugins: [
+		require('@tailwindcss/typography')
+		// other plugins…
+	]
+};

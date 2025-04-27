@@ -22,7 +22,10 @@
 			<li class="nav-item" aria-current={page.url.pathname === '/about' ? 'page' : undefined}>
 				<a href="/about">About</a>
 			</li>
-			<li class="nav-item" aria-current={page.url.pathname.startsWith('/sverdle') ? 'page' : undefined}>
+			<li
+				class="nav-item"
+				aria-current={page.url.pathname.startsWith('/sverdle') ? 'page' : undefined}
+			>
 				<a href="/sverdle">Sverdle</a>
 			</li>
 		</ul>
@@ -45,7 +48,7 @@
 		align-items: center;
 		padding: 1rem 2rem;
 		background: #fff;
-		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 		position: sticky;
 		top: 0;
 		z-index: 1000;

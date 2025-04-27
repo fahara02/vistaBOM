@@ -4,10 +4,12 @@ import { mdsvex } from 'mdsvex';
 
 const config = {
 	preprocess: [vitePreprocess(), mdsvex()],
-	kit: { adapter: adapter(),
+	kit: {
+		adapter: adapter(),
 		env: {
-		publicPrefix: 'VITE_'
-	} },
+			publicPrefix: 'VITE_'
+		}
+	},
 	extensions: ['.svelte', '.svx']
 };
 
