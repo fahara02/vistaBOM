@@ -58,6 +58,7 @@
 		"prettier-plugin-tailwindcss": "^0.6.11",
 		"svelte": "^5.25.0",
 		"svelte-check": "^4.0.0",
+		"sveltekit-superforms": "^2.24.1",
 		"tailwindcss": "^4.0.0",
 		"typescript": "^5.0.0",
 		"typescript-eslint": "^8.20.0",
@@ -77,9 +78,10 @@
 		"push": "^0.1.1",
 		"ramda": "^0.28.0",
 		"rxjs": "^7.8.0",
-		"tweakpane": "^3.1.4",
 		"ts-postgres": "^2.0.4",
+		"tweakpane": "^3.1.4",
 		"uhtml": "^4.0.2",
-		"vis-network": "^9.1.2"
+		"vis-network": "^9.1.2",
+		"zod": "^3.24.3"
 	}
 }

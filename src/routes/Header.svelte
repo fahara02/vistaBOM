@@ -28,6 +28,12 @@
 			>
 				<a href="/sverdle">Sverdle</a>
 			</li>
+			<li class="nav-item" aria-current={page.url.pathname === '/parts/new' ? 'page' : undefined}>
+				<a href="/parts/new">Add Part</a>
+			</li>
+			<li class="nav-item" aria-current={page.url.pathname === '/parts' ? 'page' : undefined}>
+				<a href="/parts">Parts</a>
+			</li>
 		</ul>
 		<svg viewBox="0 0 2 3" aria-hidden="true">
 			<path d="M0,0 L0,3 C0.5,3 0.5,3 1,2 L2,0 Z" />

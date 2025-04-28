@@ -32,57 +32,61 @@ if (dbUrl.password) {
 } else if (env.DB_PASSWORD) {
 	connectionOptions.password = env.DB_PASSWORD;
 }
-const client: Client = await connect(connectionOptions);
+ const client: Client = await connect(connectionOptions);
+
 
 // Utility to split SQL statements outside of dollar-quoted blocks
 function splitStatements(sql: string): string[] {
-  const stmts: string[] = [];
-  let current = '';
-  let inDollar = false;
-  for (let i = 0; i < sql.length; i++) {
-    if (sql[i] === '$' && sql[i+1] === '$') {
-      inDollar = !inDollar;
-      current += '$$';
-      i++;
-    } else if (sql[i] === ';' && !inDollar) {
-      if (current.trim()) stmts.push(current.trim());
-      current = '';
-    } else {
-      current += sql[i];
-    }
-  }
-  if (current.trim()) stmts.push(current.trim());
-  return stmts;
+	const stmts: string[] = [];
+	let current = '';
+	let inDollar = false;
+	for (let i = 0; i < sql.length; i++) {
+		if (sql[i] === '$' && sql[i + 1] === '$') {
+			inDollar = !inDollar;
+			current += '$$';
+			i++;
+		} else if (sql[i] === ';' && !inDollar) {
+			if (current.trim()) stmts.push(current.trim());
+			current = '';
+		} else {
+			current += sql[i];
+		}
+	}
+	if (current.trim()) stmts.push(current.trim());
+	return stmts;
 }
 
 // Apply SQL schema on startup (uses IF NOT EXISTS for idempotence)
 const schemaPath = path.join(process.cwd(), 'db', 'schema.sql');
 const schema = fs.readFileSync(schemaPath, 'utf-8');
 const statements = splitStatements(schema)
-  .map((stmt) => {
-    const lines = stmt.split('\n');
-    let start = 0;
-    while (
-      start < lines.length &&
-      (lines[start].trim() === '' || lines[start].trim().startsWith('--'))
-    ) {
-      start++;
-    }
-    return lines.slice(start).join('\n').trim();
-  })
-  .filter((stmt) => stmt.length > 0);
+	.map((stmt) => {
+		const lines = stmt.split('\n');
+		let start = 0;
+		while (
+			start < lines.length &&
+			(lines[start].trim() === '' || lines[start].trim().startsWith('--'))
+		) {
+			start++;
+		}
+		return lines.slice(start).join('\n').trim();
+	})
+	.filter((stmt) => stmt.length > 0);
 for (const stmt of statements) {
-  try {
-    await client.query(stmt);
-  } catch (err: any) {
-    // Ignore duplicate object errors (e.g., types or triggers already exist)
-    if (err.code == 42710 || err.code == '42710' || err.message?.includes('already exists')) {
-      console.warn('Skipping existing object:', stmt.split('\n')[0]);
-      continue;
-    }
-    console.error('Failed SQL statement:', stmt.split('\n')[0], '...', err.message);
-    throw err;
-  }
+	try {
+		await client.query(stmt);
+	} catch (err: any) {
+		// Ignore duplicate object errors (e.g., types or triggers already exist)
+		if (err.code == 42710 || err.code == '42710' || err.message?.includes('already exists')) {
+			console.warn('Skipping existing object:', stmt.split('\n')[0]);
+			continue;
+		}
+		console.error('Failed SQL statement:', stmt.split('\n')[0], '...', err.message);
+		throw err;
+	}
 }
+
+
+
 
 export default client;

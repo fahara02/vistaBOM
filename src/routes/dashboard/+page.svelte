@@ -40,13 +40,7 @@
 
 		<h2>Add New Project</h2>
 		<form class="project-form" method="POST">
-			<input
-				class="project-input"
-				type="text"
-				name="name"
-				placeholder="Project Name"
-				required
-			/>
+			<input class="project-input" type="text" name="name" placeholder="Project Name" required />
 			<button class="primary-btn" type="submit">Add Project</button>
 		</form>
 	</section>

@@ -1,12 +1,12 @@
 // src/lib/server/db/types.ts
-type JsonValue = null | string | number | boolean | { [key: string]: JsonValue } | JsonValue[];
+export type JsonValue = null | string | number | boolean | { [key: string]: JsonValue } | JsonValue[];
 
 // ======================
 // Enums
 // ======================
 
 export enum PartStatusEnum {
-	Draft = 'draft',
+	Concept = 'concept',
 	Active = 'active',
 	Obsolete = 'obsolete',
 	Archived = 'archived'
@@ -476,4 +476,40 @@ export interface BOMItemSubstitute {
 	notes?: string;
 	createdBy: string;
 	createdAt: Date;
+}
+
+
+export interface DatabaseSchema {
+	User: User;
+	Session: Session;
+	Role: Role;
+	UserRole: UserRole;
+	Permission: Permission;
+	RolePermission: RolePermission;
+	Category: Category;
+	CategoryClosure: CategoryClosure;
+	Part: Part;
+	PartVersion: PartVersion;
+	PartVersionCategory: PartVersionCategory;
+	PartStructure: PartStructure;
+	PartCompliance: PartCompliance;
+	PartAttachment: PartAttachment;
+	PartRepresentation: PartRepresentation;
+	PartRevision: PartRevision;
+	PartValidation: PartValidation;
+	Manufacturer: Manufacturer;
+	ManufacturerPart: ManufacturerPart;
+	Supplier: Supplier;
+	SupplierPart: SupplierPart;
+	Tag: Tag;
+	PartVersionTag: PartVersionTag;
+	CustomField: CustomField;
+	ManufacturerCustomField: ManufacturerCustomField;
+	SupplierCustomField: SupplierCustomField;
+	PartCustomField: PartCustomField;
+	Project: Project;
+	BillOfMaterials: BillOfMaterials;
+	BOMItem: BOMItem;
+	BOMItemSubstitute: BOMItemSubstitute;
+	// Add other tables if needed, e.g., ChangeLog if implemented
 }
