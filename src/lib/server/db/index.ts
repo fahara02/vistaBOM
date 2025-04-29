@@ -32,8 +32,10 @@ if (dbUrl.password) {
 } else if (env.DB_PASSWORD) {
 	connectionOptions.password = env.DB_PASSWORD;
 }
- const client: Client = await connect(connectionOptions);
-
+const client: Client = await connect(connectionOptions);
+export function getClient():Client{
+    return client;
+}
 
 // Utility to split SQL statements outside of dollar-quoted blocks
 function splitStatements(sql: string): string[] {

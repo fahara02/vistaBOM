@@ -1,12 +1,9 @@
 <!-- src/lib/components/supplier.svelte -->
 <script lang="ts">
-    import type { Supplier } from '$lib/server/db/types';
-    import { updateSupplier, deleteSupplier } from '$lib/server/supplier';
-    import type { Client } from 'ts-postgres';
-    import type { JsonValue } from '$lib/server/db/types';
+    import type { Supplier } from '$lib/types';
+    import { onDestroy } from 'svelte';
 
     export let supplier: Supplier;
-    export let client: Client;
     export let currentUserId: string;
 
     let editMode = false;
@@ -14,6 +11,11 @@
     let error: string | null = null;
     let success: string | null = null;
     let contactInfoString = '';
+    let abortController = new AbortController();
+
+    onDestroy(() => {
+        abortController.abort();
+    });
 
     const startEdit = () => {
         edits = { ...supplier };
@@ -31,10 +33,10 @@
     const saveSupplier = async () => {
         error = null;
         success = null;
+        abortController = new AbortController();
         
         try {
-            // Parse contact info
-            let contactInfo: JsonValue | undefined;
+            let contactInfo: unknown;
             if (contactInfoString.trim()) {
                 try {
                     contactInfo = JSON.parse(contactInfoString);
@@ -43,25 +45,36 @@
                 }
             }
 
-            const updated = await updateSupplier(
-                client,
-                supplier.id,
-                {
+            const response = await fetch(`/api/suppliers/${supplier.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
                     name: edits.name,
                     description: edits.description,
                     websiteUrl: edits.websiteUrl,
                     contactInfo,
-                    logoUrl: edits.logoUrl
-                },
-                currentUserId
-            );
+                    logoUrl: edits.logoUrl,
+                    userId: currentUserId
+                }),
+                signal: abortController.signal
+            });
 
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to update supplier');
+            }
+
+            const updated = await response.json();
             supplier = updated;
             success = 'Supplier updated successfully';
             setTimeout(() => success = null, 3000);
             editMode = false;
         } catch (e) {
-            error = e instanceof Error ? e.message : 'An unknown error occurred while updating';
+            if (e.name !== 'AbortError') {
+                error = e instanceof Error ? e.message : 'An unknown error occurred while updating';
+            }
         }
     };
 
@@ -69,12 +82,27 @@
         if (!confirm('Are you sure you want to delete this supplier? This action cannot be undone.')) return;
         
         try {
-            await deleteSupplier(client, supplier.id);
+            const response = await fetch(`/api/suppliers/${supplier.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ userId: currentUserId }),
+                signal: abortController.signal
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to delete supplier');
+            }
+
             success = 'Supplier deleted successfully';
             setTimeout(() => success = null, 3000);
             // Emit event or handle removal in parent component
         } catch (e) {
-            error = e instanceof Error ? e.message : 'An unknown error occurred while deleting';
+            if (e.name !== 'AbortError') {
+                error = e instanceof Error ? e.message : 'An unknown error occurred while deleting';
+            }
         }
     };
 </script>

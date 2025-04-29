@@ -12,7 +12,8 @@ function mapManufacturer(row: any): Manufacturer {
         createdBy: row.get('created_by') || undefined,
         createdAt: row.get('created_at'),
         updatedBy: row.get('updated_by') || undefined,
-        updatedAt: row.get('updated_at')
+        updatedAt: row.get('updated_at'),
+        customFields: row.get('custom_fields') || {} // Add customFields mapping
     };
 }
 
@@ -54,7 +55,19 @@ export async function createManufacturer(
 }
 
 export async function getManufacturer(client: Client, id: string): Promise<Manufacturer | null> {
-    const result = await client.query('SELECT * FROM Manufacturer WHERE id = $1', [id]);
+    const result = await client.query(
+        `SELECT 
+            m.*,
+            COALESCE(
+                (SELECT json_object_agg(cf.field_name, mcf.value)
+                 FROM ManufacturerCustomField mcf
+                 JOIN CustomField cf ON mcf.field_id = cf.id
+                 WHERE mcf.manufacturer_id = m.id
+                ), '{}'::json) AS custom_fields
+         FROM Manufacturer m
+         WHERE m.id = $1`,
+        [id]
+    );
     return result.rows.length > 0 ? mapManufacturer(result.rows[0]) : null;
 }
 
@@ -141,6 +154,17 @@ export async function deleteManufacturer(client: Client, id: string): Promise<vo
 }
 
 export async function listManufacturers(client: Client): Promise<Manufacturer[]> {
-    const result = await client.query('SELECT * FROM Manufacturer ORDER BY name');
+    const result = await client.query(`
+        SELECT 
+            m.*,
+            COALESCE(
+                (SELECT json_object_agg(cf.field_name, mcf.value)
+                 FROM ManufacturerCustomField mcf
+                 JOIN CustomField cf ON mcf.field_id = cf.id
+                 WHERE mcf.manufacturer_id = m.id
+                ), '{}'::json) AS custom_fields
+        FROM Manufacturer m
+        ORDER BY name
+    `);
     return result.rows.map(mapManufacturer);
 }

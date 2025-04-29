@@ -1,6 +1,12 @@
 // src/lib/server/db/types.ts
 export type JsonValue = null | string | number | boolean | { [key: string]: JsonValue } | JsonValue[];
-
+export interface ContactInfo {
+	address?: string;
+	email?: string;
+	phone?: string;
+	fax?:string;
+	
+  }
 // ======================
 // Enums
 // ======================
@@ -314,6 +320,7 @@ export interface PartValidation {
 // ======================
 // Manufacturer & Supplier
 // ======================
+// src/lib/server/db/types.ts
 export interface Manufacturer {
 	id: string;
 	name: string;
@@ -324,6 +331,7 @@ export interface Manufacturer {
 	createdAt: Date;
 	updatedBy?: string;
 	updatedAt: Date;
+	customFields?: Record<string, any>; // Add customFields
 }
 
 export interface ManufacturerPart {

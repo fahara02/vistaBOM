@@ -34,6 +34,12 @@
 			<li class="nav-item" aria-current={page.url.pathname === '/parts' ? 'page' : undefined}>
 				<a href="/parts">Parts</a>
 			</li>
+			<li class="nav-item" aria-current={page.url.pathname.startsWith('/manufacturer') ? 'page' : undefined}>
+				<a href="/manufacturer">Manufacturers</a>
+			</li>
+			<li class="nav-item" aria-current={page.url.pathname.startsWith('/supplier') ? 'page' : undefined}>
+				<a href="/supplier">Suppliers</a>
+			</li>
 		</ul>
 		<svg viewBox="0 0 2 3" aria-hidden="true">
 			<path d="M0,0 L0,3 C0.5,3 0.5,3 1,2 L2,0 Z" />
