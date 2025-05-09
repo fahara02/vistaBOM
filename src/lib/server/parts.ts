@@ -1,7 +1,7 @@
 // src/lib/server/parts.ts
-import client from '$lib/server/db/index';
+import { getClient } from './db/index';
 import { randomUUID } from 'crypto';
-import { rowToPartVersionCategory,rowToPartAttachment,rowToPartCompliance,rowToPartCustomField,rowToPartVersionTag, rowToPartStructure, rowToPartRepresentation, rowToPartRevision, rowToPartValidation} from '$lib/parts/partUtils';
+import { rowToPartVersionCategory,rowToPartAttachment,rowToPartCompliance,rowToPartCustomField,rowToPartVersionTag, rowToPartStructure, rowToPartRepresentation, rowToPartRevision, rowToPartValidation} from '../parts/partUtils';
 import type {
   Part,
   PartVersion,
@@ -13,12 +13,16 @@ import type {
   PartRevision,
   PartValidation,
   PartVersionTag,
-  PartCustomField,
+  PartCustomField
+} from './db/types';
+import {
   LifecycleStatusEnum,
   ComplianceTypeEnum,
   StructuralRelationTypeEnum,
 
-} from '$lib/server/db/types';
+} from './db/types';
+
+const client = getClient();
 
 /**
  * List all parts with their current version
@@ -786,4 +790,52 @@ export async function getCustomFieldsForPartVersion(partVersionId: string): Prom
         fieldId: row.field_id,
         value: row.value
     }));
+}
+
+/**
+ * Check if a part version is editable based on its status.
+ */
+export function isVersionEditable(version: PartVersion): boolean {
+  return version.status !== 'released'; // Assuming 'released' status makes it non-editable; adjust as needed.
+}
+
+/**
+ * Create a new part version object based on an existing version.
+ */
+export function createNewVersion(baseVersion: PartVersion, userId: string): PartVersion {
+  return {
+    id: randomUUID(),
+    partId: baseVersion.partId,
+    version: (parseInt(baseVersion.version) + 1).toString(), // Simplistic increment; may need refinement.
+    name: baseVersion.name,
+    shortDescription: baseVersion.shortDescription,
+    status: LifecycleStatusEnum.Draft,
+    createdBy: userId,
+    createdAt: new Date(),
+    updatedBy: userId,
+    updatedAt: new Date(),
+    // Add other fields as per PartVersion type if necessary
+  };
+}
+
+/**
+ * Create a new part version in the database.
+ */
+export async function createPartVersion(newVersion: PartVersion): Promise<PartVersion> {
+  await client.query(
+    `INSERT INTO "PartVersion" (id, part_id, version, name, short_description, status, created_by, created_at, updated_by, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $8)`, // Using created_by and updated_by as same for simplicity
+    [newVersion.id, newVersion.partId, newVersion.version, newVersion.name, newVersion.shortDescription, newVersion.status, newVersion.createdBy, newVersion.createdAt]
+  );
+  return newVersion; // Return the created version; may need to fetch from DB for full data.
+}
+
+/**
+ * Update the current version ID of a part.
+ */
+export async function updatePartCurrentVersion(partId: string, versionId: string): Promise<void> {
+  await client.query(
+    `UPDATE "Part" SET current_version_id = $1 WHERE id = $2`,
+    [versionId, partId]
+  );
 }

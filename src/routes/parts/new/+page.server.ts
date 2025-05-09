@@ -1,5 +1,5 @@
 //src/routes/parts/new/+page.server.ts
-import { superValidate } from 'sveltekit-superforms';
+import { superValidate } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import { redirect, fail } from '@sveltejs/kit';
 import { createPartSchema } from '$lib/server/db/schema';
@@ -11,8 +11,8 @@ export const load: PageServerLoad = async (event) => {
     const { locals } = event;
     const user = locals.user;
     if (!user) throw redirect(302, '/');
-    // @ts-ignore: enable JSON parsing for union fields (long_description, etc.)
-    const form = await superValidate(event, zod(createPartSchema), { dataType: 'json' });
+   
+    const form = await superValidate(event, zod(createPartSchema));
     const statuses = Object.values(LifecycleStatusEnum);
     const weightUnits = Object.values(WeightUnitEnum);
     return { form, user, statuses, weightUnits };
@@ -21,8 +21,8 @@ export const load: PageServerLoad = async (event) => {
 export const actions: Actions = {
     default: async (event) => {
         const { request, locals } = event;
-        // @ts-ignore: enable JSON parsing for union fields (long_description, etc.)
-        const form = await superValidate(request, zod(createPartSchema), { dataType: 'json' });
+       
+        const form = await superValidate(request, zod(createPartSchema));
         if (!form.valid) {
             console.log('Form errors:', form.errors);
             return fail(400, { form });
@@ -32,10 +32,12 @@ export const actions: Actions = {
         if (!user) throw redirect(302, '/');
 
         try {
-            await createPart(form.data, user.id);
-        } catch (err: any) {
+            const { name, version, status } = form.data;
+            await createPart({ name, version, status }, user.id);
+        } catch (err) {
             console.error('Error creating part:', err);
-            return fail(500, { form, message: err.message });
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            return fail(500, { form, message });
         }
 
         throw redirect(303, '/parts');

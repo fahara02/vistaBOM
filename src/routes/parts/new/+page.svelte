@@ -4,12 +4,12 @@
 	import type { PageData } from './$types';
 
 	export let data!: PageData;
-	const { form, errors,  enhance } = superForm(data.form, { dataType: 'json' });
+	const { form, errors, enhance } = superForm(data.form);
 </script>
 
 <h1>Create New Part</h1>
 
-<form method="POST" use:enhance={enhance}>
+<form method="POST" use:enhance>
 	<div class="form-group">
 		<label for="name">Part Name</label>
 		<input id="name" name="name" type="text" bind:value={$form.name} class="input" class:error={$errors.name} />

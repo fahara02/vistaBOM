@@ -10,7 +10,7 @@ import type {
   PartVersion, 
   PartVersionCategory, 
   PartVersionTag 
-} from '$lib/server/db/types';
+} from '../server/db/types';
 
 export const isVersionEditable = (version: PartVersion): boolean => {
 	return version.status === 'draft' || version.status === 'in_review';

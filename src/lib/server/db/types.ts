@@ -331,7 +331,7 @@ export interface Manufacturer {
 	createdAt: Date;
 	updatedBy?: string;
 	updatedAt: Date;
-	customFields?: Record<string, any>; // Add customFields
+	customFields?: Record<string, JsonValue>; // structured custom fields
 }
 
 export interface ManufacturerPart {
