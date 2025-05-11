@@ -12,7 +12,7 @@ export const load: PageServerLoad = async (event) => {
     const user = locals.user;
     if (!user) throw redirect(302, '/');
    
-    const form = await superValidate(event, zod(createPartSchema));
+    const form = await superValidate(event, zod(createPartSchema), { dataType: 'json' } as any);
     const statuses = Object.values(LifecycleStatusEnum);
     const weightUnits = Object.values(WeightUnitEnum);
     return { form, user, statuses, weightUnits };
@@ -22,7 +22,7 @@ export const actions: Actions = {
     default: async (event) => {
         const { request, locals } = event;
        
-        const form = await superValidate(request, zod(createPartSchema));
+        const form = await superValidate(request, zod(createPartSchema), { dataType: 'json' } as any);
         if (!form.valid) {
             console.log('Form errors:', form.errors);
             return fail(400, { form });

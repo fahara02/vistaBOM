@@ -4,7 +4,7 @@
 	import type { PageData } from './$types';
 
 	export let data!: PageData;
-	const { form, errors, enhance } = superForm(data.form);
+	const { form, errors, enhance } = superForm(data.form, { dataType: 'json' } as any);
 </script>
 
 <h1>Create New Part</h1>

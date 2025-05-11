@@ -25,6 +25,9 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 # Paraglide
-src/lib/paraglide
+# src/lib/paraglide (unignored below)
+!src/lib/paraglide
+!src/lib/paraglide/runtime.ts
+!src/lib/paraglide/.gitignore
 
 *storybook.log
