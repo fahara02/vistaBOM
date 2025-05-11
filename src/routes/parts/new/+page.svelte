@@ -1,11 +1,13 @@
 <!-- src/routes/parts/new/+page.svelte -->
 <script lang="ts">
-	import PartForm from '$lib/components/PartForm.svelte';
+	import { PartForm } from '$lib/components';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageData } from './$types';
   
 	export let data: PageData;
-	const { form, errors, enhance } = superForm(data.form);
+	const { form, errors, enhance } = superForm(data.form, {
+		dataType: 'json' // This is needed to handle complex types like JSON objects
+	});
 </script>
   
 <div class="container">
@@ -16,6 +18,9 @@
     {errors}
     {enhance}
     statuses={data.statuses}
+    packageTypes={data.packageTypes}
+    weightUnits={data.weightUnits}
+    dimensionUnits={data.dimensionUnits}
   />
 </div>
 

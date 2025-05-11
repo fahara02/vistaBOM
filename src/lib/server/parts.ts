@@ -262,26 +262,40 @@ export async function createPart(
     const partId = randomUUID();
     const versionId = randomUUID();
     
+    // EXTREME DEBUG: Full deep inspection of all values and enums
+    console.log('[createPart] ENUM DEBUG - Available values:', Object.values(LifecycleStatusEnum));
+    console.log('[createPart] ENUM DEBUG - Checking if input status is valid:', 
+        Object.values(LifecycleStatusEnum).includes(input.status));
+    
     // Debug the exact value we're getting for status
     console.log('[createPart] Input data:', {
         name: input.name,
         version: input.version,
         status: input.status,
         statusType: typeof input.status,
-        statusValue: String(input.status)
+        statusValue: String(input.status),
+        userId: userId,
+        partId: partId,
+        versionId: versionId
     });
     
     // Ensure status is a string - this handles enum values properly
     const statusValue = String(input.status);
     
-    await client.query('BEGIN');
+    // CRITICAL FIX: Simplify the approach completely to avoid transaction issues
+    // We'll use direct string interpolation which is more reliable with custom types
+    
+    // Prepare the lowercase status string
+    const statusLower = String(input.status).toLowerCase().replace(/'/g, "''");
+    console.log('[createPart] Using status value:', statusLower);
     
     try {
-        console.log('[createPart] Inserting Part:', { partId, userId, statusValue });
-        // COMPLETELY HARDCODE THE ENUM VALUES
-        // This bypasses any parameter binding for enum types
+        // Start transaction
+        await client.query('BEGIN');
         
-        // Build a dynamic SQL statement with hardcoded enum values
+        // CRITICAL FIX: The status field in Part table uses a different enum type
+        // Based on error message, it expects 'part_status_enum' not a string value
+        // The valid values for PartStatusEnum are: concept, active, obsolete, archived
         const partSql = `
         INSERT INTO "Part" (
             id, creator_id, global_part_number, status, lifecycle_status
@@ -289,16 +303,19 @@ export async function createPart(
             '${partId}', 
             '${userId}', 
             '${input.name.replace(/'/g, "''")}', 
-            'concept', 
-            '${String(input.status).toLowerCase().replace(/'/g, "''")}'::lifecycle_status_enum
+            'concept'::part_status_enum, 
+            '${statusLower}'::lifecycle_status_enum
         )`;
         
-        console.log('[createPart] SQL:', partSql);
+        console.log('[createPart] Direct SQL:', partSql);
         await client.query(partSql);
+        console.log('[createPart] Part inserted successfully');
         
         console.log('[createPart] Part inserted, now Inserting PartVersion');
         
-        // Similar approach for version insert
+        // Reuse the same lowercase status string we prepared before
+        
+        // Use the same approach for version insert - string interpolation is more reliable with custom types
         const versionSql = `
         INSERT INTO "PartVersion" (
             id, part_id, version, name, status, created_by, tolerance_unit
@@ -307,23 +324,28 @@ export async function createPart(
             '${partId}', 
             '${input.version.replace(/'/g, "''")}', 
             '${input.name.replace(/'/g, "''")}', 
-            '${String(input.status).toLowerCase().replace(/'/g, "''")}'::lifecycle_status_enum, 
+            '${statusLower}'::lifecycle_status_enum, 
             '${userId}', 
             NULL
         )`;
         
         console.log('[createPart] VersionSQL:', versionSql);
         await client.query(versionSql);
-        console.log('[createPart] PartVersion inserted, now updating Part current_version_id:', { versionId, partId });
-        await client.query(
-            `UPDATE "Part" 
-             SET current_version_id = $1 
-             WHERE id = $2`,
-            [versionId, partId]
-        );
-        console.log('[createPart] update committed for Part', partId);
+        console.log('[createPart] PartVersion inserted, now updating Part current_version_id');
+        
+        // Use string interpolation for the final update too to be consistent
+        const updateSql = `
+        UPDATE "Part" 
+        SET current_version_id = '${versionId}' 
+        WHERE id = '${partId}'`;
+        
+        console.log('[createPart] UpdateSQL:', updateSql);
+        await client.query(updateSql);
+        console.log('[createPart] Update completed for Part', partId);
 
+        // Commit only if all operations were successful
         await client.query('COMMIT');
+        console.log('[createPart] Transaction committed successfully');
     } catch (error: any) {
         await client.query('ROLLBACK');
         console.error('Database Error in createPart:', error.message, error.stack);
@@ -458,6 +480,26 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
     try {
         console.log('[createPartVersion] Creating new version:', JSON.stringify(partVersion, null, 2));
         
+        // Helper function for JSON fields to ensure proper stringification
+        const processJsonField = (value: any): string | null => {
+            if (value === undefined || value === null) {
+                return null;
+            }
+            if (typeof value === 'string') {
+                try {
+                    // Check if it's already a valid JSON string
+                    JSON.parse(value);
+                    return value;
+                } catch {
+                    // If not a valid JSON string, stringify it
+                    return JSON.stringify(value);
+                }
+            } else {
+                // Directly stringify non-string values
+                return JSON.stringify(value);
+            }
+        };
+        
         // Build fields and values dynamically
         const fields = ['id', 'part_id', 'version', 'name', 'status', 'created_by', 'created_at'];
         const valueFields = ['$1', '$2', '$3', '$4', '$5::TEXT::lifecycle_status_enum', '$6', '$7'];
@@ -481,11 +523,15 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
             paramIndex++;
         }
         
-        // Add optional JSON fields - already stringified by the caller
+        // Add optional JSON fields - ensure proper handling
         if (partVersion.longDescription !== undefined) {
             fields.push('long_description');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.longDescription as string);
+            // Ensure it's a properly formatted JSON string
+            const longDesc = typeof partVersion.longDescription === 'string' 
+                ? partVersion.longDescription 
+                : JSON.stringify(partVersion.longDescription);
+            values.push(longDesc);
             paramIndex++;
         }
         
@@ -499,38 +545,53 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
         if (partVersion.technicalSpecifications !== undefined) {
             fields.push('technical_specifications');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.technicalSpecifications as string);
+            values.push(processJsonField(partVersion.technicalSpecifications));
             paramIndex++;
         }
         
         if (partVersion.properties !== undefined) {
             fields.push('properties');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.properties as string);
+            values.push(processJsonField(partVersion.properties));
             paramIndex++;
         }
         
         if (partVersion.electricalProperties !== undefined) {
             fields.push('electrical_properties');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.electricalProperties as string);
+            values.push(processJsonField(partVersion.electricalProperties));
             paramIndex++;
         }
         
         if (partVersion.mechanicalProperties !== undefined) {
             fields.push('mechanical_properties');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.mechanicalProperties as string);
+            values.push(processJsonField(partVersion.mechanicalProperties));
             paramIndex++;
         }
         
         if (partVersion.thermalProperties !== undefined) {
             fields.push('thermal_properties');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.thermalProperties as string);
+            values.push(processJsonField(partVersion.thermalProperties));
             paramIndex++;
         }
         
+        if (partVersion.materialComposition !== undefined) {
+            fields.push('material_composition');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.materialComposition));
+            paramIndex++;
+        }
+        
+        if (partVersion.environmentalData !== undefined) {
+            fields.push('environmental_data');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.environmentalData));
+            paramIndex++;
+        }
+        
+        // Handle weight fields
         if (partVersion.weight !== undefined) {
             fields.push('weight');
             valueFields.push(`$${paramIndex}`);
@@ -546,10 +607,11 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
             paramIndex++;
         }
         
+        // Special handling for dimensions - ensure it's properly formatted
         if (partVersion.dimensions !== undefined) {
             fields.push('dimensions');
             valueFields.push(`$${paramIndex}::JSONB`);
-            values.push(partVersion.dimensions as string);
+            values.push(processJsonField(partVersion.dimensions));
             paramIndex++;
         }
         
