@@ -188,6 +188,8 @@ export const createPartSchema = z
 			.regex(/^\d+\.\d+\.\d+$/)
 			.default('0.1.0'), // from partVersionSchema
 		status: z.nativeEnum(LifecycleStatusEnum).default(LifecycleStatusEnum.DRAFT), // from partVersionSchema (using lifecycle status)
+		// Add part status field (separate from lifecycle status)
+		partStatus: z.enum(['concept', 'active', 'obsolete', 'archived']).default('concept'),
 		// Add other fields required for the initial version creation if needed
 		short_description: z.string().max(200).optional().nullable(),
 		long_description: jsonSchema.optional().nullable(),

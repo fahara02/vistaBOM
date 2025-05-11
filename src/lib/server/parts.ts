@@ -250,13 +250,24 @@ export async function getPartWithCurrentVersion(
 		throw error;
 	}
 }
+export interface CreatePartInput {
+    name: string;
+    version: string;
+    status: LifecycleStatusEnum;
+    // New field for Part status (concept, active, obsolete, archived)
+    partStatus?: string;
+    shortDescription?: string | null;
+    functionalDescription?: string | null;
+    // Allow more flexible property types to match form data
+    [key: string]: any;
+}
 
 /**
  * Create a new part with its initial version
  */
 // src/lib/server/parts.ts - Updated createPart function with error logging
 export async function createPart(
-    input: { name: string; version: string; status: LifecycleStatusEnum; [key: string]: any },
+    input: CreatePartInput,
     userId: string
 ): Promise<{ part: Part; currentVersion: PartVersion }> {
     const partId = randomUUID();
@@ -293,9 +304,10 @@ export async function createPart(
         // Start transaction
         await client.query('BEGIN');
         
-        // CRITICAL FIX: The status field in Part table uses a different enum type
-        // Based on error message, it expects 'part_status_enum' not a string value
-        // The valid values for PartStatusEnum are: concept, active, obsolete, archived
+        // Use the partStatus field if provided, otherwise default to 'concept'
+        const partStatusToUse = input.partStatus || 'concept';
+        console.log('[createPart] Using Part status:', partStatusToUse);
+        
         const partSql = `
         INSERT INTO "Part" (
             id, creator_id, global_part_number, status, lifecycle_status
@@ -303,7 +315,7 @@ export async function createPart(
             '${partId}', 
             '${userId}', 
             '${input.name.replace(/'/g, "''")}', 
-            'concept'::part_status_enum, 
+            '${partStatusToUse}'::part_status_enum, 
             '${statusLower}'::lifecycle_status_enum
         )`;
         

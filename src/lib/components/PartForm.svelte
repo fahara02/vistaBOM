@@ -15,6 +15,9 @@
   export let packageTypes: string[] = [];
   export let weightUnits: string[] = [];
   export let dimensionUnits: string[] = [];
+  
+  // Part status options (separate from lifecycle status)
+  export let partStatuses: string[] = ['concept', 'active', 'obsolete', 'archived'];
 
   const buttonText = isEditMode ? 'Save Changes' : 'Create Part';
 
@@ -134,6 +137,16 @@
             {/each}
           </select>
           {#if $errors.status}<span class="error">{$errors.status}</span>{/if}
+        </div>
+        
+        <div class="form-group">
+          <label for="partStatus">Part Status</label>
+          <select name="partStatus" id="partStatus" bind:value={$form.partStatus}>
+            {#each partStatuses as partStatus}
+              <option value={partStatus}>{partStatus}</option>
+            {/each}
+          </select>
+          {#if $errors.partStatus}<span class="error">{$errors.partStatus}</span>{/if}
         </div>
 
         <!-- is_public field belongs to Part, not PartVersion -->

@@ -1,10 +1,11 @@
 import { createPart } from '$lib/server/parts';
+import type { CreatePartInput } from '$lib/server/parts';
+import type { PageServerLoad, Actions } from './$types';
+import { fail, redirect } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import { createPartSchema } from '$lib/server/db/schema';
 import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum } from '$lib/server/db/types';
-import { fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
 
 /**
  * Load function - initializes the form and loads lifecycle statuses
@@ -88,23 +89,28 @@ export const actions: Actions = {
     }
 
     try {
-      // DIRECT APPROACH: Force the status to be the exact value from the form
-      // This will override any defaults in lower layers of code
-      const selectedStatus = form.data.status;
-      console.log('SELECTED STATUS before creating part:', selectedStatus);
+      // DIRECT APPROACH: Get the lifecycle status from the form
+      const selectedLifecycleStatus = form.data.status;
       
-      // We need to ensure we're using the actual enum value from the server-side types
-      // Do a direct lookup to make absolutely sure we're getting the right value
-      // This type casting is necessary for TypeScript but the actual value will be right
-      const statusToUse = String(selectedStatus) as LifecycleStatusEnum;
-      console.log('STATUS TO USE after lookup:', statusToUse);
+      // Get the part status from the form or default to 'concept' if not provided
+      // This is the status for the Part table separate from its lifecycle status
+      const selectedPartStatus = form.data.partStatus || 'concept';
       
-      const partData = {
+      console.log('SELECTED LIFECYCLE STATUS:', selectedLifecycleStatus);
+      console.log('SELECTED PART STATUS:', selectedPartStatus);
+      
+      // Cast to proper enum type for the lifecycle status
+      const lifecycleStatusToUse = String(selectedLifecycleStatus) as LifecycleStatusEnum;
+      
+      // Create part data with both status fields
+      const partData: CreatePartInput = {
         name: form.data.name,
         version: form.data.version || '0.1.0',
-        // Set the status directly to what we want
-        status: statusToUse,
-        // Only include simple fields that won't cause issues
+        // Use the lifecycle status for the status field
+        status: lifecycleStatusToUse,
+        // Add the part status separately
+        partStatus: selectedPartStatus,
+        // Include simple fields
         shortDescription: form.data.short_description,
         functionalDescription: form.data.functional_description,
         // Skip complex objects for now to ensure it works
