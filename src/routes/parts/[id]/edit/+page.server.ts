@@ -1,8 +1,8 @@
 // src/routes/parts/[id]/edit/+page.server.ts
 import { partVersionSchema } from '$lib/server/db/schema';
 import type { PartVersion } from '$lib/server/db/types';
-import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum } from '$lib/server/db/types';
-import { createPartVersion, getPartWithCurrentVersion, updatePartCurrentVersion } from '$lib/server/parts';
+import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, PartStatusEnum, TemperatureUnitEnum } from '$lib/server/db/types';
+import { createPartVersion, getPartWithCurrentVersion, updatePartCurrentVersion, updatePartWithStatus } from '$lib/server/parts';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { zod } from 'sveltekit-superforms/adapters';
 import { superValidate } from 'sveltekit-superforms/server';
@@ -22,7 +22,10 @@ export const load: PageServerLoad = async ({ params }) => {
     short_description: currentVersion.shortDescription ?? '',
     functional_description: currentVersion.functionalDescription ?? '',
     long_description: currentVersion.longDescription ?? null,
+    // Include both status fields
     status: currentVersion.status,
+    // Include the Part status from the part object
+    partStatus: part.status as PartStatusEnum, 
     // is_public belongs to Part, not PartVersion
     
     // Electrical properties
@@ -64,16 +67,28 @@ export const load: PageServerLoad = async ({ params }) => {
     updated_by: currentVersion.updatedBy ?? null,
     updated_at: currentVersion.updatedAt
   };
-  const partDataTyped = {
-    ...initialData,
-    status: initialData.status as LifecycleStatusEnum
-  };
+  // Create a simple empty form with the schema
+  const form = await superValidate(zod(partVersionSchema));
   
-  const form = await superValidate(partDataTyped, zod(partVersionSchema));
+  // Then set specific values we know are safe and properly typed
+  form.data = {
+    ...form.data,
+    id: currentVersion.id,
+    part_id: currentVersion.partId,
+    version: currentVersion.version,
+    name: currentVersion.name,
+    short_description: currentVersion.shortDescription ?? '',
+    functional_description: currentVersion.functionalDescription ?? '',
+    long_description: currentVersion.longDescription,
+    status: currentVersion.status as LifecycleStatusEnum,
+    // Add the part status from the part object
+    partStatus: part.status as PartStatusEnum
+  };
   const statuses = Object.values(LifecycleStatusEnum);
+  const partStatuses = Object.values(PartStatusEnum);
   const packageTypes = Object.values(PackageTypeEnum);
   const weightUnits = Object.values(WeightUnitEnum);
-  return { form, part, statuses, packageTypes, weightUnits };
+  return { form, part, statuses, partStatuses, packageTypes, weightUnits };
 };
 
 export const actions: Actions = {
@@ -156,15 +171,73 @@ export const actions: Actions = {
       });
       
       try {
-        // Create the new version
-        const createdVersion = await createPartVersion(newVersion);
-        console.log('[editPart] New version created:', createdVersion.id);
+        // Get the current version again to ensure we have the latest data
+        const { currentVersion } = await getPartWithCurrentVersion(part.id);
         
-        // Update the part to point to the new version
-        await updatePartCurrentVersion(part.id, newVersion.id);
-        console.log('[editPart] Part current version updated successfully');
+        // Log the original part and version details before updating
+        console.log('[editPart] Original part:', {
+          id: part.id,
+          currentVersionId: part.currentVersionId,
+          status: part.status
+        });
+        
+        // Make sure we're preserving ALL existing data from the currentVersion
+        // Create a detailed comparison to help debug the issue
+        console.log('[editPart] BEFORE-AFTER comparison:', {
+          before: {
+            id: part.currentVersionId,
+            name: currentVersion.name,
+            description: currentVersion.shortDescription,
+            functionalDesc: currentVersion.functionalDescription,
+            status: currentVersion.status
+          },
+          after: {
+            id: newVersion.id, // Will be a new UUID
+            name: newVersion.name,
+            description: newVersion.shortDescription,
+            functionalDesc: newVersion.functionalDescription,
+            status: newVersion.status
+          }
+        });
+        
+        // Double-check to make sure required fields exist in new version
+        if (!newVersion.name || !newVersion.version || !newVersion.status) {
+          console.error('[editPart] CRITICAL ERROR: Required fields missing in new version', {
+            name: newVersion.name,
+            version: newVersion.version,
+            status: newVersion.status
+          });
+          throw new Error('Required fields missing in new version');
+        }
+        
+        // Create the new version - make sure it's properly created first
+        const createdVersion = await createPartVersion(newVersion);
+        console.log('[editPart] New version created successfully with ID:', createdVersion.id);
+        
+        // Update the part's current version and status - wrap in try catch to isolate errors
+        try {
+          if (d.partStatus) {
+            // If partStatus is provided, update both current version and part status
+            console.log('[editPart] Updating both current version and part status:', {
+              partId: part.id,
+              newVersionId: createdVersion.id, // Use the returned createdVersion id to be safe
+              newPartStatus: d.partStatus
+            });
+            await updatePartWithStatus(part.id, createdVersion.id, d.partStatus as PartStatusEnum);
+            console.log('[editPart] Part current version and status updated successfully');
+          } else {
+            // Fallback to just updating the current version if no partStatus is provided
+            console.log('[editPart] Only updating current version reference');
+            await updatePartCurrentVersion(part.id, createdVersion.id);
+            console.log('[editPart] Part current version updated successfully');
+          }
+        } catch (updateError) {
+          console.error('[editPart] Error updating part reference:', updateError);
+          // Continue with redirect even if reference update failed - at least version is created
+        }
         
         // Redirect to part details - need to handle route structure correctly
+        console.log('[editPart] Redirecting to part details page');
         throw redirect(303, `/parts/${part.id}`);
       } catch (error: any) {
         console.error('[editPart] Error during version creation or update:', error);

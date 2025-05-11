@@ -16,8 +16,7 @@
   export let weightUnits: string[] = [];
   export let dimensionUnits: string[] = [];
   
-  // Part status options (separate from lifecycle status)
-  export let partStatuses: string[] = Object.values(PartStatusEnum);
+  // No longer needed - using enum values directly in the component
 
   const buttonText = isEditMode ? 'Save Changes' : 'Create Part';
 
@@ -142,9 +141,10 @@
         <div class="form-group">
           <label for="partStatus">Part Status</label>
           <select name="partStatus" id="partStatus" bind:value={$form.partStatus}>
-            {#each partStatuses as partStatus}
-              <option value={partStatus}>{partStatus}</option>
-            {/each}
+            <option value={PartStatusEnum.CONCEPT}>Concept</option>
+            <option value={PartStatusEnum.ACTIVE}>Active</option>
+            <option value={PartStatusEnum.OBSOLETE}>Obsolete</option>
+            <option value={PartStatusEnum.ARCHIVED}>Archived</option>
           </select>
           {#if $errors.partStatus}<span class="error">{$errors.partStatus}</span>{/if}
         </div>

@@ -225,13 +225,41 @@ export async function getPartWithCurrentVersion(
 			currentVersionId: rawRow[9]?.toString() || undefined
 		};
 
+		// We need to initialize the currentVersion with default values for all fields
+		// This ensures all data is properly preserved during edits
 		const currentVersion: PartVersion = {
 			id: rawRow[10]?.toString(),
 			partId: rawRow[11]?.toString(),
 			version: rawRow[12]?.toString(),
 			name: rawRow[13]?.toString(),
 			shortDescription: rawRow[14]?.toString() || undefined,
-			// Map string status to a proper enum value
+			// Add all other fields with defaults to ensure they're not lost during edits
+			functionalDescription: undefined,  // These aren't in the SQL result, but needed for editing
+			longDescription: undefined,
+			technicalSpecifications: undefined,
+			properties: undefined,
+			electricalProperties: undefined,
+			mechanicalProperties: undefined,
+			thermalProperties: undefined,
+			materialComposition: undefined,
+			environmentalData: undefined,
+			revisionNotes: undefined,
+			// Physical properties
+			weight: undefined,
+			weightUnit: undefined,
+			dimensions: undefined,
+			dimensionsUnit: undefined,
+			tolerance: undefined,
+			toleranceUnit: undefined,
+			packageType: undefined,
+			pinCount: undefined,
+			// Temperature properties
+			operatingTemperatureMin: undefined,
+			operatingTemperatureMax: undefined,
+			storageTemperatureMin: undefined,
+			storageTemperatureMax: undefined,
+			temperatureUnit: undefined,
+			// Status and metadata
 			status: rawRow[15] && rawRow[15] in LifecycleStatusEnum ? 
 				rawRow[15] as LifecycleStatusEnum : 
 				LifecycleStatusEnum.DRAFT,
@@ -240,6 +268,9 @@ export async function getPartWithCurrentVersion(
 			updatedBy: rawRow[18]?.toString() || undefined,
 			updatedAt: rawRow[19] ? new Date(rawRow[19]) : new Date() 
 		};
+		
+		// Log that we're adding default values
+		console.log(`[getPartWithCurrentVersion] Added default values for all fields not explicitly loaded from database`);
 		
 		// Log the mapped object for debugging
 		console.log(`[getPartWithCurrentVersion] Mapped part object with ID: ${part.id}`)
@@ -714,14 +745,71 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
  */
 export async function updatePartCurrentVersion(partId: string, versionId: string): Promise<void> {
     try {
-        console.log('[updatePartCurrentVersion] Updating part', partId, 'to version', versionId);
         await client.query(
-            'UPDATE "Part" SET current_version_id = $1 WHERE id = $2',
+            `UPDATE "Part"
+             SET current_version_id = $1, updated_at = NOW()
+             WHERE id = $2`,
             [versionId, partId]
         );
-        console.log('[updatePartCurrentVersion] Successfully updated part', partId);
+        console.log(`[updatePartCurrentVersion] Updated part ${partId} to version ${versionId}`);
     } catch (error) {
-        console.error('[updatePartCurrentVersion] Error updating part', partId, ':', error);
+        console.error(`[updatePartCurrentVersion] Error updating part ${partId}:`, error);
+        throw error;
+    }
+}
+
+// Update both part status and current version in one operation
+export async function updatePartWithStatus(
+    partId: string, 
+    versionId: string, 
+    partStatus: PartStatusEnum
+): Promise<void> {
+    try {
+        // Start a transaction to ensure both updates succeed or fail together
+        await client.query('BEGIN');
+        
+        console.log(`[updatePartWithStatus] Starting transaction to update part ${partId}:`, {
+            newVersionId: versionId,
+            newStatus: partStatus,
+            statusValue: String(partStatus).toLowerCase()
+        });
+        
+        // First verify the part exists
+        const partCheck = await client.query(
+            `SELECT id, status, current_version_id FROM "Part" WHERE id = $1`,
+            [partId]
+        );
+        
+        if (partCheck.rows.length === 0) {
+            throw new Error(`Part with ID ${partId} not found`);
+        }
+        
+        console.log(`[updatePartWithStatus] Current part data:`, partCheck.rows[0]);
+        
+        // Update the Part table with the new status and current version
+        const updateResult = await client.query(
+            `UPDATE "Part"
+             SET current_version_id = $1, 
+                 status = $2::part_status_enum,
+                 updated_at = NOW()
+             WHERE id = $3
+             RETURNING id, current_version_id, status, updated_at`,
+            [versionId, String(partStatus).toLowerCase(), partId]
+        );
+        
+        if (updateResult.rows.length === 0) {
+            throw new Error(`Failed to update part ${partId}. No rows affected.`);
+        }
+        
+        console.log(`[updatePartWithStatus] Part updated successfully:`, updateResult.rows[0]);
+        
+        // Commit the transaction
+        await client.query('COMMIT');
+        console.log(`[updatePartWithStatus] Transaction committed successfully`);
+    } catch (error) {
+        // Rollback on error
+        await client.query('ROLLBACK');
+        console.error(`[updatePartWithStatus] Error updating part ${partId}:`, error);
         throw error;
     }
 }

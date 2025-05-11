@@ -18,7 +18,9 @@
 		{form} 
 		{errors} 
 		{enhance} 
-		statuses={data.statuses} 
+		statuses={data.statuses}
+		packageTypes={data.packageTypes}
+		weightUnits={data.weightUnits}
 		isEditMode={true} 
 	/>
 </div>

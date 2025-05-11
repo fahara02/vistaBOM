@@ -2,12 +2,11 @@
 // Expose server-side types for client-side import (type-only)
 export type { Manufacturer, Supplier, JsonValue, Part, PartVersion } from '$lib/server/db/types';
 
-// Re-export BOTH types and values safely for client usage
+// CLIENT-SIDE ENUM DEFINITIONS - EXACT COPY OF SERVER VALUES
+// These definitions are direct copies of types in server/db/types.ts
+// DO NOT CHANGE without updating the corresponding server enums
 
-// First - define the enum values here directly to avoid server imports
-// These must match the values in server/db/types.ts exactly
-
-// Part Status enum values
+// Part Status enum values - EXACT copy of server values
 export enum PartStatusEnum {
     CONCEPT = 'concept',
     ACTIVE = 'active',
@@ -15,7 +14,7 @@ export enum PartStatusEnum {
     ARCHIVED = 'archived'
 }
 
-// Lifecycle Status enum values
+// Lifecycle Status enum values - EXACT copy of server values
 export enum LifecycleStatusEnum {
     DRAFT = 'draft',
     IN_REVIEW = 'in_review',
@@ -28,34 +27,48 @@ export enum LifecycleStatusEnum {
     ARCHIVED = 'archived'
 }
 
-// Package Type enum values
-export enum PackageTypeEnum {
-    SMD = 'smd',
-    THT = 'tht',
-    BGA = 'bga',
-    OTHER = 'other'
-}
-
-// Weight Unit enum values
+// Weight Unit enum values - EXACT copy of server values
 export enum WeightUnitEnum {
-    GRAM = 'g',
-    KILOGRAM = 'kg',
-    OUNCE = 'oz',
-    POUND = 'lb'
+    MG = 'mg',
+    G = 'g',
+    KG = 'kg',
+    LB = 'lb',
+    OZ = 'oz'
 }
 
-// Dimension Unit enum values
+// Dimension Unit enum values - EXACT copy of server values
 export enum DimensionUnitEnum {
-    MILLIMETER = 'mm',
-    CENTIMETER = 'cm',
-    METER = 'm',
-    INCH = 'in',
-    FOOT = 'ft'
+    MM = 'mm',
+    CM = 'cm',
+    M = 'm',
+    IN = 'in',
+    FT = 'ft'
 }
 
-// Temperature Unit enum values
+// Temperature Unit enum values - EXACT copy of server values
 export enum TemperatureUnitEnum {
-    CELSIUS = 'celsius',
-    FAHRENHEIT = 'fahrenheit',
-    KELVIN = 'kelvin'
+    C = 'C',
+    F = 'F',
+    K = 'K'
+}
+
+// Package Type enum values - EXACT copy of server values
+export enum PackageTypeEnum {
+    SMD = 'SMD',
+    THT = 'THT',
+    QFP = 'QFP',
+    BGA = 'BGA',
+    DIP = 'DIP',
+    SOT23 = 'SOT-23',
+    TO220 = 'TO-220',
+    SOP = 'SOP',
+    TSSOP = 'TSSOP',
+    LQFP = 'LQFP',
+    DFN = 'DFN',
+    QFN = 'QFN',
+    DO35 = 'DO-35',
+    DO41 = 'DO-41',
+    SOD = 'SOD',
+    SC70 = 'SC-70',
+    FCBGA = 'FCBGA'
 }

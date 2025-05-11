@@ -132,6 +132,7 @@ export const partVersionSchemaBase = z.object({
 	temperature_unit: z.nativeEnum(TemperatureUnitEnum).optional().nullable(), // temperature_unit_enum
 	revision_notes: z.string().optional().nullable(), // TEXT
 	status: z.nativeEnum(LifecycleStatusEnum), // lifecycle_status_enum DEFAULT 'draft' NOT NULL
+	partStatus: z.nativeEnum(PartStatusEnum).optional(), // Used for editing the part status
 	released_at: z.date().optional().nullable(), // TIMESTAMPTZ
 	created_by: z.string().uuid(), // UUID NOT NULL REFERENCES "User"(id)
 	created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
