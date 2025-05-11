@@ -32,8 +32,23 @@ if (dbUrl.password) {
 } else if (env.DB_PASSWORD) {
 	connectionOptions.password = env.DB_PASSWORD;
 }
-// Use the standard connection approach but configure some options to handle enum types better
-const client = await connect(connectionOptions);
+
+// Ensure target database exists, then connect
+let client: Client;
+try {
+	client = await connect(connectionOptions);
+} catch (err: any) {
+	// Create database if it doesn't exist
+	if (err.code === '3D000') {
+		const rootOptions = { ...connectionOptions, database: 'postgres' };
+		const rootClient = await connect(rootOptions);
+		await rootClient.query(`CREATE DATABASE "${connectionOptions.database}"`);
+		await rootClient.end();
+		client = await connect(connectionOptions);
+	} else {
+		throw err;
+	}
+}
 
 // Add specific SQL statements to handle enum types
 // This tells PostgreSQL server to use text format when possible, which avoids binary encoding issues
@@ -93,8 +108,5 @@ for (const stmt of statements) {
 		throw err;
 	}
 }
-
-
-
 
 export default client;

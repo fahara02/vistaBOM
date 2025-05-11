@@ -17,6 +17,8 @@
 		"test:e2e": "playwright test",
 		"db:start": "podman compose up",
 		"db:stop": "podman-compose down",
+		
+		"db:init": "node scripts/init-db-porsager.js",
 		"storybook": "storybook dev -p 6006",
 		"build-storybook": "storybook build"
 	},
@@ -73,8 +75,10 @@
 		"@oslojs/oauth2": "^0.5.0",
 		"bcryptjs": "^3.0.2",
 		"db": "^6.0.3",
+		"dotenv": "^16.0.0",
 		"google-auth-library": "^9.15.1",
 		"pg": "^8.14.1",
+		"postgres": "^3.4.5",
 		"push": "^0.1.1",
 		"ramda": "^0.28.0",
 		"rxjs": "^7.8.0",

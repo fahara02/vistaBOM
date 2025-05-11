@@ -1,5 +1,5 @@
 //src/lib/server/auth.ts
-import client from '$lib/server/db/index';
+import sql from '$lib/server/db/postgres';
 import type { Session, User } from '$lib/server/db/types';
 import { encodeBase64url } from '@oslojs/encoding';
 import type { RequestEvent } from '@sveltejs/kit';
@@ -18,11 +18,10 @@ export function generateSessionToken(): string {
 export async function createSession(token: string, userId: string): Promise<Session> {
 	const expiresAt = new Date(Date.now() + 30 * DAY_IN_MS);
 	const lastUsed = new Date();
-	await client.query(
-		`INSERT INTO "Session" (id, user_id, expires_at, last_used)
-     VALUES ($1, $2, $3, $4)`,
-		[token, userId, expiresAt, lastUsed]
-	);
+	await sql`
+		INSERT INTO "Session" (id, user_id, expires_at, last_used)
+		VALUES (${token}, ${userId}, ${expiresAt}, ${lastUsed})
+	`;
 	return { id: token, userId, expiresAt, lastUsed };
 }
 
@@ -30,82 +29,65 @@ export async function validateSessionToken(
 	token: string
 ): Promise<{ session: Session | null; user: User | null }> {
 	const sessionId = token;
-	const result = (await client.query(
-		`SELECT
-       s.id,
-       s.user_id,
-       s.expires_at,
-       u.id,
-       u.username,
-       u.email,
-       u.full_name AS "fullName",
-       u.password_hash AS "passwordHash",
-       u.google_id AS "googleId",
-       u.avatar_url AS "avatarUrl",
-       u.created_at AS "createdAt",
-       u.updated_at AS "updatedAt",
-       u.last_login_at AS "lastLoginAt",
-       u.is_active AS "isActive",
-       u.is_admin AS "isAdmin",
-       u.is_deleted AS "isDeleted"
-     FROM "Session" s
-     JOIN "User" u ON s.user_id = u.id
-     WHERE s.id = $1`,
-		[sessionId]
-	)) as unknown as { rows: unknown[] };
-	if (!result || typeof result !== 'object' || !('rows' in result) || !Array.isArray(result.rows)) {
+	const rows = await sql`
+	  SELECT
+	    s.id AS session_id,
+	    s.user_id AS session_user_id,
+	    s.expires_at AS expires_at,
+	    u.id AS usr_id,
+	    u.username AS username,
+	    u.email AS email,
+	    u.full_name AS full_name,
+	    u.password_hash AS password_hash,
+	    u.google_id AS google_id,
+	    u.avatar_url AS avatar_url,
+	    u.created_at AS created_at,
+	    u.updated_at AS updated_at,
+	    u.last_login_at AS last_login_at,
+	    u.is_active AS is_active,
+	    u.is_admin AS is_admin,
+	    u.is_deleted AS is_deleted
+	  FROM "Session" s
+	  JOIN "User" u ON s.user_id = u.id
+	  WHERE s.id = ${token}
+	`;
+	if (!rows || !Array.isArray(rows)) {
 		return { session: null, user: null };
 	}
-	const rows = result.rows;
+	
 	if (!rows.length) return { session: null, user: null };
-	const [
-		sessId,
-		sessUserId,
-		expiresRaw,
-		usrId,
-		username,
-		email,
-		fullName,
-		passwordHash,
-		googleId,
-		avatarUrl,
-		createdAt,
-		updatedAt,
-		lastLoginAt,
-		isActive,
-		isAdmin,
-		isDeleted
-	] = rows[0] as any[];
-	const expiresAt = expiresRaw instanceof Date ? expiresRaw : new Date(expiresRaw as string);
-	const session: Session = { id: sessId, userId: sessUserId, expiresAt, lastUsed: new Date() }; // lastUsed added below
+	const row = rows[0];
+	const session: Session = { 
+		id: row.session_id, 
+		userId: row.session_user_id, 
+		expiresAt: row.expires_at, 
+		lastUsed: new Date() 
+	};
 	const user: User = {
-		id: usrId,
-		username,
-		email,
-		fullName,
-		passwordHash,
-		googleId,
-		avatarUrl,
-		createdAt: new Date(createdAt),
-		updatedAt: new Date(updatedAt),
-		lastLoginAt: lastLoginAt ? new Date(lastLoginAt) : null,
-		isActive,
-		isAdmin,
-		isDeleted
+		id: row.usr_id,
+		username: row.username,
+		email: row.email,
+		fullName: row.full_name,
+		passwordHash: row.password_hash,
+		googleId: row.google_id,
+		avatarUrl: row.avatar_url,
+		createdAt: new Date(row.created_at),
+		updatedAt: new Date(row.updated_at),
+		lastLoginAt: row.last_login_at ? new Date(row.last_login_at) : null,
+		isActive: row.is_active,
+		isAdmin: row.is_admin,
+		isDeleted: row.is_deleted
 	};
 
 	// Session expiration and renewal logic remains unchanged
 	if (Date.now() >= session.expiresAt.getTime()) {
-		await client.query(`DELETE FROM "Session" WHERE id = $1`, [session.id]);
+		await sql`DELETE FROM "Session" WHERE id = ${row.session_id}`;
 		return { session: null, user: null };
 	}
 	const renewThreshold = session.expiresAt.getTime() - DAY_IN_MS * 15;
 	if (Date.now() >= renewThreshold) {
 		const newExpiresAt = new Date(Date.now() + DAY_IN_MS * 30);
-		await client.query(`UPDATE "Session" SET expires_at = $1 WHERE id = $2`, [
-			newExpiresAt,
-			session.id
-		]);
+		await sql`UPDATE "Session" SET expires_at = ${newExpiresAt} WHERE id = ${session.id}`;
 		session.expiresAt = newExpiresAt;
 	}
 	return { session, user };
@@ -114,7 +96,7 @@ export async function validateSessionToken(
 export type SessionValidationResult = Awaited<ReturnType<typeof validateSessionToken>>;
 
 export async function invalidateSession(sessionId: string): Promise<void> {
-	await client.query(`DELETE FROM "Session" WHERE id = $1`, [sessionId]);
+	await sql`DELETE FROM "Session" WHERE id = ${sessionId}`;
 }
 
 export function setSessionTokenCookie(event: RequestEvent, token: string, expiresAt: Date): void {
