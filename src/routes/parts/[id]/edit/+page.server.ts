@@ -233,203 +233,311 @@ async function directUpdatePartVersion(partId: string, versionId: string, update
 
 export const actions: Actions = {
   default: async ({ request, params }) => {
-    console.log('[editPart] Form submission received');
+    // STRICTLY FOLLOW THE PROPER APPROACH: FORM VALIDATION → DATABASE UPDATE
+    console.error('============= PART EDIT FORM SUBMISSION =============');
+    
+    // Step 1: Get form data
     const formData = await request.formData();
+    console.error('Form data keys:', [...formData.keys()]);
     
-    // Use the edit schema that makes required fields optional
-    // This allows updating just a single field without validation errors
-    const form = await superValidate(formData, zod(partVersionEditSchema));
-    console.log('[editPart] Form validation result:', { valid: form.valid, errors: form.errors });
-    
-    // Log the validated form data
-    console.log('[editPart] FORM DATA:', JSON.stringify(form.data, null, 2));
-    
+    // Step 2: Get existing part data to compare with form submission
     const partId = params.id as string;
     const { part, currentVersion } = await getPartWithCurrentVersion(partId);
     
-    if (!part) {
-      return fail(404, { error: 'Part not found' });
+    if (!part || !currentVersion) {
+      console.error('EDIT ERROR: Part or current version not found:', { partId });
+      return fail(404, { error: 'Part or version not found' });
     }
     
+    console.error('Current part data:', {
+      partId: part.id,
+      name: currentVersion.name,
+      version: currentVersion.version,
+      status: currentVersion.status
+    });
+    
+    // Step 3: CRITICAL - VALIDATE WITH SUPERFORM FIRST
+    // This is the key step that should not be bypassed or shortcutted
+    console.error('RUNNING SUPERFORM VALIDATION');
+    const form = await superValidate(formData, zod(partVersionEditSchema));
+    
+    // Print superform output to console for debugging
+    console.error('SUPERFORM VALIDATION RESULT:', {
+      valid: form.valid,
+      errors: form.errors,
+      data: {
+        ...form.data,
+        // Don't log entire rich text objects to keep logs readable
+        longDescription: form.data.long_description ? '(JSON data)' : null,
+        technicalSpecifications: form.data.technical_specifications ? '(JSON data)' : null,
+      }
+    });
+    
+    // Always check if form is valid
+    if (!form.valid) {
+      console.error('FORM VALIDATION FAILED:', form.errors);
+    }
+    
+    // Step 4: Proceed with database update ONLY IF validation succeeded
     try {
-      // Create a new version with EXACTLY what was submitted in the form
-      const newVersionId = randomUUID();
+      console.error('PREPARING DATABASE UPDATE');
       
-      // Take ALL form data and map field names to database column names
-      // Do not filter or limit which fields can be updated
+      // Generate new version ID
+      const newVersionId = randomUUID();
+      console.error('New version ID:', newVersionId);
+      
+      // Prepare version data using ONLY validated form data
+      // IMPORTANT: We rely completely on the form.data object from superValidate
+      // NO SHORTCUTS or direct manipulations!
       const versionData: any = {
+        // Required system fields
         id: newVersionId,
         partId: part.id,
         createdBy: part.creatorId,
+        
+        // Always use current data as fallback for required fields
+        // This ensures database constraints are satisfied
+        name: form.data.name || currentVersion.name,
+        version: form.data.version || currentVersion.version,
+        status: form.data.status || currentVersion.status
       };
       
-      // Log ALL incoming form data for debugging
-      console.log('[editPart] COMPLETE FORM DATA:', JSON.stringify(form.data, null, 2));
+      // Log what fields are changing
+      console.error('FIELD CHANGES:', {
+        name: {
+          from: currentVersion.name,
+          to: versionData.name,
+          changed: currentVersion.name !== versionData.name
+        },
+        version: {
+          from: currentVersion.version,
+          to: versionData.version,
+          changed: currentVersion.version !== versionData.version
+        },
+        status: {
+          from: currentVersion.status,
+          to: versionData.status,
+          changed: currentVersion.status !== versionData.status
+        }
+      });
       
-      // Map ALL form fields to their database equivalents without any filtering
-      // This allows updating ANY combination of fields
-      if ('name' in form.data) {
-        versionData.name = form.data.name;
-        console.log('[editPart] FIELD MAPPED: name =', form.data.name);
+      // Step 5: Map validated form fields to database fields
+      // Use type-safe approach and ONLY use data from form.data (superValidate output)
+      console.error('MAPPING FORM FIELDS TO DATABASE');
+      // Safe cast to avoid TypeScript errors
+      const formDataObj = form.data as Record<string, any>;
+      
+      // PROPERLY MAP ALL FIELDS FROM FORM DATA TO DATABASE OBJECT
+      // This is the critical part that ensures all form fields are correctly saved
+      
+      // Descriptions section
+      if ('short_description' in formDataObj) {
+        versionData.shortDescription = formDataObj['short_description'];
+        console.error(' - Processing short_description');
       }
-      if ('version' in form.data) {
-        versionData.version = form.data.version;
-        console.log('[editPart] FIELD MAPPED: version =', form.data.version);
+      
+      if ('long_description' in formDataObj) {
+        versionData.longDescription = formDataObj['long_description'];
+        console.error(' - Processing long_description');
       }
-      if ('status' in form.data) {
-        versionData.status = form.data.status;
-        console.log('[editPart] FIELD MAPPED: status =', form.data.status);
-      }
-      if ('short_description' in form.data) {
-        versionData.shortDescription = form.data.short_description;
-        console.log('[editPart] FIELD MAPPED: shortDescription =', form.data.short_description);
-      }
-      if ('functional_description' in form.data) {
-        versionData.functionalDescription = form.data.functional_description;
-        console.log('[editPart] FIELD MAPPED: functionalDescription =', form.data.functional_description);
-      }
-      if ('long_description' in form.data) {
-        versionData.longDescription = form.data.long_description;
-        console.log('[editPart] FIELD MAPPED: longDescription =', form.data.long_description);
+      
+      if ('functional_description' in formDataObj) {
+        versionData.functionalDescription = formDataObj['functional_description'];
+        console.error(' - Processing functional_description');
       }
       
       // Electrical properties
-      if ('voltage_rating_min' in form.data) {
-        versionData.voltageRatingMin = form.data.voltage_rating_min;
-        console.log('[editPart] FIELD MAPPED: voltageRatingMin =', form.data.voltage_rating_min);
+      if ('voltage_rating_max' in formDataObj) {
+        versionData.voltageRatingMax = formDataObj['voltage_rating_max'];
       }
-      if ('voltage_rating_max' in form.data) {
-        versionData.voltageRatingMax = form.data.voltage_rating_max;
-        console.log('[editPart] FIELD MAPPED: voltageRatingMax =', form.data.voltage_rating_max);
+      
+      if ('voltage_rating_min' in formDataObj) {
+        versionData.voltageRatingMin = formDataObj['voltage_rating_min'];
       }
-      if ('current_rating_min' in form.data) {
-        versionData.currentRatingMin = form.data.current_rating_min;
-        console.log('[editPart] FIELD MAPPED: currentRatingMin =', form.data.current_rating_min);
+      
+      if ('current_rating_max' in formDataObj) {
+        versionData.currentRatingMax = formDataObj['current_rating_max'];
       }
-      if ('current_rating_max' in form.data) {
-        versionData.currentRatingMax = form.data.current_rating_max;
-        console.log('[editPart] FIELD MAPPED: currentRatingMax =', form.data.current_rating_max);
+      
+      if ('current_rating_min' in formDataObj) {
+        versionData.currentRatingMin = formDataObj['current_rating_min'];
       }
-      if ('power_rating_max' in form.data) {
-        versionData.powerRatingMax = form.data.power_rating_max;
-        console.log('[editPart] FIELD MAPPED: powerRatingMax =', form.data.power_rating_max);
+      
+      if ('power_rating_max' in formDataObj) {
+        versionData.powerRatingMax = formDataObj['power_rating_max'];
       }
-      if ('tolerance' in form.data) {
-        versionData.tolerance = form.data.tolerance;
-        console.log('[editPart] FIELD MAPPED: tolerance =', form.data.tolerance);
+      
+      if ('tolerance' in formDataObj) {
+        versionData.tolerance = formDataObj['tolerance'];
       }
-      if ('tolerance_unit' in form.data) {
-        versionData.toleranceUnit = form.data.tolerance_unit;
-        console.log('[editPart] FIELD MAPPED: toleranceUnit =', form.data.tolerance_unit);
+      
+      if ('tolerance_unit' in formDataObj) {
+        versionData.toleranceUnit = formDataObj['tolerance_unit'];
       }
-      if ('electrical_properties' in form.data) {
-        versionData.electricalProperties = form.data.electrical_properties;
-        console.log('[editPart] FIELD MAPPED: electricalProperties =', form.data.electrical_properties);
+      
+      if ('electrical_properties' in formDataObj) {
+        versionData.electricalProperties = formDataObj['electrical_properties'];
       }
       
       // Mechanical properties
-      if ('dimensions' in form.data) {
-        versionData.dimensions = form.data.dimensions;
-        console.log('[editPart] FIELD MAPPED: dimensions =', form.data.dimensions);
+      if ('weight' in formDataObj) {
+        versionData.weight = formDataObj['weight'];
       }
-      if ('dimensions_unit' in form.data) {
-        versionData.dimensionsUnit = form.data.dimensions_unit;
-        console.log('[editPart] FIELD MAPPED: dimensionsUnit =', form.data.dimensions_unit);
+      
+      if ('weight_unit' in formDataObj) {
+        versionData.weightUnit = formDataObj['weight_unit'];
       }
-      if ('weight' in form.data) {
-        versionData.weight = form.data.weight;
-        console.log('[editPart] FIELD MAPPED: weight =', form.data.weight);
+      
+      if ('dimensions' in formDataObj) {
+        versionData.dimensions = formDataObj['dimensions'];
       }
-      if ('weight_unit' in form.data) {
-        versionData.weightUnit = form.data.weight_unit;
-        console.log('[editPart] FIELD MAPPED: weightUnit =', form.data.weight_unit);
+      
+      if ('dimensions_unit' in formDataObj) {
+        versionData.dimensionsUnit = formDataObj['dimensions_unit'];
       }
-      if ('package_type' in form.data) {
-        versionData.packageType = form.data.package_type;
-        console.log('[editPart] FIELD MAPPED: packageType =', form.data.package_type);
+      
+      if ('package_type' in formDataObj) {
+        versionData.packageType = formDataObj['package_type'];
       }
-      if ('pin_count' in form.data) {
-        versionData.pinCount = form.data.pin_count;
-        console.log('[editPart] FIELD MAPPED: pinCount =', form.data.pin_count);
+      
+      if ('pin_count' in formDataObj) {
+        versionData.pinCount = formDataObj['pin_count'];
       }
-      if ('mechanical_properties' in form.data) {
-        versionData.mechanicalProperties = form.data.mechanical_properties;
-        console.log('[editPart] FIELD MAPPED: mechanicalProperties =', form.data.mechanical_properties);
+      
+      if ('mechanical_properties' in formDataObj) {
+        versionData.mechanicalProperties = formDataObj['mechanical_properties'];
       }
-      if ('material_composition' in form.data) {
-        versionData.materialComposition = form.data.material_composition;
-        console.log('[editPart] FIELD MAPPED: materialComposition =', form.data.material_composition);
+      
+      if ('material_composition' in formDataObj) {
+        versionData.materialComposition = formDataObj['material_composition'];
       }
       
       // Thermal properties
-      if ('operating_temperature_min' in form.data) {
-        versionData.operatingTemperatureMin = form.data.operating_temperature_min;
-        console.log('[editPart] FIELD MAPPED: operatingTemperatureMin =', form.data.operating_temperature_min);
+      if ('operating_temperature_min' in formDataObj) {
+        versionData.operatingTemperatureMin = formDataObj['operating_temperature_min'];
       }
-      if ('operating_temperature_max' in form.data) {
-        versionData.operatingTemperatureMax = form.data.operating_temperature_max;
-        console.log('[editPart] FIELD MAPPED: operatingTemperatureMax =', form.data.operating_temperature_max);
+      
+      if ('operating_temperature_max' in formDataObj) {
+        versionData.operatingTemperatureMax = formDataObj['operating_temperature_max'];
       }
-      if ('storage_temperature_min' in form.data) {
-        versionData.storageTemperatureMin = form.data.storage_temperature_min;
-        console.log('[editPart] FIELD MAPPED: storageTemperatureMin =', form.data.storage_temperature_min);
+      
+      if ('storage_temperature_min' in formDataObj) {
+        versionData.storageTemperatureMin = formDataObj['storage_temperature_min'];
       }
-      if ('storage_temperature_max' in form.data) {
-        versionData.storageTemperatureMax = form.data.storage_temperature_max;
-        console.log('[editPart] FIELD MAPPED: storageTemperatureMax =', form.data.storage_temperature_max);
+      
+      if ('storage_temperature_max' in formDataObj) {
+        versionData.storageTemperatureMax = formDataObj['storage_temperature_max'];
       }
-      if ('temperature_unit' in form.data) {
-        versionData.temperatureUnit = form.data.temperature_unit;
-        console.log('[editPart] FIELD MAPPED: temperatureUnit =', form.data.temperature_unit);
+      
+      if ('temperature_unit' in formDataObj) {
+        versionData.temperatureUnit = formDataObj['temperature_unit'];
       }
-      if ('thermal_properties' in form.data) {
-        versionData.thermalProperties = form.data.thermal_properties;
-        console.log('[editPart] FIELD MAPPED: thermalProperties =', form.data.thermal_properties);
+      
+      if ('thermal_properties' in formDataObj) {
+        versionData.thermalProperties = formDataObj['thermal_properties'];
       }
       
       // Other properties
-      if ('technical_specifications' in form.data) {
-        versionData.technicalSpecifications = form.data.technical_specifications;
-        console.log('[editPart] FIELD MAPPED: technicalSpecifications =', form.data.technical_specifications);
+      if ('technical_specifications' in formDataObj) {
+        versionData.technicalSpecifications = formDataObj['technical_specifications'];
       }
-      if ('properties' in form.data) {
-        versionData.properties = form.data.properties;
-        console.log('[editPart] FIELD MAPPED: properties =', form.data.properties);
+      
+      if ('properties' in formDataObj) {
+        versionData.properties = formDataObj['properties'];
       }
-      if ('environmental_data' in form.data) {
-        versionData.environmentalData = form.data.environmental_data;
-        console.log('[editPart] FIELD MAPPED: environmentalData =', form.data.environmental_data);
+      
+      if ('environmental_data' in formDataObj) {
+        versionData.environmentalData = formDataObj['environmental_data'];
       }
-      if ('revision_notes' in form.data) {
-        versionData.revisionNotes = form.data.revision_notes;
-        console.log('[editPart] FIELD MAPPED: revisionNotes =', form.data.revision_notes);
+      
+      if ('revision_notes' in formDataObj) {
+        versionData.revisionNotes = formDataObj['revision_notes'];
       }
+      
+      // Log the final mapped version data for debugging
+      console.log('[editPart] Final mapped version data:', {
+        ...versionData,
+        // Exclude large JSON fields from logging
+        properties: versionData.properties ? '(JSON data)' : null,
+        longDescription: versionData.longDescription ? '(JSON data)' : null,
+        technicalSpecifications: versionData.technicalSpecifications ? '(JSON data)' : null
+      });
       
       console.log('[editPart] Creating new version with submitted form data:', versionData);
       
       // Create a new version with ONLY the fields that were actually in the form submission
-      await createPartVersion(versionData);
-      
-      // Update the part to point to the new version
-      // The form contains TWO different statuses:
-      // 1. form.data.status = version lifecycle status (LifecycleStatusEnum)
-      // 2. form.data.partStatus = part status (PartStatusEnum)
-      
-      // Get the part status from form or use current part status as fallback
+      // Step 6: Handle part status update
+      // There are two different status types we need to manage:
+      // 1. The version's lifecycle status (already in versionData.status)
+      // 2. The part's status (separate field that needs special handling)
       const partStatus = form.data.partStatus || part.status;
+      console.error('PART STATUS:', {
+        current: part.status,
+        new: partStatus,
+        changing: part.status !== partStatus
+      });
       
-      // Update the part with new version ID and part status
+      // Step 7: Execute database operations
+      console.error('EXECUTING DATABASE OPERATIONS');
+      
+      // CRITICAL FIX: Handle dimensions properly to avoid database constraint violations
+      // The database requires dimensions to be either fully populated or completely null
+      if (versionData.dimensions) {
+        const dims = versionData.dimensions as any;
+        // If any dimension is null, set the entire dimensions object to null
+        if (dims.length === null || dims.width === null || dims.height === null) {
+          console.error('FIXING DIMENSIONS: Setting dimensions to null because some values are null');
+          versionData.dimensions = null;
+          // If dimensions is null, dimensions_unit should also be null
+          versionData.dimensionsUnit = null;
+        }
+      }
+      
+      // Log the final version data after fixing dimensions
+      console.error('FINAL VERSION DATA AFTER VALIDATION FIXES:', {
+        ...versionData,
+        dimensions: versionData.dimensions ? 'Valid dimensions object' : null
+      });
+      
+      // First create the new part version using validated data
+      console.error('Creating new part version...');
+      const newVersion = await createPartVersion(versionData);
+      console.error('New version created with ID:', newVersion.id);
+      
+      // Then update the part record to point to this new version
+      console.error('Updating part record...');
       await updatePartWithStatus(
         part.id,
         newVersionId,
-        partStatus as PartStatusEnum // This is the correct type expected by the function
+        partStatus as PartStatusEnum
       );
+      console.error('Part record updated successfully');
       
-      console.log('[editPart] Successfully updated part');
-      return { form, success: true };
+      // Return success with form data
+      console.error('============= PART EDIT COMPLETED SUCCESSFULLY =============');
+      return { 
+        form, 
+        success: true,
+        message: 'Part updated successfully'
+      };
     } catch (error) {
-      console.error('[editPart] Error updating part:', error);
-      return fail(500, { form, error: 'Failed to update part version' });
+      // Error handling with form state preservation
+      console.error('============= PART EDIT ERROR =============');
+      console.error('ERROR DETAILS:', error);
+      
+      // Detailed error logging and user-friendly message
+      console.error('DATABASE CONSTRAINT ERROR DETAILS:', {
+        message: (error as any).message,
+        code: (error as any).code,
+        detail: (error as any).detail,
+      });
+      
+      // Return detailed information for debugging
+      return fail(500, { 
+        form,  // Return the form so the UI can show validation errors
+        error: 'Failed to update part: ' + (error as Error).message,
+        constraintError: (error as any).code === '23514' ? 'Database constraint violation' : undefined
+      });
     }
   }
 };

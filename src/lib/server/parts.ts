@@ -539,8 +539,18 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
     createdBy: string;
 }): Promise<PartVersion> {
     try {
-        console.log('[createPartVersion] Creating new version with NAME:', partVersion.name);
-        console.log('[createPartVersion] Complete version data:', JSON.stringify(partVersion, null, 2));
+        // SUPER DETAILED LOGGING FOR DEBUG
+        console.log('[createPartVersion] 🚨🚨🚨 ATTEMPTING TO CREATE VERSION');
+        console.log('[createPartVersion] 🚨 REQUIRED FIELDS CHECK:');
+        console.log(`  - id provided: ${!!partVersion.id} (${partVersion.id})`);
+        console.log(`  - partId provided: ${!!partVersion.partId} (${partVersion.partId})`);
+        console.log(`  - name provided: ${!!partVersion.name} (${partVersion.name})`);
+        console.log(`  - version provided: ${!!partVersion.version} (${partVersion.version})`);
+        console.log(`  - status provided: ${!!partVersion.status} (${partVersion.status})`);
+        console.log(`  - createdBy provided: ${!!partVersion.createdBy} (${partVersion.createdBy})`);
+        
+        // Detailed logging to see ALL properties
+        console.log('[createPartVersion] COMPLETE INCOMING DATA:', JSON.stringify(partVersion, null, 2));
         
         // Create a complete insert query that handles ALL fields
         const insertQuery = `
@@ -604,11 +614,26 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
             partVersion.revisionNotes || null
         ];
         
-        console.log('[createPartVersion] Complete DB parameters:', {
+        console.log('[createPartVersion] 💥 FINAL DATABASE PARAMETERS:', {
             name: partVersion.name,
             id: partVersion.id,
+            version: partVersion.version,
+            status: partVersion.status,
+            partId: partVersion.partId,
+            createdBy: partVersion.createdBy,
             totalParams: params.length
         });
+        
+        // Extra validation to catch common failures
+        if (!partVersion.name || !partVersion.version || !partVersion.status) {
+            console.error('[createPartVersion] ❌ CRITICAL ERROR - MISSING REQUIRED FIELDS');
+            const errorDetails = {
+                name: partVersion.name ? 'OK' : 'MISSING',
+                version: partVersion.version ? 'OK' : 'MISSING',
+                status: partVersion.status ? 'OK' : 'MISSING'
+            };
+            console.error('[createPartVersion] ❌ MISSING FIELD DETAILS:', errorDetails);
+        }
         
         // Execute query with only essential parameters
         const insertResult = await client.query(insertQuery, params);

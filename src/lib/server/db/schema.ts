@@ -80,11 +80,20 @@ export const categorySchema = z.object({
 	deleted_at: z.date().optional().nullable(), // TIMESTAMPTZ
 	deleted_by: z.string().uuid().optional().nullable() // UUID REFERENCES "User"(id)
 });
-const dimensionSchema = z.object({
+// Define dimensions with clear validation rules
+export const dimensionSchema = z.object({
 	length: z.number().positive(),
 	width: z.number().positive(),
 	height: z.number().positive()
 });
+
+// Define a nullable dimension schema for editing that properly handles partial updates
+export const nullableDimensionSchema = z.object({
+	length: z.number().positive().nullable(),
+	width: z.number().positive().nullable(),
+	height: z.number().positive().nullable()
+}).nullable();
+
 export const partSchema = z.object({
 	id: z.string().uuid(),
 	creatorId: z.string().uuid(),
@@ -139,16 +148,8 @@ export const partVersionSchemaBase = z.object({
 	updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(id)
 	updated_at: z.date() // TIMESTAMPTZ DEFAULT NOW() NOT NULL
 });
-// Schema used for CREATING a new part version - has required fields
+// Create the schema with required and optional fields
 export const partVersionSchema = partVersionSchemaBase
-
-// Schema specifically for EDITING a part version - all fields optional except ID
-export const partVersionEditSchema = partVersionSchemaBase.extend({
-  // Make name, version and status optional for editing
-  name: z.string().min(3).max(100).optional(),
-  version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
-  status: z.nativeEnum(LifecycleStatusEnum).optional()
-})
 	.refine((data) => (data.weight === undefined) === (data.weight_unit === undefined), {
 		message: 'Weight and unit must both be present or omitted',
 		path: ['weight_unit']
@@ -189,6 +190,79 @@ export const partVersionEditSchema = partVersionSchemaBase.extend({
 			data.storage_temperature_max >= data.storage_temperature_min,
 		{ message: 'Storage temp max must be >= min', path: ['storage_temperature_max'] }
 	);
+
+// Create a more reliable edit schema based on the core schema but relaxing requirements
+export const partVersionEditSchema = partVersionSchemaBase.extend({
+  // Make all required fields have defaults from the existing part version
+  name: z.string().min(3).max(100).optional(),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+  status: z.nativeEnum(LifecycleStatusEnum).optional(),
+  
+  // Use nullable dimension schema to properly handle dimension fields
+  dimensions: nullableDimensionSchema,
+  
+  // Add the special part status field for part status updates
+  partStatus: z.nativeEnum(PartStatusEnum).optional()
+})
+.omit({
+  // Omit these fields since they'll be supplied by the system
+  created_at: true,
+  created_by: true
+})
+.superRefine((data, ctx) => {
+  // Special validation: ensure required field values are properly typed
+  // but don't fail validation if they're missing (we'll supply defaults)
+  if (data.name !== undefined && typeof data.name !== 'string') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.invalid_type,
+      expected: 'string',
+      received: typeof data.name,
+      path: ['name']
+    });
+  }
+  
+  if (data.version !== undefined && typeof data.version !== 'string') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.invalid_type,
+      expected: 'string',
+      received: typeof data.version,
+      path: ['version']
+    });
+  }
+  
+  // Handle dimensions validation - verify that if present, it's properly formatted
+  if (data.dimensions !== null && data.dimensions !== undefined) {
+    // If any dimension is provided, all dimensions must be valid numbers or null
+    const dims = data.dimensions as any;
+    
+    // If any dimension is not null, validate it
+    if (dims.length !== null && (typeof dims.length !== 'number' || dims.length <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Length must be a positive number',
+        path: ['dimensions', 'length']
+      });
+    }
+    
+    if (dims.width !== null && (typeof dims.width !== 'number' || dims.width <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Width must be a positive number',
+        path: ['dimensions', 'width']
+      });
+    }
+    
+    if (dims.height !== null && (typeof dims.height !== 'number' || dims.height <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Height must be a positive number',
+        path: ['dimensions', 'height']
+      });
+    }
+  }
+});
+
+// Add detailed passthrough mode for the editor
 
 export const createPartSchema = z
 	.object({
