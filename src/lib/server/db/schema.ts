@@ -139,7 +139,16 @@ export const partVersionSchemaBase = z.object({
 	updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(id)
 	updated_at: z.date() // TIMESTAMPTZ DEFAULT NOW() NOT NULL
 });
+// Schema used for CREATING a new part version - has required fields
 export const partVersionSchema = partVersionSchemaBase
+
+// Schema specifically for EDITING a part version - all fields optional except ID
+export const partVersionEditSchema = partVersionSchemaBase.extend({
+  // Make name, version and status optional for editing
+  name: z.string().min(3).max(100).optional(),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+  status: z.nativeEnum(LifecycleStatusEnum).optional()
+})
 	.refine((data) => (data.weight === undefined) === (data.weight_unit === undefined), {
 		message: 'Weight and unit must both be present or omitted',
 		path: ['weight_unit']

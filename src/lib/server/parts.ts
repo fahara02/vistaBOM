@@ -540,20 +540,27 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
 }): Promise<PartVersion> {
     try {
         console.log('[createPartVersion] Creating new version with NAME:', partVersion.name);
-        console.log('[createPartVersion] Full data:', JSON.stringify(partVersion, null, 2));
+        console.log('[createPartVersion] Complete version data:', JSON.stringify(partVersion, null, 2));
         
-        // Use a simplified query with required fields and common optional fields
+        // Create a complete insert query that handles ALL fields
         const insertQuery = `
             INSERT INTO "PartVersion" (
                 id, part_id, version, name, status, created_by, created_at,
-                short_description, functional_description, long_description
+                short_description, functional_description, long_description,
+                voltage_rating_min, voltage_rating_max, current_rating_min, current_rating_max,
+                power_rating_max, tolerance, tolerance_unit, electrical_properties,
+                dimensions, dimensions_unit, weight, weight_unit, package_type, pin_count,
+                mechanical_properties, material_composition,
+                operating_temperature_min, operating_temperature_max,
+                storage_temperature_min, storage_temperature_max, temperature_unit, thermal_properties,
+                technical_specifications, properties, environmental_data, revision_notes
             ) VALUES (
                 $1, $2, $3, $4, $5::TEXT::lifecycle_status_enum, $6, NOW(),
-                $7, $8, $9
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+                $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
             ) RETURNING *
         `;
         
-        // Log the exact parameters being sent to database
         const params = [
             partVersion.id,
             partVersion.partId,
@@ -561,19 +568,47 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
             partVersion.name,
             partVersion.status,
             partVersion.createdBy,
+            // Optional fields - pass null if not present
             partVersion.shortDescription || null,
-            partVersion.functionalDescription || null, 
-            partVersion.longDescription || null
+            partVersion.functionalDescription || null,
+            partVersion.longDescription || null,
+            // Electrical properties
+            partVersion.voltageRatingMin || null,
+            partVersion.voltageRatingMax || null,
+            partVersion.currentRatingMin || null,
+            partVersion.currentRatingMax || null,
+            partVersion.powerRatingMax || null,
+            partVersion.tolerance || null,
+            partVersion.toleranceUnit || null,
+            partVersion.electricalProperties || null,
+            // Mechanical properties
+            partVersion.dimensions || null,
+            partVersion.dimensionsUnit || null,
+            partVersion.weight || null,
+            partVersion.weightUnit || null,
+            partVersion.packageType || null,
+            partVersion.pinCount || null,
+            partVersion.mechanicalProperties || null,
+            partVersion.materialComposition || null,
+            // Thermal properties
+            partVersion.operatingTemperatureMin || null,
+            partVersion.operatingTemperatureMax || null,
+            partVersion.storageTemperatureMin || null,
+            partVersion.storageTemperatureMax || null,
+            partVersion.temperatureUnit || null,
+            partVersion.thermalProperties || null,
+            // Other properties
+            partVersion.technicalSpecifications || null,
+            partVersion.properties || null,
+            partVersion.environmentalData || null,
+            partVersion.revisionNotes || null
         ];
         
-        console.log('[createPartVersion] 🚨 PARAMETERS SENT TO DB:', {
-            name: params[3], // Name parameter
-            id: params[0],
-            version: params[2]
+        console.log('[createPartVersion] Complete DB parameters:', {
+            name: partVersion.name,
+            id: partVersion.id,
+            totalParams: params.length
         });
-        
-        // Force-escaping name to avoid SQL issues
-        params[3] = String(params[3]).replace(/'/g, "''");
         
         // Execute query with only essential parameters
         const insertResult = await client.query(insertQuery, params);
