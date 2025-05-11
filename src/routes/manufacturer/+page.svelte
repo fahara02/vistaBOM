@@ -1,3 +1,4 @@
+<!-- src/routes/manufacturer/+page.svelte -->
 <script lang="ts">
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';

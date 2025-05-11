@@ -24,9 +24,9 @@
 			</li>
 			<li
 				class="nav-item"
-				aria-current={page.url.pathname.startsWith('/sverdle') ? 'page' : undefined}
+				aria-current={page.url.pathname.startsWith('/catagory') ? 'page' : undefined}
 			>
-				<a href="/sverdle">Sverdle</a>
+				<a href="/catagory">Catagory</a>
 			</li>
 			<li class="nav-item" aria-current={page.url.pathname === '/parts/new' ? 'page' : undefined}>
 				<a href="/parts/new">Add Part</a>

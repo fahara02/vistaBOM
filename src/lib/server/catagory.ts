@@ -50,7 +50,7 @@ export async function createCategory(
     let parentPath: string | null = null;
     if (parentId) {
       const parentResult = await client.query(
-        'SELECT path FROM Category WHERE id = $1 AND is_deleted = false',
+        'SELECT path::text AS path FROM Category WHERE id = $1 AND is_deleted = false',
         [parentId]
       );
   
@@ -68,25 +68,32 @@ export async function createCategory(
   
     // **Step 4: Insert New Category**
     try {
-      const result = await client.query(
-        `INSERT INTO Category (
+      // Inline path literal to bypass LTREE driver type error
+      const insertSql = `
+        INSERT INTO Category (
+          name, parent_id, path, created_by, description, is_public
+        ) VALUES (
+          $1, $2, '${newPath}', $3, $4, $5
+        ) RETURNING
+          id,
           name,
           parent_id,
-          path,
-          created_by,
           description,
-          is_public
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *`,
-        [
-          name,
-          parentId || null, // Explicitly pass null if no parentId
-          newPath,
-          createdBy,
-          description || null,
-          isPublic
-        ]
-      );
+          created_by,
+          created_at,
+          updated_by,
+          updated_at,
+          is_public,
+          is_deleted,
+          deleted_at,
+          deleted_by`;
+      const result = await client.query(insertSql, [
+        name,
+        parentId || null,
+        createdBy,
+        description || null,
+        isPublic
+      ]);
   
       if (result.rows.length === 0) {
         throw new Error('Failed to create category');
@@ -99,7 +106,7 @@ export async function createCategory(
         id: row.get('id') as string,
         name: row.get('name') as string,
         parentId: row.get('parent_id') as string | undefined,
-        path: row.get('path') as string,
+        path: newPath,
         description: row.get('description') as string | undefined,
         createdBy: row.get('created_by') as string,
         createdAt: row.get('created_at') as Date,

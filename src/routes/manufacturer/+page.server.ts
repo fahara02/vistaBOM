@@ -1,3 +1,4 @@
+// src/routes/manufacturer/+page.server.ts
 import type { PageServerLoad, Actions } from './$types';
 import client from '$lib/server/db/index';
 import { listManufacturers, createManufacturer } from '$lib/server/manufacturer';
