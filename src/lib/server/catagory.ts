@@ -214,16 +214,16 @@ export async function updateCategory(
 	return mapCategory(result.rows[0]);
 }
 
-// Soft delete category with transaction
-export async function deleteCategory(client: Client, id: string, userId: string): Promise<void> {
-	await client.query(
-		`UPDATE Category
-         SET is_deleted = true,
-             deleted_at = NOW(),
-             deleted_by = $1
-         WHERE id = $2`,
-		[userId, id]
-	);
+// Soft-delete a category by marking is_deleted
+export async function deleteCategory(
+  client: Client,
+  id: string,
+  userId: string
+): Promise<void> {
+  await client.query(
+    'UPDATE Category SET is_deleted = true, deleted_by = $1, deleted_at = NOW() WHERE id = $2',
+    [userId, id]
+  );
 }
 
 // Get hierarchical children with ltree
