@@ -19,7 +19,7 @@ import {
   LifecycleStatusEnum,
   ComplianceTypeEnum,
   StructuralRelationTypeEnum,
-
+  PartStatusEnum,
 } from './db/types';
 
 /**
@@ -254,8 +254,8 @@ export interface CreatePartInput {
     name: string;
     version: string;
     status: LifecycleStatusEnum;
-    // New field for Part status (concept, active, obsolete, archived)
-    partStatus?: string;
+    // Use PartStatusEnum instead of string
+    partStatus?: PartStatusEnum;
     shortDescription?: string | null;
     functionalDescription?: string | null;
     // Allow more flexible property types to match form data
@@ -304,8 +304,8 @@ export async function createPart(
         // Start transaction
         await client.query('BEGIN');
         
-        // Use the partStatus field if provided, otherwise default to 'concept'
-        const partStatusToUse = input.partStatus || 'concept';
+        // Use the partStatus field if provided, otherwise default to CONCEPT
+        const partStatusToUse = input.partStatus || PartStatusEnum.CONCEPT;
         console.log('[createPart] Using Part status:', partStatusToUse);
         
         const partSql = `
@@ -315,7 +315,7 @@ export async function createPart(
             '${partId}', 
             '${userId}', 
             '${input.name.replace(/'/g, "''")}', 
-            '${partStatusToUse}'::part_status_enum, 
+            '${String(partStatusToUse).toLowerCase()}'::part_status_enum, 
             '${statusLower}'::lifecycle_status_enum
         )`;
         

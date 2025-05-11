@@ -2,7 +2,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, LifecycleStatusEnum } from '$lib/types';
+  import { PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, LifecycleStatusEnum, PartStatusEnum } from '$lib/types';
   import type { SuperForm } from 'sveltekit-superforms';
   import type { createPartSchema } from '$lib/server/db/schema';
 
@@ -17,7 +17,7 @@
   export let dimensionUnits: string[] = [];
   
   // Part status options (separate from lifecycle status)
-  export let partStatuses: string[] = ['concept', 'active', 'obsolete', 'archived'];
+  export let partStatuses: string[] = Object.values(PartStatusEnum);
 
   const buttonText = isEditMode ? 'Save Changes' : 'Create Part';
 

@@ -5,7 +5,8 @@ import { fail, redirect } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import { createPartSchema } from '$lib/server/db/schema';
-import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum } from '$lib/server/db/types';
+// Server-side code should import directly from server types
+import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum } from '$lib/server/db/types';
 
 /**
  * Load function - initializes the form and loads lifecycle statuses
@@ -92,9 +93,9 @@ export const actions: Actions = {
       // DIRECT APPROACH: Get the lifecycle status from the form
       const selectedLifecycleStatus = form.data.status;
       
-      // Get the part status from the form or default to 'concept' if not provided
+      // Get the part status from the form or default to CONCEPT if not provided
       // This is the status for the Part table separate from its lifecycle status
-      const selectedPartStatus = form.data.partStatus || 'concept';
+      const selectedPartStatus = form.data.partStatus || PartStatusEnum.CONCEPT;
       
       console.log('SELECTED LIFECYCLE STATUS:', selectedLifecycleStatus);
       console.log('SELECTED PART STATUS:', selectedPartStatus);
