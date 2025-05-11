@@ -187,7 +187,7 @@ export const createPartSchema = z
 			.string()
 			.regex(/^\d+\.\d+\.\d+$/)
 			.default('0.1.0'), // from partVersionSchema
-		status: z.nativeEnum(LifecycleStatusEnum).default(LifecycleStatusEnum.Draft), // from partVersionSchema (using lifecycle status)
+		status: z.nativeEnum(LifecycleStatusEnum).default(LifecycleStatusEnum.DRAFT), // from partVersionSchema (using lifecycle status)
 		// Add other fields required for the initial version creation if needed
 		short_description: z.string().max(200).optional().nullable(),
 		long_description: jsonSchema.optional().nullable(),
@@ -302,7 +302,7 @@ export const partStructureSchema = z.object({
 	child_part_id: z.string().uuid(), // UUID NOT NULL REFERENCES Part(id)
 	relation_type: z
 		.nativeEnum(StructuralRelationTypeEnum)
-		.default(() => StructuralRelationTypeEnum.Component), // structural_relation_type_enum DEFAULT 'component' NOT NULL
+		.default(() => StructuralRelationTypeEnum.COMPONENT), // structural_relation_type_enum DEFAULT 'component' NOT NULL
 	quantity: z.number().positive().default(1), // NUMERIC NOT NULL DEFAULT 1 CHECK (quantity > 0)
 	notes: z.string().optional().nullable(), // TEXT
 	created_by: z.string().uuid().optional(), // Added based on SQL

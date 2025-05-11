@@ -32,7 +32,13 @@ if (dbUrl.password) {
 } else if (env.DB_PASSWORD) {
 	connectionOptions.password = env.DB_PASSWORD;
 }
-const client: Client = await connect(connectionOptions);
+// Use the standard connection approach but configure some options to handle enum types better
+const client = await connect(connectionOptions);
+
+// Add specific SQL statements to handle enum types
+// This tells PostgreSQL server to use text format when possible, which avoids binary encoding issues
+await client.query(`SET bytea_output = 'escape';`);
+await client.query(`SET client_encoding = 'UTF8';`);
 export function getClient():Client{
     return client;
 }

@@ -22,6 +22,7 @@
 				<td>{part.status}</td>
 				<td>{currentVersion.version}</td>
 				<td>
+					<!-- Debug: {JSON.stringify(part)} -->
 					<a href={`/parts/${part.id}`} class="btn-link">View</a>
 					{#if data.user?.id === part.creatorId}
 						<a href={`/parts/${part.id}/edit`} class="btn-link">Edit</a>

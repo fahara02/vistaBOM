@@ -22,67 +22,120 @@ import {
 
 } from './db/types';
 
+/**
+ * Safe SQL string literal helper function.
+ * Prevents SQL injection when using raw string interpolation.
+ * @param str The string to sanitize for SQL
+ * @returns A string safe to use in SQL queries
+ */
+function sanitizeSqlString(str: string): string {
+	// Double single quotes for SQL safety
+	return str.replace(/'/g, "''");
+}
+
 const client = getClient();
 
 /**
  * List all parts with their current version
  */
 export async function listParts(): Promise<Array<{ part: Part; currentVersion: PartVersion }>> {
-	const result = await client.query(
-		`
-    SELECT
-      p.id AS id,
-      p.creator_id AS creatorId,
-      p.global_part_number AS globalPartNumber,
-      p.status AS status,
-      p.lifecycle_status AS lifecycleStatus,
-      p.is_public AS isPublic,
-      p.created_at AS partCreatedAt,
-      p.updated_by AS partUpdatedBy,
-      p.updated_at AS partUpdatedAt,
-      p.current_version_id AS currentVersionId,
-      pv.id AS versionId,
-      pv.part_id AS versionPartId,
-      pv.version AS version,
-      pv.name AS name,
-      pv.short_description AS shortDescription,
-      pv.status AS versionStatus,
-      pv.created_by AS versionCreatedBy,
-      pv.created_at AS versionCreatedAt,
-      pv.updated_by AS versionUpdatedBy,
-      pv.updated_at AS versionUpdatedAt
-    FROM "Part" p
-    JOIN "PartVersion" pv ON p.current_version_id = pv.id
-    ORDER BY p.created_at DESC
-    `
-	);
-	return result.rows.map((row: any) => {
-		const part: Part = {
-			id: row.id,
-			creatorId: row.creatorId,
-			globalPartNumber: row.globalPartNumber ?? undefined,
-			status: row.status,
-			lifecycleStatus: row.lifecycleStatus,
-			isPublic: row.isPublic,
-			createdAt: row.partCreatedAt,
-			updatedBy: row.partUpdatedBy ?? undefined,
-			updatedAt: row.partUpdatedAt,
-			currentVersionId: row.currentVersionId ?? undefined
-		};
-		const currentVersion: PartVersion = {
-			id: row.versionId,
-			partId: row.versionPartId,
-			version: row.version,
-			name: row.name,
-			shortDescription: row.shortDescription ?? undefined,
-			status: row.versionStatus,
-			createdBy: row.versionCreatedBy,
-			createdAt: row.versionCreatedAt,
-			updatedBy: row.versionUpdatedBy ?? undefined,
-			updatedAt: row.versionUpdatedAt
-		};
-		return { part, currentVersion };
-	});
+	try {
+		console.log('[listParts] Retrieving all parts');
+		
+		// COMPLETELY DIFFERENT APPROACH: Execute as a raw SQL query
+		// This avoids the ts-postgres driver binary serialization issues with enums
+		const rawSql = `
+		SELECT 
+			p.id::TEXT AS id,
+			p.creator_id::TEXT AS creator_id,
+			p.global_part_number::TEXT AS global_part_number,
+			p.status::TEXT AS status,
+			p.lifecycle_status::TEXT AS lifecycle_status,
+			p.is_public::TEXT AS is_public,
+			p.created_at::TEXT AS part_created_at,
+			p.updated_by::TEXT AS part_updated_by,
+			p.updated_at::TEXT AS part_updated_at,
+			p.current_version_id::TEXT AS current_version_id,
+			pv.id::TEXT AS version_id,
+			pv.part_id::TEXT AS version_part_id,
+			pv.version::TEXT AS version,
+			pv.name::TEXT AS name,
+			pv.short_description::TEXT AS short_description,
+			pv.status::TEXT AS version_status,
+			pv.created_by::TEXT AS version_created_by,
+			pv.created_at::TEXT AS version_created_at,
+			pv.updated_by::TEXT AS version_updated_by,
+			pv.updated_at::TEXT AS version_updated_at
+		FROM "Part" p
+		JOIN "PartVersion" pv ON p.current_version_id = pv.id
+		ORDER BY p.created_at DESC
+		`;
+		
+		console.log(`[listParts] Executing raw SQL: ${rawSql.replace(/\s+/g, ' ')}`);
+		const result = await client.query(rawSql);
+
+		if (result.rows.length === 0) {
+			return [];
+		}
+		
+		// Log raw rows for debugging
+		console.log(`[listParts] Raw database result:`, JSON.stringify(result.rows, null, 2));
+		
+		// FIXED: The result is an array of arrays, not objects with named properties
+		return result.rows.map((rawRow: any) => {
+			// Raw row is an array with ordered columns, so we need to access by index
+			// Based on the SELECT statement, here's the mapping:
+			// 0: id, 1: creator_id, 2: global_part_number, 3: status, 4: lifecycle_status, 
+			// 5: is_public, 6: part_created_at, 7: part_updated_by, 8: part_updated_at, 
+			// 9: current_version_id, 10: version_id, 11: version_part_id, 12: version,
+			// 13: name, 14: short_description, 15: version_status, 16: version_created_by,
+			// 17: version_created_at, 18: version_updated_by, 19: version_updated_at
+			
+			// Ensure we get a valid part ID
+			const partId = rawRow[0]?.toString(); 
+			console.log(`[listParts] Processing part with real ID: '${partId}'`);
+			
+			if (!partId) {
+				console.error('[listParts] Found a row with null part ID');
+			}
+
+			const part: Part = {
+				id: partId, // This is the actual database ID
+				creatorId: rawRow[1]?.toString(),
+				globalPartNumber: rawRow[2]?.toString() || undefined,
+				status: rawRow[3]?.toString(),
+				lifecycleStatus: rawRow[4]?.toString(),
+				isPublic: rawRow[5] === 'true', // Convert string to boolean
+				createdAt: rawRow[6] ? new Date(rawRow[6]) : new Date(),
+				updatedBy: rawRow[7]?.toString() || undefined,
+				updatedAt: rawRow[8] ? new Date(rawRow[8]) : new Date(),
+				currentVersionId: rawRow[9]?.toString() || undefined
+			};
+			
+			// Log part object to verify ID is present
+			console.log(`[listParts] Created part object with ID: ${part.id}`, JSON.stringify(part, null, 2));
+
+			const currentVersion: PartVersion = {
+				id: rawRow[10]?.toString(),
+				partId: rawRow[11]?.toString(),
+				version: rawRow[12]?.toString(),
+				name: rawRow[13]?.toString(),
+				shortDescription: rawRow[14]?.toString() || undefined,
+				// Map string status to a proper enum value
+				status: rawRow[15] && rawRow[15] in LifecycleStatusEnum ? 
+					rawRow[15] as LifecycleStatusEnum : 
+					LifecycleStatusEnum.DRAFT,
+				createdBy: rawRow[16]?.toString(),
+				createdAt: rawRow[17] ? new Date(rawRow[17]) : new Date(),
+				updatedBy: rawRow[18]?.toString() || undefined,
+				updatedAt: rawRow[19] ? new Date(rawRow[19]) : new Date() // Default to current date if undefined
+			};
+			return { part, currentVersion };
+		});
+	} catch (error) {
+		console.error('Error in listParts:', error);
+		return [];
+	}
 }
 
 /**
@@ -91,64 +144,111 @@ export async function listParts(): Promise<Array<{ part: Part; currentVersion: P
 export async function getPartWithCurrentVersion(
 	partId: string
 ): Promise<{ part: Part; currentVersion: PartVersion }> {
-	const result = await client.query(
-		`
-    SELECT
-      p.id AS id,
-      p.creator_id AS creatorId,
-      p.global_part_number AS globalPartNumber,
-      p.status AS status,
-      p.lifecycle_status AS lifecycleStatus,
-      p.is_public AS isPublic,
-      p.created_at AS partCreatedAt,
-      p.updated_by AS partUpdatedBy,
-      p.updated_at AS partUpdatedAt,
-      p.current_version_id AS currentVersionId,
-      pv.id AS versionId,
-      pv.part_id AS versionPartId,
-      pv.version AS version,
-      pv.name AS name,
-      pv.short_description AS shortDescription,
-      pv.status AS versionStatus,
-      pv.created_by AS versionCreatedBy,
-      pv.created_at AS versionCreatedAt,
-      pv.updated_by AS versionUpdatedBy,
-      pv.updated_at AS versionUpdatedAt
-    FROM "Part" p
-    JOIN "PartVersion" pv ON p.current_version_id = pv.id
-    WHERE p.id = $1
-    `,
-		[partId]
-	);
-	if (!result.rows.length) {
-		throw new Error('Part not found');
+	try {
+		// Stronger validation for partId parameter to avoid database errors
+		if (!partId || partId === 'undefined' || partId === 'null' || partId.trim() === '') {
+			console.error(`[getPartWithCurrentVersion] Invalid part ID: '${partId}'`);
+			throw new Error(`Invalid part ID: cannot be undefined, null, or empty`);
+		}
+
+		console.log(`[getPartWithCurrentVersion] Retrieving part with ID: ${partId}`);
+		
+		// COMPLETELY DIFFERENT APPROACH: Execute as a raw SQL query
+		// This avoids the ts-postgres driver binary serialization issues with enums
+		// by executing the query as raw SQL and not using the parametrized query mechanism
+		
+		
+		const rawSql = `
+		SELECT 
+			p.id::TEXT AS id,
+			p.creator_id::TEXT AS creator_id,
+			p.global_part_number::TEXT AS global_part_number,
+			p.status::TEXT AS status,
+			p.lifecycle_status::TEXT AS lifecycle_status,
+			p.is_public::TEXT AS is_public,
+			p.created_at::TEXT AS part_created_at,
+			p.updated_by::TEXT AS part_updated_by,
+			p.updated_at::TEXT AS part_updated_at,
+			p.current_version_id::TEXT AS current_version_id,
+			pv.id::TEXT AS version_id,
+			pv.part_id::TEXT AS version_part_id,
+			pv.version::TEXT AS version,
+			pv.name::TEXT AS name,
+			pv.short_description::TEXT AS short_description,
+			pv.status::TEXT AS version_status,
+			pv.created_by::TEXT AS version_created_by,
+			pv.created_at::TEXT AS version_created_at,
+			pv.updated_by::TEXT AS version_updated_by,
+			pv.updated_at::TEXT AS version_updated_at
+		FROM "Part" p
+		JOIN "PartVersion" pv ON p.current_version_id = pv.id
+		WHERE p.id::TEXT = '${sanitizeSqlString(partId)}'
+		`;
+		
+		console.log(`[getPartWithCurrentVersion] Executing raw SQL: ${rawSql.replace(/\s+/g, ' ')}`);
+		const result = await client.query(rawSql);
+
+		if (result.rows.length === 0) {
+			throw new Error(`Part not found with ID: ${partId}`);
+		}
+		
+		// Use array indexing to access the raw result
+		const rawRow = result.rows[0];
+		console.log(`[getPartWithCurrentVersion] Raw result:`, rawRow);
+
+		// Raw row is an array with ordered columns, based on our SELECT statement
+		// 0: id, 1: creator_id, 2: global_part_number, 3: status, 4: lifecycle_status, 
+		// 5: is_public, 6: part_created_at, 7: part_updated_by, 8: part_updated_at, 
+		// 9: current_version_id, 10: version_id, 11: version_part_id, 12: version,
+		// 13: name, 14: short_description, 15: version_status, 16: version_created_by,
+		// 17: version_created_at, 18: version_updated_by, 19: version_updated_at
+		
+		// Ensure we get a valid, non-undefined part ID
+		const partIdStr = rawRow[0]?.toString();
+		console.log(`[getPartWithCurrentVersion] Processing part with raw ID: '${partIdStr}'`);
+		
+		if (!partIdStr) {
+			console.error('[getPartWithCurrentVersion] Found a part with undefined or null ID!', rawRow);
+			throw new Error('Retrieved part has no valid ID');
+		}
+
+		const part: Part = {
+			id: partIdStr, // This is the actual database ID
+			creatorId: rawRow[1]?.toString(),
+			globalPartNumber: rawRow[2]?.toString() || undefined,
+			status: rawRow[3]?.toString(),
+			lifecycleStatus: rawRow[4]?.toString(),
+			isPublic: rawRow[5] === 'true', // Convert string to boolean
+			createdAt: rawRow[6] ? new Date(rawRow[6]) : new Date(),
+			updatedBy: rawRow[7]?.toString() || undefined,
+			updatedAt: rawRow[8] ? new Date(rawRow[8]) : new Date(),
+			currentVersionId: rawRow[9]?.toString() || undefined
+		};
+
+		const currentVersion: PartVersion = {
+			id: rawRow[10]?.toString(),
+			partId: rawRow[11]?.toString(),
+			version: rawRow[12]?.toString(),
+			name: rawRow[13]?.toString(),
+			shortDescription: rawRow[14]?.toString() || undefined,
+			// Map string status to a proper enum value
+			status: rawRow[15] && rawRow[15] in LifecycleStatusEnum ? 
+				rawRow[15] as LifecycleStatusEnum : 
+				LifecycleStatusEnum.DRAFT,
+			createdBy: rawRow[16]?.toString(),
+			createdAt: rawRow[17] ? new Date(rawRow[17]) : new Date(),
+			updatedBy: rawRow[18]?.toString() || undefined,
+			updatedAt: rawRow[19] ? new Date(rawRow[19]) : new Date() 
+		};
+		
+		// Log the mapped object for debugging
+		console.log(`[getPartWithCurrentVersion] Mapped part object with ID: ${part.id}`)
+
+		return { part, currentVersion };
+	} catch (error) {
+		console.error(`[getPartWithCurrentVersion] Error retrieving part ${partId}:`, error);
+		throw error;
 	}
-	const row: any = result.rows[0];
-	const part: Part = {
-		id: row.id,
-		creatorId: row.creatorId,
-		globalPartNumber: row.globalPartNumber ?? undefined,
-		status: row.status,
-		lifecycleStatus: row.lifecycleStatus,
-		isPublic: row.isPublic,
-		createdAt: row.partCreatedAt,
-		updatedBy: row.partUpdatedBy ?? undefined,
-		updatedAt: row.partUpdatedAt,
-		currentVersionId: row.currentVersionId ?? undefined
-	};
-	const currentVersion: PartVersion = {
-		id: row.versionId,
-		partId: row.versionPartId,
-		version: row.version,
-		name: row.name,
-		shortDescription: row.shortDescription ?? undefined,
-		status: row.versionStatus,
-		createdBy: row.versionCreatedBy,
-		createdAt: row.versionCreatedAt,
-		updatedBy: row.versionUpdatedBy ?? undefined,
-		updatedAt: row.versionUpdatedAt
-	};
-	return { part, currentVersion };
 }
 
 /**
@@ -156,42 +256,77 @@ export async function getPartWithCurrentVersion(
  */
 // src/lib/server/parts.ts - Updated createPart function with error logging
 export async function createPart(
-    input: { name: string; version: string; status: LifecycleStatusEnum },
+    input: { name: string; version: string; status: LifecycleStatusEnum; [key: string]: any },
     userId: string
 ): Promise<{ part: Part; currentVersion: PartVersion }> {
     const partId = randomUUID();
     const versionId = randomUUID();
     
+    // Debug the exact value we're getting for status
+    console.log('[createPart] Input data:', {
+        name: input.name,
+        version: input.version,
+        status: input.status,
+        statusType: typeof input.status,
+        statusValue: String(input.status)
+    });
+    
+    // Ensure status is a string - this handles enum values properly
+    const statusValue = String(input.status);
+    
     await client.query('BEGIN');
     
     try {
-        // Create part
-        await client.query(
-            `INSERT INTO "Part" (id, creator_id, status) 
-             VALUES ($1, $2, 'concept')`,
-            [partId, userId]
-        );
-
-        // Create version with all required fields
-        await client.query(
-            `INSERT INTO "PartVersion" (
-                id, part_id, version, name, status, created_by, tolerance_unit
-             ) VALUES ($1, $2, $3, $4, $5::text::lifecycle_status_enum, $6, NULL)`,
-            [versionId, partId, input.version, input.name, input.status, userId]
-        );
-
-        // Update current version
+        console.log('[createPart] Inserting Part:', { partId, userId, statusValue });
+        // COMPLETELY HARDCODE THE ENUM VALUES
+        // This bypasses any parameter binding for enum types
+        
+        // Build a dynamic SQL statement with hardcoded enum values
+        const partSql = `
+        INSERT INTO "Part" (
+            id, creator_id, global_part_number, status, lifecycle_status
+        ) VALUES (
+            '${partId}', 
+            '${userId}', 
+            '${input.name.replace(/'/g, "''")}', 
+            'concept', 
+            '${String(input.status).toLowerCase().replace(/'/g, "''")}'::lifecycle_status_enum
+        )`;
+        
+        console.log('[createPart] SQL:', partSql);
+        await client.query(partSql);
+        
+        console.log('[createPart] Part inserted, now Inserting PartVersion');
+        
+        // Similar approach for version insert
+        const versionSql = `
+        INSERT INTO "PartVersion" (
+            id, part_id, version, name, status, created_by, tolerance_unit
+        ) VALUES (
+            '${versionId}', 
+            '${partId}', 
+            '${input.version.replace(/'/g, "''")}', 
+            '${input.name.replace(/'/g, "''")}', 
+            '${String(input.status).toLowerCase().replace(/'/g, "''")}'::lifecycle_status_enum, 
+            '${userId}', 
+            NULL
+        )`;
+        
+        console.log('[createPart] VersionSQL:', versionSql);
+        await client.query(versionSql);
+        console.log('[createPart] PartVersion inserted, now updating Part current_version_id:', { versionId, partId });
         await client.query(
             `UPDATE "Part" 
              SET current_version_id = $1 
              WHERE id = $2`,
             [versionId, partId]
         );
+        console.log('[createPart] update committed for Part', partId);
 
         await client.query('COMMIT');
     } catch (error: any) {
         await client.query('ROLLBACK');
-        console.error('Database Error:', error.message); // Log detailed error
+        console.error('Database Error in createPart:', error.message, error.stack);
         throw error;
     }
 
@@ -231,7 +366,51 @@ export async function updatePartVersion(
  * Delete a part (cascades to versions)
  */
 export async function deletePart(partId: string): Promise<void> {
-	await client.query(`DELETE FROM "Part" WHERE id = $1`, [partId]);
+	try {
+		// Validate partId parameter to avoid database errors
+		if (!partId) {
+			throw new Error(`Invalid part ID: ${partId} is undefined or empty`);
+		}
+
+		console.log(`[deletePart] Deleting part with ID: ${partId}`);
+		
+		// Start a transaction for consistent deletion
+		await client.query('BEGIN');
+		
+		// First check if the part exists
+		const checkResult = await client.query(
+			`SELECT id FROM "Part" WHERE id = $1`,
+			[partId]
+		);
+		
+		if (checkResult.rows.length === 0) {
+			await client.query('ROLLBACK');
+			throw new Error(`Part not found with ID: ${partId}`);
+		}
+		
+		// Delete the part (will cascade to part versions due to database constraints)
+		const deleteResult = await client.query(
+			`DELETE FROM "Part" WHERE id = $1 RETURNING id`,
+			[partId]
+		);
+		
+		if (deleteResult.rows.length === 0) {
+			await client.query('ROLLBACK');
+			throw new Error(`Failed to delete part with ID: ${partId}`);
+		}
+		
+		await client.query('COMMIT');
+		console.log(`[deletePart] Successfully deleted part with ID: ${partId}`);
+	} catch (error) {
+		console.error(`[deletePart] Error deleting part ${partId}:`, error);
+		// Try to rollback if possible
+		try {
+			await client.query('ROLLBACK');
+		} catch (rollbackError) {
+			console.error('[deletePart] Error during rollback:', rollbackError);
+		}
+		throw error;
+	}
 }
 
 // ======================
@@ -263,6 +442,214 @@ export async function getCategoriesForPartVersion(partVersionId: string): Promis
     );
  
     return result.rows.map(rowToPartVersionCategory);
+};
+
+/**
+ * Create a new version of a part
+ */
+export async function createPartVersion(partVersion: Partial<PartVersion> & {
+    id: string;
+    partId: string;
+    version: string;
+    name: string;
+    status: string;
+    createdBy: string;
+}): Promise<PartVersion> {
+    try {
+        console.log('[createPartVersion] Creating new version:', JSON.stringify(partVersion, null, 2));
+        
+        // Build fields and values dynamically
+        const fields = ['id', 'part_id', 'version', 'name', 'status', 'created_by', 'created_at'];
+        const valueFields = ['$1', '$2', '$3', '$4', '$5::TEXT::lifecycle_status_enum', '$6', '$7'];
+        const values: any[] = [
+            partVersion.id,
+            partVersion.partId,
+            partVersion.version,
+            partVersion.name,
+            partVersion.status,
+            partVersion.createdBy,
+            partVersion.createdAt || new Date()
+        ];
+        
+        let paramIndex = 8;
+        
+        // Add optional fields
+        if (partVersion.shortDescription !== undefined) {
+            fields.push('short_description');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.shortDescription);
+            paramIndex++;
+        }
+        
+        // Add optional JSON fields - already stringified by the caller
+        if (partVersion.longDescription !== undefined) {
+            fields.push('long_description');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.longDescription as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.functionalDescription !== undefined) {
+            fields.push('functional_description');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.functionalDescription as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.technicalSpecifications !== undefined) {
+            fields.push('technical_specifications');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.technicalSpecifications as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.properties !== undefined) {
+            fields.push('properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.properties as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.electricalProperties !== undefined) {
+            fields.push('electrical_properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.electricalProperties as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.mechanicalProperties !== undefined) {
+            fields.push('mechanical_properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.mechanicalProperties as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.thermalProperties !== undefined) {
+            fields.push('thermal_properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.thermalProperties as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.weight !== undefined) {
+            fields.push('weight');
+            valueFields.push(`$${paramIndex}`);
+            // Convert number to string correctly
+            values.push(String(partVersion.weight));
+            paramIndex++;
+        }
+        
+        if (partVersion.weightUnit !== undefined) {
+            fields.push('weight_unit');
+            valueFields.push(`$${paramIndex}::TEXT::weight_unit_enum`);
+            values.push(partVersion.weightUnit as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.dimensions !== undefined) {
+            fields.push('dimensions');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(partVersion.dimensions as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.dimensionsUnit !== undefined) {
+            fields.push('dimensions_unit');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.dimensionsUnit as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.tolerance !== undefined) {
+            fields.push('tolerance');
+            valueFields.push(`$${paramIndex}`);
+            // Convert number to string correctly
+            values.push(String(partVersion.tolerance));
+            paramIndex++;
+        }
+        
+        if (partVersion.toleranceUnit !== undefined) {
+            fields.push('tolerance_unit');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.toleranceUnit as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.revisionNotes !== undefined) {
+            fields.push('revision_notes');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.revisionNotes as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.updatedBy !== undefined) {
+            fields.push('updated_by');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.updatedBy);
+            paramIndex++;
+        }
+        
+        if (partVersion.updatedAt !== undefined) {
+            fields.push('updated_at');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.updatedAt);
+            paramIndex++;
+        }
+        
+        // Construct and execute the query
+        const query = `
+            INSERT INTO "PartVersion" (${fields.join(', ')})
+            VALUES (${valueFields.join(', ')})
+            RETURNING *
+        `;
+        
+        console.log('[createPartVersion] Query:', query.replace(/\s+/g, ' '));
+        console.log('[createPartVersion] Values:', values.map(v => typeof v === 'object' ? JSON.stringify(v) : v));
+        
+        const result = await client.query(query, values);
+        const row = result.rows[0];
+        
+        // The ts-postgres driver returns fields as object properties with any type
+        // Access fields safely using indexing syntax which TypeScript allows for any object
+        const rowAsAny = row as any;
+        
+        // Map database columns to TypeScript object with proper typing
+        return {
+            id: rowAsAny.id,
+            partId: rowAsAny.part_id,
+            version: rowAsAny.version,
+            name: rowAsAny.name,
+            shortDescription: rowAsAny.short_description || undefined,
+            // Map the string status to a valid LifecycleStatusEnum value
+            status: rowAsAny.status in LifecycleStatusEnum ? 
+                rowAsAny.status as LifecycleStatusEnum : 
+                LifecycleStatusEnum.DRAFT,
+            createdBy: rowAsAny.created_by,
+            createdAt: rowAsAny.created_at,
+            updatedBy: rowAsAny.updated_by || undefined,
+            updatedAt: rowAsAny.updated_at
+        };
+    } catch (error) {
+        console.error('[createPartVersion] Error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update a part's current version reference
+ */
+export async function updatePartCurrentVersion(partId: string, versionId: string): Promise<void> {
+    try {
+        console.log('[updatePartCurrentVersion] Updating part', partId, 'to version', versionId);
+        await client.query(
+            'UPDATE "Part" SET current_version_id = $1 WHERE id = $2',
+            [versionId, partId]
+        );
+        console.log('[updatePartCurrentVersion] Successfully updated part', partId);
+    } catch (error) {
+        console.error('[updatePartCurrentVersion] Error updating part', partId, ':', error);
+        throw error;
+    }
 }
 
 // ======================
@@ -298,7 +685,7 @@ export async function updatePartStructure(
     let idx = 1;
 
     if (updates.relationType !== undefined) {
-        fields.push(`relation_type = $${idx}`);
+        fields.push(`relation_type = $${idx}::TEXT::structural_relation_type_enum`);
         values.push(updates.relationType);
         idx++;
     }
@@ -809,7 +1196,7 @@ export function createNewVersion(baseVersion: PartVersion, userId: string): Part
     version: (parseInt(baseVersion.version) + 1).toString(), // Simplistic increment; may need refinement.
     name: baseVersion.name,
     shortDescription: baseVersion.shortDescription,
-    status: LifecycleStatusEnum.Draft,
+    status: LifecycleStatusEnum.DRAFT,
     createdBy: userId,
     createdAt: new Date(),
     updatedBy: userId,
@@ -818,24 +1205,36 @@ export function createNewVersion(baseVersion: PartVersion, userId: string): Part
   };
 }
 
-/**
- * Create a new part version in the database.
- */
-export async function createPartVersion(newVersion: PartVersion): Promise<PartVersion> {
-  await client.query(
-    `INSERT INTO "PartVersion" (id, part_id, version, name, short_description, status, created_by, created_at, updated_by, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $8)`, // Using created_by and updated_by as same for simplicity
-    [newVersion.id, newVersion.partId, newVersion.version, newVersion.name, newVersion.shortDescription, newVersion.status, newVersion.createdBy, newVersion.createdAt]
-  );
-  return newVersion; // Return the created version; may need to fetch from DB for full data.
-}
+// These functions have been moved to earlier in the file
 
-/**
- * Update the current version ID of a part.
- */
-export async function updatePartCurrentVersion(partId: string, versionId: string): Promise<void> {
+// ======================
+// Update Part metadata
+// ======================
+export async function updatePart(
+  data: Partial<{ globalPartNumber: string; status: LifecycleStatusEnum; lifecycleStatus: LifecycleStatusEnum }> & { id: string }
+): Promise<void> {
+  const fields: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+  if (data.globalPartNumber !== undefined) {
+    fields.push(`global_part_number = $${idx}`);
+    values.push(data.globalPartNumber);
+    idx++;
+  }
+  if (data.status !== undefined) {
+    fields.push(`status = $${idx}::text::lifecycle_status_enum`);
+    values.push(data.status);
+    idx++;
+  }
+  if (data.lifecycleStatus !== undefined) {
+    fields.push(`lifecycle_status = $${idx}::text::lifecycle_status_enum`);
+    values.push(data.lifecycleStatus);
+    idx++;
+  }
+  if (!fields.length) return;
+  values.push(data.id);
   await client.query(
-    `UPDATE "Part" SET current_version_id = $1 WHERE id = $2`,
-    [versionId, partId]
+    `UPDATE "Part" SET ${fields.join(', ')} WHERE id = $${idx}`,
+    values
   );
 }

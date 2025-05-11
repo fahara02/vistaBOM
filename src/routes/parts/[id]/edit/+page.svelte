@@ -1,33 +1,39 @@
 <!-- src/routes/parts/[id]/edit/+page.svelte -->
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms/client';
+	import PartForm from '$lib/components/PartForm.svelte';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
-	const form = superForm(data.form);
+	const { form, errors, enhance } = superForm(data.form);
 </script>
 
-<form method="POST" use:form.form>
-	<div class="form-group">
-		<label for="name">Part Name</label>
-		<input type="text" name="name" bind:value={$form.name} class="input" />
-		{#if $form.errors.name}
-			<span class="error">{$form.errors.name}</span>
-		{/if}
-	</div>
+<div class="container">
+	<h1>Edit Part Version</h1>
+	<p>Part ID: {data.part.id}</p>
+	
+	<PartForm 
+		{form} 
+		{errors} 
+		{enhance} 
+		statuses={data.statuses} 
+		isEditMode={true} 
+	/>
+</div>
 
-	<div class="form-group">
-		<label for="packageType">Package Type</label>
-		<select name="packageType" bind:value={$form.packageType}>
-			{#each data.packageTypes as type}
-				<option value={type}>{type.replace('_', ' ')}</option>
-			{/each}
-		</select>
-	</div>
-
-	<!-- Add more fields following the same pattern -->
-
-	<button type="submit" class="btn-primary">
-		{data.part ? 'Update Part' : 'Create Part'}
-	</button>
-</form>
+<style>
+	.container {
+		padding: 1rem;
+		max-width: 1200px;
+		margin: 0 auto;
+	}
+	
+	h1 {
+		margin-bottom: 0.5rem;
+	}
+	
+	p {
+		margin-bottom: 1.5rem;
+		color: #666;
+	}
+</style>

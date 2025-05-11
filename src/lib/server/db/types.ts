@@ -12,40 +12,40 @@ export interface ContactInfo {
 // ======================
 
 export enum PartStatusEnum {
-	Concept = 'concept',
-	Active = 'active',
-	Obsolete = 'obsolete',
-	Archived = 'archived'
+	CONCEPT = 'concept',
+	ACTIVE = 'active',
+	OBSOLETE = 'obsolete',
+	ARCHIVED = 'archived'
 }
 
 export enum ComplianceTypeEnum {
-	RoHS = 'RoHS',
+	ROHS = 'RoHS',
 	REACH = 'REACH',
-	ConflictMinerals = 'Conflict_Minerals',
-	HalogenFree = 'Halogen_Free'
+	CONFLICT_MINERALS = 'Conflict_Minerals',
+	HALOGEN_FREE = 'Halogen_Free'
 }
 
 export enum StructuralRelationTypeEnum {
-	Component = 'component',
-	Alternative = 'alternative',
-	Complementary = 'complementary',
-	Substitute = 'substitute'
+	COMPONENT = 'component',
+	ALTERNATIVE = 'alternative',
+	COMPLEMENTARY = 'complementary',
+	SUBSTITUTE = 'substitute'
 }
 
 export enum WeightUnitEnum {
-	mg = 'mg',
-	g = 'g',
-	kg = 'kg',
-	lb = 'lb',
-	oz = 'oz'
+	MG = 'mg',
+	G = 'g',
+	KG = 'kg',
+	LB = 'lb',
+	OZ = 'oz'
 }
 
 export enum DimensionUnitEnum {
-	mm = 'mm',
-	cm = 'cm',
-	m = 'm',
-	in = 'in',
-	ft = 'ft'
+	MM = 'mm',
+	CM = 'cm',
+	M = 'm',
+	IN = 'in',
+	FT = 'ft'
 }
 
 export enum TemperatureUnitEnum {
@@ -75,23 +75,23 @@ export enum PackageTypeEnum {
 }
 
 export enum LifecycleStatusEnum {
-	Draft = 'draft',
-	InReview = 'in_review',
-	Approved = 'approved',
-	PreRelease = 'pre-release',
-	Released = 'released',
-	Production = 'production',
-	OnHold = 'on_hold',
-	Obsolete = 'obsolete',
-	Archived = 'archived'
+	DRAFT = 'draft',
+	IN_REVIEW = 'in_review',
+	APPROVED = 'approved',
+	PRE_RELEASE = 'pre-release',
+	RELEASED = 'released',
+	PRODUCTION = 'production',
+	ON_HOLD = 'on_hold',
+	OBSOLETE = 'obsolete',
+	ARCHIVED = 'archived'
 }
 
 export enum MountingTypeEnum {
 	SMT = 'SMT',
 	THT = 'THT',
-	Manual = 'Manual',
-	PressFit = 'Press-fit',
-	ThroughGlass = 'Through-glass'
+	MANUAL = 'Manual',
+	PRESS_FIT = 'Press-fit',
+	THROUGH_GLASS = 'Through-glass'
 }
 
 // ======================
