@@ -18,10 +18,12 @@
 		{form} 
 		{errors} 
 		{enhance} 
-		statuses={data.statuses}
+		statuses={data.lifecycleStatuses}
 		packageTypes={data.packageTypes}
 		weightUnits={data.weightUnits}
-		isEditMode={true} 
+		isEditMode={true}
+		dimensionUnits={data.dimensionUnits}
+		partStatuses={data.partStatuses}
 	/>
 </div>
 

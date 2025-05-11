@@ -80,33 +80,61 @@ function splitStatements(sql: string): string[] {
 }
 
 // Apply SQL schema on startup (uses IF NOT EXISTS for idempotence)
-const schemaPath = path.join(process.cwd(), 'db', 'schema.sql');
-const schema = fs.readFileSync(schemaPath, 'utf-8');
-const statements = splitStatements(schema)
-	.map((stmt) => {
-		const lines = stmt.split('\n');
-		let start = 0;
-		while (
-			start < lines.length &&
-			(lines[start].trim() === '' || lines[start].trim().startsWith('--'))
-		) {
-			start++;
-		}
-		return lines.slice(start).join('\n').trim();
-	})
-	.filter((stmt) => stmt.length > 0);
-for (const stmt of statements) {
+// DO NOT EXECUTE SCHEMA MIGRATIONS ON SERVER STARTUP - THIS IS THE SOURCE OF THE CONCURRENCY ISSUES
+
+// This is a safer approach - only check if we have a valid connection
+const testConnection = async () => {
 	try {
-		await client.query(stmt);
-	} catch (err: any) {
-		// Ignore duplicate object errors (e.g., types or triggers already exist)
-		if (err.code == 42710 || err.code == '42710' || err.message?.includes('already exists')) {
-			console.warn('Skipping existing object:', stmt.split('\n')[0]);
-			continue;
-		}
-		console.error('Failed SQL statement:', stmt.split('\n')[0], '...', err.message);
-		throw err;
+		console.log('Testing database connection...');
+		await client.query('SELECT 1');
+		console.log('Database connection successful');
+		return true;
+	} catch (err) {
+		console.error('Database connection failed:', err);
+		return false;
 	}
+};
+
+// Test the connection rather than applying migrations on server startup
+await testConnection();
+
+// For safety, define a function to execute schema if explicitly needed
+export async function applySchema() {
+	const schemaPath = path.join(process.cwd(), 'db', 'schema.sql');
+	const schema = fs.readFileSync(schemaPath, 'utf-8');
+	const statements = splitStatements(schema)
+		.map((stmt) => {
+			const lines = stmt.split('\n');
+			let start = 0;
+			while (
+				start < lines.length &&
+				(lines[start].trim() === '' || lines[start].trim().startsWith('--'))
+			) {
+				start++;
+			}
+			return lines.slice(start).join('\n').trim();
+		})
+		.filter((stmt) => stmt.length > 0);
+
+	for (let i = 0; i < statements.length; i++) {
+		const stmt = statements[i];
+		try {
+			// Add a small delay between statements to avoid concurrent updates
+			if (i > 0) {
+				await new Promise(resolve => setTimeout(resolve, 50));
+			}
+			await client.query(stmt);
+		} catch (err: any) {
+			// Ignore duplicate object errors (e.g., types or triggers already exist)
+			if (err.code == 42710 || err.code == '42710' || err.message?.includes('already exists')) {
+				console.warn('Skipping existing object:', stmt.split('\n')[0]);
+				continue;
+			}
+			console.error('Failed SQL statement:', stmt.split('\n')[0], '...', err.message);
+			throw err;
+		}
+	}
+	console.log('Schema application completed');
 }
 
 export default client;

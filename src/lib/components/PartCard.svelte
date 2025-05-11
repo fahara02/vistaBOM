@@ -35,7 +35,7 @@
     <div class="grid-2">
       <div>
         <p><strong>Name:</strong> {currentVersion.name}</p>
-        <p><strong>Version:</strong> {currentVersion.version}</p>
+        <p><strong>Version:</strong> {currentVersion.version} (raw: {JSON.stringify(currentVersion)})</p>
         <p><strong>Global Part Number:</strong> {part.globalPartNumber || 'Not assigned'}</p>
       </div>
       <div>
