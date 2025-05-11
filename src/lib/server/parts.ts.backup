@@ -521,63 +521,209 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
     createdBy: string;
 }): Promise<PartVersion> {
     try {
-        console.log('[createPartVersion] Creating new version with NAME:', partVersion.name);
-        console.log('[createPartVersion] Full data:', JSON.stringify(partVersion, null, 2));
+        console.log('[createPartVersion] Creating new version:', JSON.stringify(partVersion, null, 2));
         
-        // Use a simplified query with required fields and common optional fields
-        const insertQuery = `
-            INSERT INTO "PartVersion" (
-                id, part_id, version, name, status, created_by, created_at,
-                short_description, functional_description, long_description
-            ) VALUES (
-                $1, $2, $3, $4, $5::TEXT::lifecycle_status_enum, $6, NOW(),
-                $7, $8, $9
-            ) RETURNING *
-        `;
+        // Helper function for JSON fields to ensure proper stringification
+        const processJsonField = (value: any): string | null => {
+            if (value === undefined || value === null) {
+                return null;
+            }
+            if (typeof value === 'string') {
+                try {
+                    // Check if it's already a valid JSON string
+                    JSON.parse(value);
+                    return value;
+                } catch {
+                    // If not a valid JSON string, stringify it
+                    return JSON.stringify(value);
+                }
+            } else {
+                // Directly stringify non-string values
+                return JSON.stringify(value);
+            }
+        };
         
-        // Log the exact parameters being sent to database
-        const params = [
+        // Build fields and values dynamically
+        const fields = ['id', 'part_id', 'version', 'name', 'status', 'created_by', 'created_at'];
+        const valueFields = ['$1', '$2', '$3', '$4', '$5::TEXT::lifecycle_status_enum', '$6', '$7'];
+        const values: any[] = [
             partVersion.id,
             partVersion.partId,
             partVersion.version,
             partVersion.name,
             partVersion.status,
             partVersion.createdBy,
-            partVersion.shortDescription || null,
-            partVersion.functionalDescription || null, 
-            partVersion.longDescription || null
+            partVersion.createdAt || new Date()
         ];
         
-        console.log('[createPartVersion] 🚨 PARAMETERS SENT TO DB:', {
-            name: params[3], // Name parameter
-            id: params[0],
-            version: params[2]
-        });
+        let paramIndex = 8;
         
-        // Force-escaping name to avoid SQL issues
-        params[3] = String(params[3]).replace(/'/g, "''");
-        
-        // Execute query with only essential parameters
-        const insertResult = await client.query(insertQuery, params);
-        
-        if (!insertResult.rows.length) {
-            throw new Error('Failed to create part version');
+        // Add optional fields
+        if (partVersion.shortDescription !== undefined) {
+            fields.push('short_description');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.shortDescription);
+            paramIndex++;
         }
         
-        const row = insertResult.rows[0];
+        // Add optional JSON fields - ensure proper handling
+        if (partVersion.longDescription !== undefined) {
+            fields.push('long_description');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            // Ensure it's a properly formatted JSON string
+            const longDesc = typeof partVersion.longDescription === 'string' 
+                ? partVersion.longDescription 
+                : JSON.stringify(partVersion.longDescription);
+            values.push(longDesc);
+            paramIndex++;
+        }
+        
+        if (partVersion.functionalDescription !== undefined) {
+            fields.push('functional_description');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.functionalDescription as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.technicalSpecifications !== undefined) {
+            fields.push('technical_specifications');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.technicalSpecifications));
+            paramIndex++;
+        }
+        
+        if (partVersion.properties !== undefined) {
+            fields.push('properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.properties));
+            paramIndex++;
+        }
+        
+        if (partVersion.electricalProperties !== undefined) {
+            fields.push('electrical_properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.electricalProperties));
+            paramIndex++;
+        }
+        
+        if (partVersion.mechanicalProperties !== undefined) {
+            fields.push('mechanical_properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.mechanicalProperties));
+            paramIndex++;
+        }
+        
+        if (partVersion.thermalProperties !== undefined) {
+            fields.push('thermal_properties');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.thermalProperties));
+            paramIndex++;
+        }
+        
+        if (partVersion.materialComposition !== undefined) {
+            fields.push('material_composition');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.materialComposition));
+            paramIndex++;
+        }
+        
+        if (partVersion.environmentalData !== undefined) {
+            fields.push('environmental_data');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.environmentalData));
+            paramIndex++;
+        }
+        
+        // Handle weight fields
+        if (partVersion.weight !== undefined) {
+            fields.push('weight');
+            valueFields.push(`$${paramIndex}`);
+            // Convert number to string correctly
+            values.push(String(partVersion.weight));
+            paramIndex++;
+        }
+        
+        if (partVersion.weightUnit !== undefined) {
+            fields.push('weight_unit');
+            valueFields.push(`$${paramIndex}::TEXT::weight_unit_enum`);
+            values.push(partVersion.weightUnit as string);
+            paramIndex++;
+        }
+        
+        // Special handling for dimensions - ensure it's properly formatted
+        if (partVersion.dimensions !== undefined) {
+            fields.push('dimensions');
+            valueFields.push(`$${paramIndex}::JSONB`);
+            values.push(processJsonField(partVersion.dimensions));
+            paramIndex++;
+        }
+        
+        if (partVersion.dimensionsUnit !== undefined) {
+            fields.push('dimensions_unit');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.dimensionsUnit as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.tolerance !== undefined) {
+            fields.push('tolerance');
+            valueFields.push(`$${paramIndex}`);
+            // Convert number to string correctly
+            values.push(String(partVersion.tolerance));
+            paramIndex++;
+        }
+        
+        if (partVersion.toleranceUnit !== undefined) {
+            fields.push('tolerance_unit');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.toleranceUnit as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.revisionNotes !== undefined) {
+            fields.push('revision_notes');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.revisionNotes as string);
+            paramIndex++;
+        }
+        
+        if (partVersion.updatedBy !== undefined) {
+            fields.push('updated_by');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.updatedBy);
+            paramIndex++;
+        }
+        
+        if (partVersion.updatedAt !== undefined) {
+            fields.push('updated_at');
+            valueFields.push(`$${paramIndex}`);
+            values.push(partVersion.updatedAt);
+            paramIndex++;
+        }
+        
+        // Construct and execute the query
+        const query = `
+            INSERT INTO "PartVersion" (${fields.join(', ')})
+            VALUES (${valueFields.join(', ')})
+            RETURNING *
+        `;
+        
+        console.log('[createPartVersion] Query:', query.replace(/\s+/g, ' '));
+        console.log('[createPartVersion] Values:', values.map(v => typeof v === 'object' ? JSON.stringify(v) : v));
+        
+        const result = await client.query(query, values);
+        const row = result.rows[0];
         
         // The ts-postgres driver returns fields as object properties with any type
         // Access fields safely using indexing syntax which TypeScript allows for any object
         const rowAsAny = row as any;
         
         // Map database columns to TypeScript object with proper typing
-        // Critical fix - return the original name from the input rather than from database
-        // This ensures exact match between what user entered and what's returned
         return {
             id: rowAsAny.id,
             partId: rowAsAny.part_id,
             version: rowAsAny.version,
-            name: partVersion.name, // Use the original name directly
+            name: rowAsAny.name,
             shortDescription: rowAsAny.short_description || undefined,
             // Map the string status to a valid LifecycleStatusEnum value
             status: rowAsAny.status in LifecycleStatusEnum ? 
