@@ -98,43 +98,51 @@ export async function updateManufacturer(
     }
     
     try {
-        // Build the dynamic SET clause
+        // Build the dynamic SET clause with proper parameter indexing
         const setParts = [];
-        const updateValues: any = {};
+        const paramValues = [];
+        let paramIndex = 1;
         
         if (updates.name !== undefined) {
-            setParts.push('name = ${name}');
-            updateValues.name = updates.name;
+            setParts.push(`name = $${paramIndex}`);
+            paramValues.push(updates.name);
+            paramIndex++;
         }
         if (updates.description !== undefined) {
-            setParts.push('description = ${description}');
-            updateValues.description = updates.description;
+            setParts.push(`description = $${paramIndex}`);
+            paramValues.push(updates.description);
+            paramIndex++;
         }
         if (updates.websiteUrl !== undefined) {
-            setParts.push('website_url = ${websiteUrl}');
-            updateValues.websiteUrl = updates.websiteUrl;
+            setParts.push(`website_url = $${paramIndex}`);
+            paramValues.push(updates.websiteUrl);
+            paramIndex++;
         }
         if (updates.logoUrl !== undefined) {
-            setParts.push('logo_url = ${logoUrl}');
-            updateValues.logoUrl = updates.logoUrl;
+            setParts.push(`logo_url = $${paramIndex}`);
+            paramValues.push(updates.logoUrl);
+            paramIndex++;
         }
         
         // Always add updated_by and updated_at
-        setParts.push('updated_by = ${userId}');
-        updateValues.userId = userId;
+        setParts.push(`updated_by = $${paramIndex}`);
+        paramValues.push(userId);
+        paramIndex++;
         setParts.push('updated_at = NOW()');
         
-        // Add the ID for the WHERE clause
-        updateValues.id = id;
+        // Construct the query with proper parameter placeholders
+        const query = `
+            UPDATE Manufacturer 
+            SET ${setParts.join(', ')} 
+            WHERE id = $${paramIndex} 
+            RETURNING *
+        `;
         
-        // Use sql.unsafe for dynamic queries that can't be directly expressed in template literals
-        const result = await sql.unsafe(
-            `UPDATE Manufacturer 
-             SET ${setParts.join(', ')} 
-             WHERE id = \${id} 
-             RETURNING *`,
-            updateValues
-        );
+        // Add ID as the last parameter
+        paramValues.push(id);
+        
+        // Execute with parameters in correct order
+        const result = await sql.unsafe(query, paramValues);
         
         // Fetch the custom fields for the updated manufacturer
         const manufacturerWithCustomFields = await getManufacturer(id);

@@ -3,10 +3,21 @@
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
   import Supplier from '$lib/components/supplier.svelte';
+  import { parseContactInfo } from '$lib/utils/util';
 
   export let data: PageData;
   const { form, errors, enhance } = superForm(data.form);
   const { suppliers, user } = data;
+  
+  // Contact info examples to show in the helper text
+  const contactInfoExamples = [
+    'JSON format: { "email": "contact@example.com", "phone": "123-456-7890", "address": "123 Main St" }',
+    'Key-value format: email: contact@example.com; phone: 123-456-7890',
+    'Simple format: 123 Main St, contact@example.com, 123-456-7890'
+  ];
+  
+  // Toggle for contact info examples
+  let showContactExamples = false;
 </script>
 
 <h1>Suppliers</h1>
@@ -35,8 +46,26 @@
     {/if}
   </div>
   <div class="field">
-    <label for="contact_info">Contact Info (JSON)</label>
-    <textarea id="contact_info" name="contact_info" bind:value={$form.contact_info}></textarea>
+    <label for="contact_info">Contact Info</label>
+    <textarea 
+      id="contact_info" 
+      name="contact_info" 
+      bind:value={$form.contact_info} 
+      placeholder="Enter contact info in any format (JSON, key-value pairs, or simple text)" 
+      rows="4"
+    ></textarea>
+    <div class="helper-text">
+      <button type="button" class="text-button" on:click={() => showContactExamples = !showContactExamples}>
+        {showContactExamples ? 'Hide examples' : 'Show format examples'}
+      </button>
+      {#if showContactExamples}
+        <div class="examples">
+          {#each contactInfoExamples as example}
+            <div class="example">{example}</div>
+          {/each}
+        </div>
+      {/if}
+    </div>
     {#if $errors.contact_info}
       <span class="error">{$errors.contact_info}</span>
     {/if}
@@ -58,6 +87,38 @@
 {/each}
 
 <style>
+  .helper-text {
+    margin-top: 5px;
+    font-size: 0.9em;
+  }
+  
+  .text-button {
+    background: none;
+    border: none;
+    color: #0066cc;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.9em;
+  }
+  
+  .examples {
+    margin-top: 8px;
+    padding: 10px;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  
+  .example {
+    margin-bottom: 5px;
+    line-height: 1.4;
+  }
+  
+  .example:last-child {
+    margin-bottom: 0;
+  }
+  
   h1 {
     font-size: 2.5rem;
     margin-bottom: 2rem;

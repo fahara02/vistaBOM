@@ -3,7 +3,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { updateManufacturer, deleteManufacturer } from '$lib/server/manufacturer';
+import { updateManufacturer, deleteManufacturer } from '$lib/server/manufacturer.js';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!locals.user) {
@@ -14,7 +14,7 @@ export const PUT: RequestHandler = async ({ request, params, locals }) => {
         throw error(400, 'Missing manufacturer ID');
     }
     const userId = locals.user.id;
-    if (!userId) {
+    if (!userId) {``
         throw error(401, 'Unauthorized');
     }
     const data = await request.json();
