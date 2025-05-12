@@ -158,15 +158,14 @@ export const load: PageServerLoad = async (event) => {
 		// userSuppliers is already initialized to an empty array
 	}
 	
-	// 7. Fetch user-created categories with parent names
+	// 7. Fetch user-created categories
 	let userCategories: any[] = [];
 	try {
 		userCategories = await sql`
-			SELECT c.*, p.name as parent_name
-			FROM "category" c
-			LEFT JOIN "category" p ON c.parent_id = p.id
-			WHERE c.created_by = ${user.id}
-			ORDER BY c.name ASC
+			SELECT *
+			FROM "category"
+			WHERE created_by = ${user.id}
+			ORDER BY name ASC
 		`;
 	} catch (error) {
 		console.error('Error fetching categories:', error);
@@ -177,10 +176,9 @@ export const load: PageServerLoad = async (event) => {
 	let allCategories: any[] = [];
 	try {
 		allCategories = await sql`
-			SELECT c.*, p.name as parent_name
-			FROM "category" c
-			LEFT JOIN "category" p ON c.parent_id = p.id
-			ORDER BY c.name ASC
+			SELECT *
+			FROM "category"
+			ORDER BY name ASC
 		`;
 	} catch (error) {
 		console.error('Error fetching all categories:', error);
@@ -209,7 +207,31 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	// All actions are now named explicitly, no default handler needed
+	// Note: The category action is defined below to avoid duplication
+	// Default action handler to route based on intent parameter
+	default: async (event) => {
+		const user = event.locals.user as User | null;
+		if (!user) throw redirect(302, '/');
+		
+		const data = await event.request.formData();
+		const intent = data.get('intent');
+		
+		// Route to appropriate action based on intent
+		switch(intent) {
+			case 'project':
+				return actions.project(event);
+			case 'part':
+				return actions.part(event);
+			case 'manufacturer':
+				return actions.manufacturer(event);
+			case 'supplier':
+				return actions.supplier(event);
+			case 'category':
+				return actions.category(event);
+			default:
+				return fail(400, { message: 'Unknown action intent' });
+		}
+	},
 	// Project creation - unchanged
 	project: async (event) => {
 		const user = event.locals.user as User | null;

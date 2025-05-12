@@ -123,6 +123,10 @@
 	// Initialize manufacturer form with superForm
 	const { form: manufacturerForm, errors: manufacturerErrors, enhance: manufacturerEnhance, submitting: manufacturerSubmitting, message: manufacturerMessage } = superForm(data.manufacturerForm, {
 		dataType: 'json',
+		onSubmit: ({ cancel, action }) => {
+			// Set the form action to the manufacturer action
+			action.searchParams.append('intent', 'manufacturer');
+		},
 		onResult: ({ result }) => {
 			// Handle successful submission
 			if (result.type === 'success') {
@@ -137,6 +141,10 @@
 	// Initialize category form with superForm
 	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
 		dataType: 'json',
+		onSubmit: ({ cancel, action }) => {
+			// Set the form action to the category action
+			action.searchParams.append('intent', 'category');
+		},
 		onResult: ({ result }) => {
 			// Handle successful submission
 			if (result.type === 'success') {
@@ -152,6 +160,11 @@
 	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.supplierForm, {
 		dataType: 'form',
 		resetForm: true,
+		onSubmit: ({ cancel, action }) => {
+			// Set the form action to the supplier action
+			action.searchParams.append('intent', 'supplier');
+		},
+		
 		onResult: ({ result }) => {
 			if (result.type === 'success') {
 				// Close the form
@@ -198,10 +211,6 @@
 			parent_id: category.parent_id || '',
 			is_public: Boolean(category.is_public)
 		};
-		
-		// Find and display the parent category by name in the allCategories list
-		// This ensures the CategoryComboBox displays parent names correctly
-		// Already handled by the CategoryComboBox component with the parent_name field
 		
 		// Show form and set edit mode
 		showCategoryForm = true;
@@ -463,7 +472,7 @@
 							</div>
 						{/if}
 						
-						<form method="POST" action="?/manufacturer" use:manufacturerEnhance class="form-grid">
+						<form method="POST" action="?" use:manufacturerEnhance class="form-grid">
 							<div class="form-group">
 								<label for="mfr-name">Name <span class="required">*</span></label>
 								<input 
@@ -629,7 +638,7 @@
 							</div>
 						{/if}
 						
-						<form method="POST" action="?/supplier" use:supplierEnhance class="form-grid">
+						<form method="POST" action="?" use:supplierEnhance class="form-grid">
 							<div class="form-group">
 								<label for="sup-name">Name <span class="required">*</span></label>
 								<input 
@@ -752,7 +761,7 @@
 						{/if}
 						
 						<div class="embedded-form">
-							<form method="POST" action="?/category" use:categoryEnhance enctype="application/x-www-form-urlencoded">
+							<form method="POST" action="?" use:categoryEnhance enctype="application/x-www-form-urlencoded">
 								{#if editCategoryMode}
 									<input type="hidden" name="categoryId" value={currentCategoryId} />
 								{/if}

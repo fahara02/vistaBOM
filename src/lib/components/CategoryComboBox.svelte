@@ -25,7 +25,9 @@
     { value: "", label: "None (Top-level)" },
     ...categories.map(category => ({
       value: category.id,
-      label: category.name
+      label: category.name,
+      parentId: category.parent_id,
+      parentName: category.parent_name
     }))
   ];
   
