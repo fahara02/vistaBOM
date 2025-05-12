@@ -10,6 +10,17 @@ import { createPartSchema, manufacturerSchema } from '$lib/server/db/schema';
 import { createPart } from '$lib/server/parts';
 import type { CreatePartInput } from '$lib/server/parts';
 import { createManufacturer } from '$lib/server/manufacturer';
+import { createSupplier } from '$lib/server/supplier';
+import { z } from 'zod';
+
+// Define supplier schema for the form
+const supplierSchema = z.object({
+	name: z.string().min(1, 'Name is required'),
+	description: z.string().optional(),
+	website_url: z.string().url('Invalid URL format').optional().nullable(),
+	contact_info: z.string().optional(),
+	logo_url: z.string().url('Invalid URL format').optional().nullable()
+});
 
 export const load: PageServerLoad = async (event) => {
 	const user = event.locals.user as User | null;
@@ -58,6 +69,9 @@ export const load: PageServerLoad = async (event) => {
 	
 	// 3. Initialize Manufacturer form data
 	const manufacturerForm = await superValidate(zod(manufacturerSchema));
+	
+	// 4. Initialize Supplier form data
+	const supplierForm = await superValidate(zod(supplierSchema));
 	
 	// 4. Fetch user-created parts with manufacturer data
 	let userParts: any[] = [];
@@ -158,16 +172,18 @@ export const load: PageServerLoad = async (event) => {
 		// allCategories is already initialized to an empty array
 	}
 	
-	return { 
+	return {
+		user,
 		projects,
+		partForm,
+		manufacturerForm,
+		supplierForm,
 		userParts,
 		userManufacturers,
 		userSuppliers,
 		userCategories,
 		allCategories,
 		// Part form data
-		partForm,
-		manufacturerForm,
 		statuses: Object.values(LifecycleStatusEnum),
 		packageTypes: Object.values(PackageTypeEnum),
 		weightUnits: Object.values(WeightUnitEnum),
@@ -240,6 +256,53 @@ export const actions: Actions = {
 			console.error('Create manufacturer error:', err);
 			// Return error message for superForm to display
 			return message(form, 'Failed to create manufacturer: ' + (err instanceof Error ? err.message : 'Unknown error'), { status: 500 });
+		}
+	},
+	
+	// Supplier creation
+	supplier: async (event) => {
+		const { request, locals } = event;
+		const user = locals.user as User | null;
+		if (!user) return fail(401, { message: 'Unauthorized' });
+		
+		// Use the supplier schema defined in the load function
+		const form = await superValidate(request, zod(supplierSchema));
+		console.log('Supplier form data:', JSON.stringify(form.data, null, 2));
+		
+		if (!form.valid) {
+			console.error('Supplier validation failed:', form.errors);
+			return message(form, 'Validation failed');
+		}
+
+		try {
+			// Parse contact info if provided
+			let contactInfo: any = null;
+			if (form.data.contact_info) {
+				try {
+					// Try to parse as JSON first
+					contactInfo = JSON.parse(form.data.contact_info);
+				} catch (e) {
+					// If not valid JSON, use as a string
+					contactInfo = form.data.contact_info;
+				}
+			}
+			
+			// Use the existing createSupplier function
+			await createSupplier({
+				name: form.data.name,
+				description: form.data.description ?? undefined,
+				websiteUrl: form.data.website_url ?? undefined,
+				contactInfo: contactInfo,
+				logoUrl: form.data.logo_url ?? undefined,
+				createdBy: user.id
+			});
+			
+			// Return success message for superForm to display
+			return message(form, 'Supplier created successfully!');
+		} catch (err) {
+			console.error('Create supplier error:', err);
+			// Return error message for superForm to display
+			return message(form, 'Failed to create supplier: ' + (err instanceof Error ? err.message : 'Unknown error'), { status: 500 });
 		}
 	},
 	

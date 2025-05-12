@@ -355,11 +355,12 @@ export interface Supplier {
 	description?: string;
 	websiteUrl?: string;
 	contactInfo?: JsonValue; // JSONB
+	customFields?: JsonValue;
 	logoUrl?: string;
 	createdBy?: string;
 	createdAt: Date;
 	updatedBy?: string;
-	updatedAt: Date;
+	updatedAt?: Date;
 }
 
 export interface SupplierPart {

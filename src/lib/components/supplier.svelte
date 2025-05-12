@@ -1,7 +1,17 @@
 <!-- src/lib/components/supplier.svelte -->
 <script lang="ts">
     import type { Supplier } from '$lib/types';
+    import type { ContactInfo } from '$lib/utils/util';
     import { onDestroy } from 'svelte';
+    
+    // Format field names from camelCase to Title Case with spaces
+    function formatFieldName(fieldName: string): string {
+        // Add space before capital letters and capitalize the first letter
+        const formatted = fieldName
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
+        return formatted.trim();
+    }
 
     export let supplier: Supplier;
     export let currentUserId: string;
@@ -13,25 +23,83 @@
     let contactInfoString = '';
     let abortController = new AbortController();
     
-    // Function to safely parse contact info - ensures we always have an object
-    function parseContactInfo(info: any): Record<string, string> {
-        if (!info) return {};
+    // Process contact info into structured data with email, phone, address and other fields
+    function processContactInfo(info: any): { email?: string; phone?: string; address?: string; text?: string; other: {key: string; value: string}[] } {
+        const result = { email: undefined, phone: undefined, address: undefined, text: undefined, other: [] } as {
+            email?: string;
+            phone?: string;
+            address?: string;
+            text?: string;
+            other: {key: string; value: string}[];
+        };
         
-        // If it's already an object, return it
-        if (typeof info === 'object' && info !== null) return info;
+        if (!info) return result;
         
-        // If it's a string, try to parse it
+        let jsonData: Record<string, any> = {};
+        
+        // Handle different input formats
         if (typeof info === 'string') {
             try {
-                return JSON.parse(info);
-            } catch (e: unknown) {
-                console.error('Failed to parse contact info:', e instanceof Error ? e.message : e);
-                return {};
+                // Try parsing as JSON
+                if (info.trim().startsWith('{')) {
+                    jsonData = JSON.parse(info);
+                } else if (info.includes(':')) {
+                    // Handle key-value format (email: value; phone: value)
+                    const pairs = info.split(/[;,\n]+/);
+                    
+                    for (const pair of pairs) {
+                        const parts = pair.split(':');
+                        if (parts.length >= 2) {
+                            const key = parts[0].trim().toLowerCase();
+                            const value = parts.slice(1).join(':').trim();
+                            
+                            if (key.includes('email')) jsonData.email = value;
+                            else if (key.includes('phone') || key.includes('tel')) jsonData.phone = value;
+                            else if (key.includes('address')) jsonData.address = value;
+                            else jsonData[key] = value;
+                        }
+                    }
+                } else {
+                    // Treat as plain text
+                    result.text = info;
+                    return result;
+                }
+            } catch (e) {
+                // If JSON parsing fails, treat as plain text
+                result.text = info;
+                return result;
+            }
+        } else if (typeof info === 'object' && info !== null) {
+            jsonData = info;
+        }
+        
+        // Extract known fields
+        if ('email' in jsonData && typeof jsonData.email === 'string') {
+            result.email = jsonData.email;
+        }
+        
+        if ('phone' in jsonData && typeof jsonData.phone === 'string') {
+            result.phone = jsonData.phone;
+        }
+        
+        if ('address' in jsonData && typeof jsonData.address === 'string') {
+            result.address = jsonData.address;
+        }
+        
+        // Handle additional fields
+        for (const [key, value] of Object.entries(jsonData)) {
+            if (!['email', 'phone', 'address'].includes(key) && typeof value === 'string') {
+                result.other.push({ key, value });
             }
         }
         
-        return {};
+        return result;
     }
+    
+    // Prepare contact info for display
+    const getContactInfo = (contactInfoInput: any) => {
+        return processContactInfo(contactInfoInput);
+    };
 
     onDestroy(() => {
         abortController.abort();
@@ -39,10 +107,21 @@
 
     const startEdit = () => {
         edits = { ...supplier };
-        // Parse contact info if needed and stringify with formatting for editing
-        const parsedContactInfo = parseContactInfo(supplier.contactInfo);
-        contactInfoString = Object.keys(parsedContactInfo).length > 0 ? 
-            JSON.stringify(parsedContactInfo, null, 2) : '';
+        // Get contact info data for editing
+        const contactData = getContactInfo(supplier.contactInfo);
+        
+        // Format it as JSON for the edit form
+        const contactObject: Record<string, string> = {};
+        if (contactData.email) contactObject.email = contactData.email;
+        if (contactData.phone) contactObject.phone = contactData.phone;
+        if (contactData.address) contactObject.address = contactData.address;
+        if (contactData.text) contactObject.text = contactData.text;
+        contactData.other.forEach(item => {
+            contactObject[item.key] = item.value;
+        });
+        
+        contactInfoString = Object.keys(contactObject).length > 0 ? 
+            JSON.stringify(contactObject, null, 2) : '';
         editMode = true;
     };
 
@@ -154,9 +233,40 @@
                 <img src={supplier.logoUrl} alt="{supplier.name} logo" class="logo" />
             {/if}
             
-            <div class="details">
+            <div class="content-section">
                 {#if supplier.description}
-                    <p class="description">{supplier.description}</p>
+                    <div class="description">
+                        <h3>Description</h3>
+                        <div class="description-content">{supplier.description}</div>
+                    </div>
+                {/if}
+
+                {#if supplier.customFields && Object.keys(supplier.customFields).length > 0}
+                    <div class="custom-fields">
+                        <h3>Additional Information</h3>
+                        <div class="custom-fields-grid">
+                            {#each Object.entries(supplier.customFields) as [fieldName, fieldValue]}
+                                <div class="custom-field-item">
+                                    <div class="field-name">{formatFieldName(fieldName)}</div>
+                                    <div class="field-value">
+                                        {#if typeof fieldValue === 'boolean'}
+                                            <span class="boolean-value {fieldValue ? 'positive' : 'negative'}">
+                                                {fieldValue ? 'Yes' : 'No'}
+                                            </span>
+                                        {:else if typeof fieldValue === 'number'}
+                                            <span class="number-value">{fieldValue}</span>
+                                        {:else if typeof fieldValue === 'string' && (fieldValue.startsWith('http://') || fieldValue.startsWith('https://'))}
+                                            <a href={fieldValue} target="_blank" rel="noopener noreferrer">
+                                                {fieldValue}
+                                            </a>
+                                        {:else}
+                                            {fieldValue}
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
                 {/if}
                 
                 {#if supplier.websiteUrl}
@@ -168,42 +278,48 @@
                 {/if}
                 
                 {#if supplier.contactInfo}
-                    {@const contactInfo = parseContactInfo(supplier.contactInfo)}
-                    {#if Object.keys(contactInfo).length > 0}
-                        <div class="contact-info">
-                            <h3>Contact Information</h3>
-                            <div class="contact-details">
-                                {#if contactInfo.email}
-                                    <div class="contact-item">
-                                        <span class="contact-icon">📧</span>
-                                        <span class="contact-label">Email:</span>
-                                        <a href="mailto:{contactInfo.email}" class="contact-value">{contactInfo.email}</a>
-                                    </div>
-                                {/if}
-                                {#if contactInfo.phone}
-                                    <div class="contact-item">
-                                        <span class="contact-icon">📞</span>
-                                        <span class="contact-label">Phone:</span>
-                                        <a href="tel:{contactInfo.phone}" class="contact-value">{contactInfo.phone}</a>
-                                    </div>
-                                {/if}
-                                {#if contactInfo.address}
-                                    <div class="contact-item">
-                                        <span class="contact-icon">🏢</span>
-                                        <span class="contact-label">Address:</span>
-                                        <span class="contact-value">{contactInfo.address}</span>
-                                    </div>
-                                {/if}
-                                {#each Object.entries(contactInfo).filter(([key]) => !['email', 'phone', 'address'].includes(key)) as [key, value]}
+                    {@const contact = getContactInfo(supplier.contactInfo)}
+                    <div class="contact-info">
+                        <h3>Contact Information</h3>
+                        <div class="contact-details">
+                            {#if contact.email}
+                                <div class="contact-item">
+                                    <span class="contact-icon">📧</span>
+                                    <span class="contact-label">Email:</span>
+                                    <a href="mailto:{contact.email}" class="contact-value">{contact.email}</a>
+                                </div>
+                            {/if}
+                            {#if contact.phone}
+                                <div class="contact-item">
+                                    <span class="contact-icon">📞</span>
+                                    <span class="contact-label">Phone:</span>
+                                    <a href="tel:{contact.phone}" class="contact-value">{contact.phone}</a>
+                                </div>
+                            {/if}
+                            {#if contact.address}
+                                <div class="contact-item">
+                                    <span class="contact-icon">🏢</span>
+                                    <span class="contact-label">Address:</span>
+                                    <span class="contact-value">{contact.address}</span>
+                                </div>
+                            {/if}
+                            {#if contact.text}
+                                <div class="contact-item">
+                                    <span class="contact-icon">📝</span>
+                                    <span class="contact-value contact-text">{contact.text}</span>
+                                </div>
+                            {/if}
+                            {#if contact.other.length > 0}
+                                {#each contact.other as field}
                                     <div class="contact-item">
                                         <span class="contact-icon">ℹ️</span>
-                                        <span class="contact-label">{key}:</span>
-                                        <span class="contact-value">{value}</span>
+                                        <span class="contact-label">{formatFieldName(field.key)}:</span>
+                                        <span class="contact-value">{field.value}</span>
                                     </div>
                                 {/each}
-                            </div>
+                            {/if}
                         </div>
-                    {/if}
+                    </div>
                 {/if}
                 
                 <div class="meta">
@@ -313,7 +429,8 @@
         border-radius: 4px;
     }
 
-    .details {
+    /* Content Section Styling */
+    .content-section {
         margin: 1rem 0;
     }
 
@@ -337,7 +454,6 @@
     
     .contact-info h3 {
         margin-top: 0;
-        margin-bottom: 12px;
         color: #333;
         font-size: 1.1em;
     }
@@ -351,23 +467,99 @@
     .contact-item {
         display: flex;
         align-items: baseline;
+        margin-bottom: 0.5rem;
     }
     
     .contact-icon {
-        margin-right: 8px;
-        font-size: 1.1em;
-        min-width: 24px;
+        margin-right: 0.5rem;
     }
     
     .contact-label {
-        font-weight: 600;
-        color: #555;
-        margin-right: 8px;
-        min-width: 70px;
+        font-weight: 500;
+        min-width: 80px;
+        margin-right: 0.5rem;
     }
     
     .contact-value {
-        color: #333;
+        color: #444;
+    }
+    
+    .contact-text {
+        white-space: pre-line;
+        font-style: normal;
+        line-height: 1.4;
+        padding: 4px 0;
+    }
+    
+    /* Custom Fields Styling */
+    .custom-fields {
+        margin: 1.5rem 0;
+        padding: 1.5rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+    }
+    
+    .custom-fields h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        color: #4b5563;
+        font-size: 1.125rem;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 0.5rem;
+    }
+    
+    .custom-fields-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+    
+    .custom-field-item {
+        display: flex;
+        flex-direction: column;
+        padding: 0.75rem;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    
+    .field-name {
+        font-weight: 600;
+        color: #4b5563;
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .field-value {
+        color: #1f2937;
+        font-size: 1rem;
+        word-break: break-word;
+    }
+    
+    .boolean-value {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .boolean-value.positive {
+        background-color: #d1fae5;
+        color: #065f46;
+    }
+    
+    .boolean-value.negative {
+        background-color: #fee2e2;
+        color: #b91c1c;
+    }
+    
+    .number-value {
+        font-family: 'Courier New', monospace;
+        font-weight: 600;
+        color: #1f2937;
     }
     
     /* Links within contact values */

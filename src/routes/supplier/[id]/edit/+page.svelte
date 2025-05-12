@@ -1,0 +1,774 @@
+<!-- src/routes/supplier/[id]/edit/+page.svelte -->
+<script lang="ts">
+  import { superForm } from 'sveltekit-superforms/client';
+  import type { PageData } from './$types';
+  import { goto } from '$app/navigation';
+  
+  export let data: PageData;
+  
+  // Extract supplier data
+  const { supplier } = data;
+  
+  // Initialize the form with SuperForms - moved to top level to avoid store subscription issues
+  const { form, errors, enhance, submitting, delayed, message } = superForm(data.form, {
+    dataType: 'json',
+    multipleSubmits: 'prevent',
+    resetForm: false,
+    onUpdate: ({ form: updatedForm }) => {
+      // Update the form data when it changes (using updatedForm to avoid name collision)
+      $form = updatedForm.data;
+    },
+    onSubmit: ({ cancel, formData, formElement }) => {
+      // Debug the submission
+      console.log('Form submit triggered');
+      console.log('Form data being submitted:', formData);
+      
+      // Adds validation check if needed
+      if (!formElement.checkValidity()) {
+        console.log('Form validation failed');
+        cancel();
+      }
+    },
+    onResult: ({ result }) => {
+      // Success notification handled by the message
+      console.log('Form submission result:', result);
+    }
+  });
+  
+  // For additional debugging 
+  function handleSubmit() {
+    console.log('Manual submit handler fired');
+    // The actual submission is handled by the enhance directive
+  }
+  
+  // Handle cancel/back to list
+  function goBack() {
+    goto('/supplier');
+  }
+  
+  // Handle JSON validation for custom fields
+  function validateJSON(jsonString: string | undefined | null): boolean {
+    try {
+      if (jsonString) {
+        JSON.parse(jsonString);
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  
+  let showConfirmDelete = false;
+</script>
+
+<svelte:head>
+  <title>Edit Supplier: {supplier.name}</title>
+</svelte:head>
+
+<div class="edit-page-container">
+  <header class="page-header">
+    <div class="header-content">
+      <h1>Edit Supplier</h1>
+      <div class="bread-crumbs">
+        <a href="/dashboard">Dashboard</a> &gt;
+        <a href="/supplier">Suppliers</a> &gt;
+        <span>Edit</span>
+      </div>
+    </div>
+    <button class="back-button" on:click={goBack}>
+      Back to List
+    </button>
+  </header>
+  
+  {#if $message}
+    <div class="alert {typeof $message === 'string' && $message.includes('success') ? 'success' : 'error'}">
+      {typeof $message === 'string' ? $message : 'Operation completed'}
+    </div>
+  {/if}
+  
+  <div class="content-container">
+    <div class="form-container">
+      <form method="POST" action="?/update" use:enhance on:submit={handleSubmit} class="edit-form">
+        <div class="form-header">
+          <h2>Edit {supplier.name}</h2>
+          {#if supplier.logoUrl}
+            <div class="logo-preview">
+              <img src={supplier.logoUrl} alt="{supplier.name} logo" />
+            </div>
+          {/if}
+        </div>
+        
+        <div class="form-fields">
+          <div class="form-group">
+            <label for="name">Name <span class="required">*</span></label>
+            <input 
+              id="name" 
+              name="name" 
+              type="text" 
+              bind:value={$form.name}
+              class="form-control" 
+              required
+            />
+            {#if $errors.name}
+              <span class="error-message">{$errors.name}</span>
+            {/if}
+          </div>
+          
+          <div class="form-group">
+            <label for="description">Description</label>
+            <textarea 
+              id="description" 
+              name="description" 
+              bind:value={$form.description}
+              class="form-control"
+              rows="4"
+            ></textarea>
+            {#if $errors.description}
+              <span class="error-message">{$errors.description}</span>
+            {/if}
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="website_url">Website URL</label>
+              <input 
+                id="website_url" 
+                name="website_url" 
+                type="url" 
+                bind:value={$form.website_url}
+                class="form-control"
+                placeholder="https://example.com"
+              />
+              {#if $errors.website_url}
+                <span class="error-message">{$errors.website_url}</span>
+              {/if}
+            </div>
+            
+            <div class="form-group">
+              <label for="logo_url">Logo URL</label>
+              <input 
+                id="logo_url" 
+                name="logo_url" 
+                type="url" 
+                bind:value={$form.logo_url}
+                class="form-control"
+                placeholder="https://example.com/logo.png"
+              />
+              {#if $errors.logo_url}
+                <span class="error-message">{$errors.logo_url}</span>
+              {/if}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="contact_info">Contact Information</label>
+            <div class="contact-info-help">
+              <span class="field-hint">Enter contact details such as email, phone, or address</span>
+            </div>
+            <input 
+              id="contact_info" 
+              name="contact_info" 
+              bind:value={$form.contact_info}
+              class="form-control"
+              placeholder="email: example@domain.com; phone: (123) 456-7890"
+            />
+            {#if $errors.contact_info}
+              <span class="error-message">{$errors.contact_info}</span>
+            {/if}
+            <div class="field-examples">
+              <p>Examples:</p>
+              <ul>
+                <li><code>email: contact@example.com; phone: (123) 456-7890; address: 123 Main St</code></li>
+                <li><code>{`{"email":"contact@example.com","phone":"(123) 456-7890"}`}</code> (JSON format)</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div class="form-group custom-fields-container">
+            <div class="custom-fields-header">
+              <label for="custom_fields_json">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M7 8h10M7 12h10M7 16h10" />
+                </svg>
+                Custom Fields (JSON)
+              </label>
+              <div class="json-status">
+                {#if $form.custom_fields_json}
+                  {#if validateJSON($form.custom_fields_json)}
+                    <span class="valid-json">✓ Valid JSON</span>
+                  {:else}
+                    <span class="invalid-json">✗ Invalid JSON</span>
+                  {/if}
+                {/if}
+              </div>
+            </div>
+            
+            <div class="code-editor-container">
+              <div class="code-editor-tools">
+                <span class="field-hint">Enter a valid JSON object with your custom fields</span>
+                <button type="button" class="format-button" on:click={() => {
+                  if ($form.custom_fields_json && validateJSON($form.custom_fields_json)) {
+                    $form.custom_fields_json = JSON.stringify(JSON.parse($form.custom_fields_json), null, 2);
+                  }
+                }}>
+                  Format JSON
+                </button>
+              </div>
+              
+              <textarea 
+                id="custom_fields_json" 
+                name="custom_fields_json" 
+                bind:value={$form.custom_fields_json}
+                class="form-control code-input"
+                rows="8"
+                placeholder="Enter your custom fields in JSON format"
+              ></textarea>
+              
+              {#if $form.custom_fields_json && !validateJSON($form.custom_fields_json)}
+                <span class="error-message">JSON format is invalid. Please check for missing commas, quotes, or braces.</span>
+              {/if}
+            </div>
+            
+            <div class="custom-fields-help">
+              <p>Custom fields let you store additional information about the supplier that doesn't fit in the standard fields.</p>
+              <ul>
+                <li><strong>Text values</strong>: Use quotes ("value")</li>
+                <li><strong>Numbers</strong>: Enter without quotes (1234)</li>
+                <li><strong>Booleans</strong>: Use true or false</li>
+              </ul>
+              <div class="example-json">
+                <p><strong>Example:</strong></p>
+                <pre>{`{
+  "taxId": "123-45-6789",
+  "employeeCount": 250,
+  "isPreferredVendor": true,
+  "paymentTerms": "Net 30" 
+}`}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="form-actions">
+          <button 
+            type="submit" 
+            class="primary-button"
+            disabled={$submitting || $delayed || (typeof $form.custom_fields_json === 'string' && !validateJSON($form.custom_fields_json))}
+          >
+            {$submitting ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button type="button" class="secondary-button" on:click={goBack}>Cancel</button>
+          <button type="button" class="danger-button" on:click={() => showConfirmDelete = true}>
+            Delete Supplier
+          </button>
+        </div>
+      </form>
+    </div>
+    
+    <div class="info-sidebar">
+      <div class="info-card">
+        <h3>About This Supplier</h3>
+        <div class="info-item">
+          <span class="info-label">Created:</span>
+          <span class="info-value">{new Date(supplier.createdAt).toLocaleDateString()}</span>
+        </div>
+        {#if supplier.updatedAt}
+          <div class="info-item">
+            <span class="info-label">Last Updated:</span>
+            <span class="info-value">{new Date(supplier.updatedAt).toLocaleDateString()}</span>
+          </div>
+        {/if}
+        <div class="info-hint">
+          <p>
+            <strong>Custom Fields:</strong> Use these to add any additional information about the supplier that might be useful for your organization.
+          </p>
+          <p>Common supplier fields might include payment terms, preferred carrier, account numbers, or tax information.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+{#if showConfirmDelete}
+  <div class="modal-overlay">
+    <div class="modal-content">
+      <h2>Confirm Deletion</h2>
+      <p>Are you sure you want to delete <strong>{supplier.name}</strong>?</p>
+      <p class="warning">This action cannot be undone.</p>
+      
+      <div class="modal-actions">
+        <form method="POST" action="?/delete" use:enhance>
+          <button type="submit" class="danger-button">Yes, Delete</button>
+        </form>
+        <button class="secondary-button" on:click={() => showConfirmDelete = false}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .edit-page-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+  
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  .header-content h1 {
+    margin: 0;
+    font-size: 2rem;
+    color: #111827;
+  }
+  
+  .bread-crumbs {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-top: 0.5rem;
+  }
+  
+  .bread-crumbs a {
+    color: #3b82f6;
+    text-decoration: none;
+  }
+  
+  .bread-crumbs a:hover {
+    text-decoration: underline;
+  }
+  
+  .back-button {
+    padding: 0.5rem 1rem;
+    background-color: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .back-button:hover {
+    background-color: #e5e7eb;
+  }
+  
+  .alert {
+    padding: 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .success {
+    background-color: #d1fae5;
+    border: 1px solid #6ee7b7;
+    color: #065f46;
+  }
+  
+  .error {
+    background-color: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #b91c1c;
+  }
+  
+  .content-container {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 2rem;
+  }
+  
+  .form-container {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    padding: 1.5rem;
+  }
+  
+  .form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+  
+  .form-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #111827;
+  }
+  
+  .logo-preview {
+    max-width: 100px;
+    max-height: 100px;
+    overflow: hidden;
+    border-radius: 0.375rem;
+    border: 1px solid #e5e7eb;
+    padding: 0.5rem;
+    background: white;
+  }
+  
+  .logo-preview img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+  
+  .form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  
+  .form-group {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 0.5rem;
+  }
+  
+  .required {
+    color: #dc2626;
+  }
+  
+  .field-hint {
+    font-size: 0.75rem;
+    font-weight: normal;
+    color: #6b7280;
+    margin-left: 0.5rem;
+  }
+  
+  .form-control {
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+  
+  .form-control:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  
+  textarea.form-control {
+    resize: vertical;
+    min-height: 80px;
+  }
+  
+  .code-input {
+    font-family: monospace;
+    font-size: 0.875rem;
+    white-space: pre;
+  }
+  
+  .error-message {
+    font-size: 0.875rem;
+    color: #dc2626;
+    margin-top: 0.25rem;
+  }
+  
+  .form-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-start;
+    align-items: center;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e5e7eb;
+  }
+  
+  .primary-button {
+    padding: 0.75rem 1.5rem;
+    background-color: #3b82f6;
+    color: white;
+    font-weight: 500;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .primary-button:hover:not(:disabled) {
+    background-color: #2563eb;
+  }
+  
+  .primary-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .secondary-button {
+    padding: 0.75rem 1.5rem;
+    background-color: #f3f4f6;
+    color: #374151;
+    font-weight: 500;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .secondary-button:hover {
+    background-color: #e5e7eb;
+  }
+  
+  .danger-button {
+    margin-left: auto;
+    padding: 0.75rem 1.5rem;
+    background-color: white;
+    color: #dc2626;
+    font-weight: 500;
+    border: 1px solid #dc2626;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .danger-button:hover {
+    background-color: #fee2e2;
+  }
+  
+  .info-sidebar {
+    align-self: start;
+  }
+  
+  .info-card {
+    background-color: #f9fafb;
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+    padding: 1.5rem;
+  }
+  
+  .info-card h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+    color: #111827;
+  }
+  
+  .info-item {
+    display: flex;
+    margin-bottom: 0.5rem;
+  }
+  
+  .info-label {
+    font-weight: 500;
+    color: #374151;
+    min-width: 120px;
+  }
+  
+  .info-value {
+    color: #6b7280;
+  }
+  
+  .info-hint {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e5e7eb;
+    font-size: 0.875rem;
+    color: #4b5563;
+  }
+  
+  .info-hint pre {
+    background-color: #f3f4f6;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    overflow: auto;
+    font-size: 0.75rem;
+  }
+  
+  /* Custom Fields Styling */
+  .custom-fields-container {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background-color: #f9fafb;
+    margin-top: 1rem;
+  }
+  
+  .custom-fields-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+  
+  .custom-fields-header label {
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    color: #4b5563;
+    margin-bottom: 0;
+  }
+  
+  .icon {
+    margin-right: 0.5rem;
+    stroke: #6b7280;
+  }
+  
+  .json-status {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+  
+  .valid-json {
+    color: #059669;
+    background-color: #d1fae5;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+  
+  .invalid-json {
+    color: #dc2626;
+    background-color: #fee2e2;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+  
+  .code-editor-container {
+    margin-bottom: 1rem;
+  }
+  
+  .code-editor-tools {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .format-button {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background-color: #e5e7eb;
+    border: 1px solid #d1d5db;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .format-button:hover {
+    background-color: #d1d5db;
+  }
+  
+  .custom-fields-help {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: #f3f4f6;
+    border-radius: 0.375rem;
+    font-size: 0.8125rem;
+    color: #4b5563;
+  }
+  
+  .custom-fields-help p {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+  
+  .custom-fields-help ul {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+  }
+  
+  .custom-fields-help li {
+    margin-bottom: 0.25rem;
+  }
+  
+  .example-json {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #d1d5db;
+  }
+  
+  .example-json pre {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    padding: 0.75rem;
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    overflow: auto;
+  }
+  
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+  }
+  
+  .modal-content {
+    background-color: white;
+    border-radius: 0.5rem;
+    padding: 2rem;
+    max-width: 450px;
+    width: 100%;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+  
+  .modal-content h2 {
+    margin-top: 0;
+    color: #111827;
+  }
+  
+  .warning {
+    color: #dc2626;
+    font-weight: 500;
+  }
+  
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+  
+  @media (max-width: 768px) {
+    .content-container {
+      grid-template-columns: 1fr;
+    }
+    
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+    
+    .form-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .danger-button {
+      margin-left: 0;
+      margin-top: 1rem;
+    }
+  }
+</style>

@@ -9,7 +9,7 @@
   const { form, errors, enhance } = superForm(data.form);
   const { suppliers, user } = data;
   
-  // Contact info examples to show in the helper text
+  // Contact info examples to show in the helper textye
   const contactInfoExamples = [
     'JSON format: { "email": "contact@example.com", "phone": "123-456-7890", "address": "123 Main St" }',
     'Key-value format: email: contact@example.com; phone: 123-456-7890',

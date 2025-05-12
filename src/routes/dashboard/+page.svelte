@@ -3,6 +3,7 @@
 	import type { PageData } from './$types';
 	import { PartForm } from '$lib/components';
 	import { superForm } from 'sveltekit-superforms/client';
+	import { parseContactInfo } from '$lib/utils/util';
 
 	export let data: PageData;
 	const user = data.user!;
@@ -15,6 +16,73 @@
 	// Tab management
 	type TabType = 'projects' | 'parts' | 'manufacturers' | 'suppliers' | 'categories';
 	let activeTab: TabType = 'projects';
+
+	// Format field names from camelCase to Title Case with spaces
+	function formatFieldName(fieldName: string): string {
+		// Add space before capital letters and capitalize the first letter
+		const formatted = fieldName
+			.replace(/([A-Z])/g, ' $1') // Add space before capital letters
+			.replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
+		return formatted.trim();
+	}
+	
+	// Process contact info for dashboard display
+	function processContactInfo(info: any): { email?: string; phone?: string; address?: string; text?: string } {
+		const result: { email?: string; phone?: string; address?: string; text?: string } = {};
+		
+		if (!info) return result;
+		
+		// If it's already a parsed object, just return it
+		if (typeof info === 'object' && info !== null) {
+			if ('email' in info) result.email = info.email;
+			if ('phone' in info) result.phone = info.phone;
+			if ('address' in info) result.address = info.address;
+			return result;
+		}
+		
+		// If it's a string, try to parse it as JSON
+		if (typeof info === 'string') {
+			try {
+				// Try JSON parsing first
+				if (info.trim().startsWith('{')) {
+					const parsed = JSON.parse(info);
+					if ('email' in parsed) result.email = parsed.email;
+					if ('phone' in parsed) result.phone = parsed.phone;
+					if ('address' in parsed) result.address = parsed.address;
+					return result;
+				}
+				
+				// Look for email:value format
+				if (info.includes(':')) {
+					const pairs = info.split(/[;,\n]+/);
+					
+					for (const pair of pairs) {
+						const parts = pair.split(':');
+						if (parts.length >= 2) {
+							const key = parts[0].trim().toLowerCase();
+							const value = parts.slice(1).join(':').trim();
+							
+							if (key.includes('email')) result.email = value;
+							else if (key.includes('phone') || key.includes('tel')) result.phone = value;
+							else if (key.includes('address')) result.address = value;
+						}
+					}
+					
+					if (Object.keys(result).length > 0) return result;
+				}
+				
+				// Default to storing as simple text
+				result.text = info;
+				return result;
+			} catch (e) {
+				// If JSON parsing fails, just store as text
+				result.text = info;
+				return result;
+			}
+		}
+		
+		return result;
+	}
 
 	// Function to handle tab changes
 	function setActiveTab(tab: TabType): void {
@@ -53,6 +121,20 @@
 			if (result.type === 'success') {
 				showManufacturerForm = false;
 				// Reload the page to get updated manufacturers list
+				window.location.reload();
+			}
+			// Don't reset the form on error to preserve user input
+		}
+	});
+	
+	// Initialize supplier form with superForm
+	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.supplierForm, {
+		dataType: 'json',
+		onResult: ({ result }) => {
+			// Handle successful submission
+			if (result.type === 'success') {
+				showSupplierForm = false;
+				// Reload the page to get updated suppliers list
 				window.location.reload();
 			}
 			// Don't reset the form on error to preserve user input
@@ -359,17 +441,177 @@
 				<h2>Your Suppliers</h2>
 				{#if userSuppliers.length > 0}
 					<div class="user-items-grid">
-						<!-- Suppliers listing will go here -->
-						<p>User suppliers list coming soon</p>
+						{#each userSuppliers as supplier (supplier.id)}
+							<div class="entity-card">
+								<div class="card-header">
+									{#if supplier.logo_url}
+										<div class="logo-container">
+											<img src={supplier.logo_url} alt={`${supplier.name} logo`} class="entity-logo" />
+										</div>
+									{:else}
+										<div class="logo-placeholder">
+											<span>{supplier.name.substring(0, 2).toUpperCase()}</span>
+										</div>
+									{/if}
+									<h3 class="entity-name">{supplier.name}</h3>
+								</div>
+								
+								<div class="card-content">
+									{#if supplier.description}
+										<p class="entity-description">
+											{supplier.description.length > 60 ? 
+												`${supplier.description.substring(0, 60)}...` : 
+												supplier.description}
+										</p>
+									{:else}
+										<p class="entity-no-description">No description provided</p>
+									{/if}
+									
+									{#if supplier.website_url}
+										<p class="entity-meta website-link">
+											<span class="meta-label">Website:</span> 
+											<a href={supplier.website_url} target="_blank" rel="noopener noreferrer" class="website-url">
+												{new URL(supplier.website_url).hostname}
+											</a>
+										</p>
+									{/if}
+									
+									{#if supplier.contact_info}
+										{@const contact = processContactInfo(supplier.contact_info)}
+										<div class="entity-meta contact-info">
+											<span class="meta-label">Contact:</span>
+											{#if contact.email}
+												<a href="mailto:{contact.email}" class="contact-value">{contact.email}</a>
+											{:else if contact.phone}
+												<a href="tel:{contact.phone}" class="contact-value">{contact.phone}</a>
+											{:else if contact.text}
+												<span class="contact-value">{contact.text.length > 30 ? contact.text.substring(0, 30) + '...' : contact.text}</span>
+											{:else}
+												<span class="contact-value">Available</span>
+											{/if}
+										</div>
+									{/if}
+									
+									<p class="entity-meta">
+										<span class="meta-label">Created:</span> 
+										<span class="date-value">
+											{new Date(supplier.created_at).toLocaleDateString()}
+										</span>
+									</p>
+								</div>
+								
+								<div class="entity-actions">
+									<a href={`/supplier/${supplier.id}/edit`} class="icon-btn edit-btn" title="Edit Supplier">✏️</a>
+									<a href="/supplier" class="icon-btn view-btn" title="View All Suppliers">👁️</a>
+								</div>
+							</div>
+						{/each}
 					</div>
 				{:else}
 					<p class="no-items">You haven't created any suppliers yet.</p>
 				{/if}
 
 				<div class="action-buttons">
-					<a href="/supplier" class="primary-btn">Add New Supplier</a>
+					<button type="button" class="primary-btn" on:click={() => showSupplierForm = !showSupplierForm}>
+						{showSupplierForm ? 'Cancel' : 'Add New Supplier'}
+					</button>
 					<a href="/supplier" class="secondary-btn">View All Suppliers</a>
 				</div>
+				
+				{#if showSupplierForm}
+					<div class="form-container">
+						<h2>Create New Supplier</h2>
+						
+						{#if $supplierMessage}
+							<div class="form-message {$supplierMessage.includes('Failed') ? 'error' : 'success'}">
+								{$supplierMessage}
+							</div>
+						{/if}
+						
+						<form method="POST" action="?/supplier" use:supplierEnhance class="form-grid">
+							<div class="form-group">
+								<label for="sup-name">Name <span class="required">*</span></label>
+								<input 
+									id="sup-name" 
+									name="name" 
+									bind:value={$supplierForm.name} 
+									class="form-input"
+									placeholder="Enter supplier name"
+									required 
+								/>
+								{#if $supplierErrors.name}
+									<span class="field-error">{$supplierErrors.name}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="sup-description">Description</label>
+								<textarea 
+									id="sup-description" 
+									name="description" 
+									bind:value={$supplierForm.description} 
+									class="form-textarea"
+									placeholder="Enter supplier description"
+									rows="3"
+								></textarea>
+								{#if $supplierErrors.description}
+									<span class="field-error">{$supplierErrors.description}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="sup-website">Website URL</label>
+								<input 
+									id="sup-website" 
+									name="website_url" 
+									type="url"
+									bind:value={$supplierForm.website_url} 
+									class="form-input"
+									placeholder="https://example.com"
+								/>
+								{#if $supplierErrors.website_url}
+									<span class="field-error">{$supplierErrors.website_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="sup-contact">Contact Information</label>
+								<input
+									id="sup-contact" 
+									name="contact_info" 
+									bind:value={$supplierForm.contact_info} 
+									class="form-input"
+									placeholder="Enter contact info (e.g., email or phone)"
+								/>
+								{#if $supplierErrors.contact_info}
+									<span class="field-error">{$supplierErrors.contact_info}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="sup-logo">Logo URL</label>
+								<input 
+									id="sup-logo" 
+									name="logo_url" 
+									type="url"
+									bind:value={$supplierForm.logo_url} 
+									class="form-input"
+									placeholder="https://example.com/logo.png"
+								/>
+								{#if $supplierErrors.logo_url}
+									<span class="field-error">{$supplierErrors.logo_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-actions">
+								<button type="submit" class="primary-btn" disabled={$supplierSubmitting}>
+									{$supplierSubmitting ? 'Creating...' : 'Create Supplier'}
+								</button>
+								<button type="button" class="secondary-btn" on:click={() => showSupplierForm = false}>Cancel</button>
+							</div>
+						</form>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
@@ -435,6 +677,18 @@
 		justify-content: center;
 		font-weight: bold;
 		color: #555;
+	}
+
+	.entity-card .logo-container {
+		width: 50px;
+		height: 50px;
+		border-radius: 8px;
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		border: 1px solid #eaeaea;
 	}
 
 	.user-details {
@@ -611,34 +865,27 @@
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 	}
 	
-	.manufacturer-card {
+	.entity-card {
 		padding: 1.25rem;
 		box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+		transition: all 0.2s ease;
 	}
 	
-	.manufacturer-card .card-header {
+	.entity-card .card-header {
 		display: flex;
 		align-items: center;
 		margin-bottom: 1rem;
 		gap: 1rem;
 	}
-	
-	.manufacturer-card .logo-container {
-		width: 50px;
-		height: 50px;
-		border-radius: 8px;
-		overflow: hidden;
-		border: 1px solid #eaeaea;
-		flex-shrink: 0;
-	}
-	
-	.manufacturer-card .manufacturer-logo {
+
+	.entity-card .entity-logo {
 		width: 100%;
 		height: 100%;
 		object-fit: contain;
+		object-position: center;
 	}
-	
-	.manufacturer-card .logo-placeholder {
+
+	.entity-card .logo-placeholder {
 		width: 50px;
 		height: 50px;
 		border-radius: 8px;
@@ -650,24 +897,27 @@
 		font-weight: bold;
 		flex-shrink: 0;
 	}
-	
-	.manufacturer-card .manufacturer-name {
+
+	.entity-card .entity-name {
 		margin: 0;
 		font-size: 1.2rem;
 		color: #333;
 		font-weight: 600;
 	}
-	
-	.manufacturer-card .card-content {
+
+	.entity-card .card-header {
+		display: flex;
+		align-items: center;
+		margin-bottom: 1rem;
+		gap: 1rem;
+	}
+
+	.entity-card .card-content {
 		margin-bottom: 1.25rem;
 	}
 
 	.entity-card:hover {
 		border-color: #2575fc;
-		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-	}
-	
-	.manufacturer-card:hover {
 		box-shadow: 0 5px 15px rgba(0,0,0,0.1);
 		transform: translateY(-2px);
 		border-color: #d0d0d0;
@@ -714,17 +964,26 @@
 	}
 	
 	.website-url {
-		color: #2575fc;
+		color: #4285f4;
 		text-decoration: none;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 180px;
-		display: inline-block;
+		font-size: 0.825rem;
+		word-break: break-all;
 	}
 	
 	.website-url:hover {
 		text-decoration: underline;
+	}
+	
+	.contact-value {
+		color: #444;
+		font-size: 0.825rem;
+		word-break: break-all;
+	}
+	
+	.contact-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 	
 	.date-value {
