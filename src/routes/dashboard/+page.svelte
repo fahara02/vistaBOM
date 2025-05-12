@@ -6,6 +6,8 @@
 	import { parseContactInfo } from '$lib/utils/util';
 	import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
 	import Category from '$lib/components/category.svelte';
+	import type { Category as CategoryType } from '$lib/server/db/types';
+	import { onMount } from 'svelte';
 
 	export let data: PageData;
 	const user = data.user!;
@@ -96,6 +98,9 @@
 	let showManufacturerForm = false;
 	let showSupplierForm = false;
 	let showCategoryForm = false;
+	
+	// All categories data for ComboBox in both create and edit forms
+	let allCategories: CategoryType[] = [];
 
 	// Initialize part form with superForm
 	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.partForm, {
@@ -128,23 +133,23 @@
 			// Don't reset the form on error to preserve user input
 		}
 	});
-	
-	// Initialize supplier form with superForm
-	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.supplierForm, {
+
+	// Initialize category form with superForm
+	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
 		dataType: 'json',
 		onResult: ({ result }) => {
 			// Handle successful submission
 			if (result.type === 'success') {
-				showSupplierForm = false;
-				// Reload the page to get updated suppliers list
+				showCategoryForm = false;
+				// Reload the page to get updated categories list
 				window.location.reload();
 			}
 			// Don't reset the form on error to preserve user input
 		}
 	});
 
-	// Initialize category form with superForm
-	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
+	// Initialize supplier form with superForm
+	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.supplierForm, {
 		dataType: 'form',
 		resetForm: true,
 		onSubmit: ({ cancel, action }) => {
@@ -718,10 +723,92 @@
 		{#if activeTab === 'categories'}
 			<div class="tab-content">
 				<h2>Your Categories</h2>
+				
+				<!-- Add category form toggle button -->
+				<div class="form-toggle-container">
+					<button class="toggle-form-btn" on:click={() => showCategoryForm = !showCategoryForm}>
+						{showCategoryForm ? 'Hide Form' : 'Add New Category'}
+					</button>
+				</div>
+				
+				<!-- Category form -->
+				{#if showCategoryForm}
+					<div class="form-container">
+						<form method="POST" action="?/category" use:categoryEnhance>
+							<h3>Create New Category</h3>
+							
+							<div class="form-group">
+								<label for="name">Category Name*</label>
+								<input 
+									type="text" 
+									id="name" 
+									name="name" 
+									bind:value={$categoryForm.name} 
+									required 
+									class:error={$categoryErrors.name}
+								/>
+								{#if $categoryErrors.name}
+									<span class="field-error">{$categoryErrors.name}</span>
+								{/if}
+							</div>
+
+							<div class="form-group">
+								<label for="parent_id">Parent Category</label>
+								<CategoryComboBox
+									categories={allCategories}
+									bind:value={$categoryForm.parent_id}
+									name="parent_id"
+									placeholder="Search or select parent category..."
+								/>
+								{#if $categoryErrors.parent_id}
+									<span class="field-error">{$categoryErrors.parent_id}</span>
+								{/if}
+							</div>
+
+							<div class="form-group full-width">
+								<label for="description">Description</label>
+								<textarea 
+									id="description" 
+									name="description" 
+									bind:value={$categoryForm.description} 
+									rows="4"
+									class:error={$categoryErrors.description}
+								></textarea>
+								{#if $categoryErrors.description}
+									<span class="field-error">{$categoryErrors.description}</span>
+								{/if}
+							</div>
+
+							<div class="form-group checkbox">
+								<label for="is_public">
+									<input 
+										type="checkbox" 
+										id="is_public" 
+										name="is_public" 
+										bind:checked={$categoryForm.is_public} 
+									/>
+									<span>Make category public</span>
+								</label>
+								{#if $categoryErrors.is_public}
+									<span class="field-error">{$categoryErrors.is_public}</span>
+								{/if}
+							</div>
+							
+							<div class="form-actions">
+								<button type="submit" class="primary-btn" disabled={$categorySubmitting}>
+									{$categorySubmitting ? 'Creating...' : 'Create Category'}
+								</button>
+								<button type="button" class="secondary-btn" on:click={() => showCategoryForm = false}>Cancel</button>
+							</div>
+						</form>
+					</div>
+				{/if}
+
+				<!-- User's categories list -->
 				{#if userCategories.length > 0}
 					<div class="user-items-grid">
 						{#each userCategories as category}
-							<Category {category} currentUserId={user.id} />
+							<Category {category} currentUserId={user.id} allCategories={allCategories} />
 						{/each}
 					</div>
 				{:else}

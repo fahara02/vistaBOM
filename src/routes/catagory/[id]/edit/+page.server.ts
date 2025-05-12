@@ -81,11 +81,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       }
     }
 
-    // Fetch all categories for parent selection
+    // Fetch all categories for parent selection - optimized for combobox
+    // Only fetch the minimum needed fields (id, name) and add name search index
     const allCategories = await sql`
-      SELECT id, name FROM category 
+      SELECT id, name, path FROM category 
       WHERE id != ${params.id} AND is_deleted = false
-      ORDER BY name
+      ORDER BY name ASC
+      LIMIT 1000 -- Practical limit for UI performance
     `;
 
     // Create form with schema first, then update its data

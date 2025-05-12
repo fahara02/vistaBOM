@@ -73,12 +73,16 @@
 
         <div class="form-group">
           <label for="parent_id">Parent Category</label>
-          <CategoryComboBox
-            categories={data.categories as unknown as Category[]}
-            bind:value={$form.parent_id}
-            name="parent_id"
-            placeholder="Select parent category..."
-          />
+          <div class="combobox-container">
+            <CategoryComboBox
+              categories={data.categories as unknown as Category[]}
+              bind:value={$form.parent_id}
+              name="parent_id"
+              placeholder="Search or select parent category..."
+              width="w-full"
+            />
+            <small class="help-text">Search by typing to find categories in large lists</small>
+          </div>
           {#if $errors.parent_id}
             <span class="error-text">{$errors.parent_id}</span>
           {/if}
@@ -300,6 +304,18 @@
     color: #6b7280;
     font-size: 0.875rem;
     margin-bottom: 1rem;
+  }
+  
+  .combobox-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .combobox-container .help-text {
+    margin-top: 0.25rem;
+    margin-bottom: 0;
+    font-style: italic;
   }
 
   .existing-fields {

@@ -1,9 +1,12 @@
 <!-- src/lib/components/category.svelte -->
 <script lang="ts">
-    import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
+    import CategoryComboBox from './CategoryComboBox.svelte';
+    import type { Category } from '$lib/server/db/types';
 
     export let category: any;
     export let currentUserId: string;
+    export let allCategories: Category[] = [];
 
     let editMode = false;
     let edits: any = {};
@@ -24,13 +27,29 @@
         abortController.abort();
     });
 
-    const startEdit = () => {
+    // Load all categories for parent selection when edit mode starts
+    const loadCategories = async () => {
+        if (allCategories.length > 0) return; // Already loaded
+        
+        try {
+            const response = await fetch('/api/categories');
+            if (response.ok) {
+                const data = await response.json();
+                allCategories = data.filter((cat: Category) => cat.id !== category.id);
+            }
+        } catch (e) {
+            console.error('Failed to load categories:', e);
+        }
+    };
+
+    const startEdit = async () => {
         edits = { 
             name: category.name,
             description: category.description || '',
             parent_id: category.parent_id || '',
             is_public: Boolean(category.is_public)
         };
+        await loadCategories(); // Load categories for the ComboBox
         editMode = true;
     };
 
@@ -169,10 +188,14 @@
                 
                 <div class="form-group">
                     <label for="parent_id">Parent Category</label>
-                    <select id="parent_id" bind:value={edits.parent_id}>
-                        <option value="">None</option>
-                        <!-- We'd need to pass in all categories to populate this -->
-                    </select>
+                    <CategoryComboBox
+                        categories={allCategories}
+                        bind:value={edits.parent_id}
+                        name="parent_id"
+                        placeholder="Search or select parent category..."
+                        width="w-full"
+                    />
+                    <small class="help-text">Search by typing to find categories</small>
                 </div>
                 
                 <div class="form-group checkbox">
@@ -293,7 +316,7 @@
         margin-bottom: 0.5rem;
     }
 
-    input, textarea, select {
+    input:not([type="checkbox"]), textarea {
         width: 100%;
         padding: 0.75rem;
         border: 1px solid #ddd;
