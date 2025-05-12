@@ -99,11 +99,6 @@
 		activeTab = tab;
 	}
 	
-	// Function to toggle part form visibility
-	function togglePartForm(): void {
-		showPartForm = !showPartForm;
-	}
-	
 	// All categories data for ComboBox in both create and edit forms
 	let allCategories: CategoryType[] = [];
 
@@ -350,7 +345,7 @@
 				{/if}
 
 				<div class="action-buttons">
-					<button type="button" class="primary-btn" on:click={togglePartForm}>
+					<button type="button" class="primary-btn" on:click={() => showPartForm = !showPartForm}>
 						{showPartForm ? 'Cancel' : 'Add New Part'}
 					</button>
 					<a href="/parts" class="secondary-btn">View All Parts</a>
@@ -382,7 +377,7 @@
 									<button type="submit" class="primary-btn" disabled={$partSubmitting}>
 										{$partSubmitting ? 'Creating...' : 'Create Part'}
 									</button>
-									<button type="button" class="secondary-btn" on:click={togglePartForm}>Cancel</button>
+									<button type="button" class="secondary-btn" on:click={() => showPartForm = false}>Cancel</button>
 								</div>
 							</form>
 						</div>

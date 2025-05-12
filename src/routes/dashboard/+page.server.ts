@@ -13,6 +13,7 @@ import { createManufacturer } from '$lib/server/manufacturer';
 import { createSupplier } from '$lib/server/supplier';
 import { createCategory, getCategoryTree } from '$lib/server/category';
 import { z } from 'zod';
+import { parsePartJsonField } from '$lib/utils/util';
 
 // Define supplier schema for the form
 const supplierSchema = z.object({
@@ -57,7 +58,16 @@ export const load: PageServerLoad = async (event) => {
 		} as Project;
 	});
 	
-	// 2. Initialize Part form data
+	
+	
+	// 2. Initialize Manufacturer form data
+	const manufacturerForm = await superValidate(zod(manufacturerSchema));
+	
+	// 3. Initialize Supplier form data
+	const supplierForm = await superValidate(zod(supplierSchema));
+	
+	// 4 Initialize Part form data
+
 	const partForm = await superValidate(zod(createPartSchema));
 	// Initialize dimensions to prevent null reference errors
 	if (!partForm.data.dimensions) {
@@ -67,12 +77,6 @@ export const load: PageServerLoad = async (event) => {
 	if (!partForm.data.status) {
 		partForm.data.status = LifecycleStatusEnum.DRAFT;
 	}
-	
-	// 3. Initialize Manufacturer form data
-	const manufacturerForm = await superValidate(zod(manufacturerSchema));
-	
-	// 4. Initialize Supplier form data
-	const supplierForm = await superValidate(zod(supplierSchema));
 	
 	// 5. Initialize Category form data
 	const createCategorySchema = categorySchema.pick({
@@ -86,48 +90,37 @@ export const load: PageServerLoad = async (event) => {
 	// 6. Get category tree for parent selection
 	const categories = await getCategoryTree();
 	
-	// 4. Fetch user-created parts with manufacturer data
+	// 7. Fetch user-created parts with their current version data
 	let userParts: any[] = [];
 	try {
-		// First check what tables exist in the database
-		const tables = await sql`
-			SELECT tablename FROM pg_tables 
-			WHERE schemaname = 'public';
+		// Following the pattern from other entities, fetch parts created by the user
+		// with their most recent version details
+		userParts = await sql`
+			SELECT 
+				p.id, 
+				p.creator_id AS "creatorId", 
+				p.status,
+				p.lifecycle_status AS "lifecycleStatus",
+				p.is_public AS "isPublic",
+				p.created_at AS "createdAt",
+				p.updated_at AS "updatedAt",
+				p.current_version_id AS "currentVersionId",
+				-- Include part version details
+				pv.name,
+				pv.version,
+				pv.short_description AS "shortDescription"
+			FROM "Part" p
+			-- Left join to get the current version details if available
+			LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.id
+			WHERE p.creator_id = ${user.id}
+			ORDER BY p.created_at DESC
 		`;
 		
-		console.log('Available tables:', tables.map(t => t.tablename));
-		
-		// Examine the Part table structure first to understand what columns exist
-		try {
-			const partColumns = await sql`
-				SELECT column_name, data_type 
-				FROM information_schema.columns 
-				WHERE table_name = 'Part'
-			`;
-			console.log('Part table columns:', partColumns.map(c => c.column_name));
-			
-			// Check if the relevant columns exist before querying
-			const hasCreatedBy = partColumns.some(c => c.column_name === 'created_by');
-			const creatorColumn = hasCreatedBy ? 'created_by' : 'created_at';
-			
-			// Safely query based on available columns
-			userParts = await sql`
-				SELECT * FROM "Part"
-				LIMIT 5
-			`;
-			
-			// Manual filtering if needed
-			if (hasCreatedBy) {
-				userParts = userParts.filter(p => p.created_by === user.id);
-			}
-		} catch (error) {
-			console.log('Error examining Part table:', error);
-			// Last resort - just return empty array
-			userParts = [];
-		}
+		console.log(`Found ${userParts.length} parts created by the user`);
 	} catch (error) {
 		console.error('Error fetching user parts:', error);
-		// userParts is already initialized to an empty array
+		// Return empty array on error
+		userParts = [];
 	}
 	
 	// 5. Fetch user-created manufacturers
@@ -324,22 +317,29 @@ export const actions: Actions = {
 		}
 	},
 	
-	// Part creation
+	// Part creation and editing
 	part: async (event) => {
-		const { request, locals } = event;
-		const user = locals.user;
-		if (!user) return fail(401, { message: 'Unauthorized' });
+		const user = event.locals.user as User | null;
+		if (!user) throw redirect(302, '/');
 		
-		// Validate form data using superForm
-		const form = await superValidate(request, zod(createPartSchema));
-		console.log('Form data:', JSON.stringify(form.data, null, 2));
+		// Get form data to check if we're editing or creating
+		const formData = await event.request.formData();
+		const partId = formData.get('partId');
+		const isEditMode = partId && typeof partId === 'string' && partId.trim() !== '';
 		
-		// Fix validation issues by either removing fields or setting proper values
-		// First approach: remove dimensions entirely if all values are 0
+		// Validate form data with zod schema
+		const form = await superValidate(formData, zod(createPartSchema));
+		
+		if (!form.valid) {
+			// Use the message helper to return validation errors
+			return message(form, 'Validation failed. Please check the form fields.');
+		}
+		
+		// Process dimensions - convert empty dimensions to undefined
 		if (form.data.dimensions && 
-			form.data.dimensions.length === 0 && 
-			form.data.dimensions.width === 0 && 
-			form.data.dimensions.height === 0) {
+			(form.data.dimensions.length === 0 || form.data.dimensions.length === null) && 
+			(form.data.dimensions.width === 0 || form.data.dimensions.width === null) && 
+			(form.data.dimensions.height === 0 || form.data.dimensions.height === null)) {
 			form.data.dimensions = undefined;
 		}
 		
@@ -353,8 +353,18 @@ export const actions: Actions = {
 			form.data.dimensions_unit = DimensionUnitEnum.MM; // Default to millimeters
 		}
 		
-		// Handle validation - don't fail if form is invalid for demonstration purposes
-		console.log('Validation results:', form.valid ? 'VALID' : 'INVALID');
+		// Process any JSON fields using our new utility function for consistent implementation
+		['technical_specifications', 'properties', 'electrical_properties', 
+		'mechanical_properties', 'thermal_properties', 'material_composition', 
+		'environmental_data'].forEach(field => {
+			// Use our utility function to handle various input formats consistently
+			// Use type assertion to avoid TypeScript error with the return type
+			const jsonField = parsePartJsonField(form.data[field as keyof typeof form.data], field);
+			
+			// Use bracket notation with type assertion to set the field value
+			(form.data as any)[field] = jsonField;
+			console.log(`Processed ${field} using parsePartJsonField utility`);
+		});
 
 		try {
 			// Get statuses from form
@@ -364,21 +374,51 @@ export const actions: Actions = {
 			// Cast to proper enum type for the lifecycle status
 			const lifecycleStatusToUse = String(selectedLifecycleStatus) as LifecycleStatusEnum;
 			
-			// Create part data with both status fields
+			// Prepare part data with all fields from the form
 			const partData: CreatePartInput = {
 				name: form.data.name,
 				version: form.data.version || '0.1.0',
 				status: lifecycleStatusToUse,
 				partStatus: selectedPartStatus,
-				shortDescription: form.data.short_description,
-				functionalDescription: form.data.functional_description,
+				shortDescription: form.data.short_description || '',
+				functionalDescription: form.data.functional_description || '',
+				longDescription: form.data.long_description,
+				technicalSpecifications: form.data.technical_specifications,
+				properties: form.data.properties,
+				electricalProperties: form.data.electrical_properties,
+				mechanicalProperties: form.data.mechanical_properties,
+				thermalProperties: form.data.thermal_properties,
+				materialComposition: form.data.material_composition,
+				environmentalData: form.data.environmental_data,
+				revisionNotes: form.data.revision_notes || '',
+				// Include physical properties if provided
+				dimensions: form.data.dimensions,
+				dimensionsUnit: form.data.dimensions_unit,
+				weight: form.data.weight,
+				weightUnit: form.data.weight_unit,
+				packageType: form.data.package_type,
+				pinCount: form.data.pin_count,
+				// Include thermal properties if provided
+				operatingTemperatureMin: form.data.operating_temperature_min,
+				operatingTemperatureMax: form.data.operating_temperature_max,
+				storageTemperatureMin: form.data.storage_temperature_min,
+				storageTemperatureMax: form.data.storage_temperature_max,
+				temperatureUnit: form.data.temperature_unit,
+				// Include electrical properties if provided
+				voltageRatingMin: form.data.voltage_rating_min,
+				voltageRatingMax: form.data.voltage_rating_max,
+				currentRatingMin: form.data.current_rating_min,
+				currentRatingMax: form.data.current_rating_max,
+				powerRatingMax: form.data.power_rating_max,
+				tolerance: form.data.tolerance,
+				toleranceUnit: form.data.tolerance_unit,
 			};
 			
 			// Create the part with all the form data
 			await createPart(partData, user.id);
 			
-			// Return success instead of redirecting so we stay on the dashboard
-			return { success: true };
+			// Return success with a message
+			return message(form, 'Part created successfully');
 		} catch (err) {
 			console.error('Create part error:', err);
 			// Return form with error message for superForm to display

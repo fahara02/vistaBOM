@@ -8,6 +8,8 @@ import { zod } from 'sveltekit-superforms/adapters';
 import { superValidate } from 'sveltekit-superforms/server';
 import type { Actions, PageServerLoad } from './$types';
 import { randomUUID } from 'crypto';
+// Import utilities for JSON field handling
+import { parsePartJsonField } from '$lib/utils/util';
 
 export const load: PageServerLoad = async ({ params }) => {
   const { part, currentVersion } = await getPartWithCurrentVersion(params.id as string);
@@ -447,24 +449,14 @@ export const actions: Actions = {
         }
       }
       
-      // 2. Validate other JSON fields
+      // 2. Validate other JSON fields using our utility function
       ['technical_specifications', 'properties', 'electrical_properties', 
        'mechanical_properties', 'thermal_properties', 'material_composition', 
        'environmental_data'].forEach(field => {
         const dbField = field.replace(/_/g, ''); // Convert db field to camelCase for versionData
-        if (versionData[dbField] === undefined || versionData[dbField] === '') {
-          console.log(`CRITICAL FIX: Setting empty ${dbField} to empty object`);
-          versionData[dbField] = {};
-        } else if (typeof versionData[dbField] === 'string') {
-          try {
-            // Parse string to object
-            versionData[dbField] = JSON.parse(versionData[dbField]);
-            console.log(`CRITICAL FIX: Converted ${dbField} from string to object`);
-          } catch (e) {
-            console.log(`CRITICAL FIX: Could not parse ${dbField}, setting to empty object`);
-            versionData[dbField] = {};
-          }
-        }
+        // Use the new utility function for robust JSON field parsing
+        versionData[dbField] = parsePartJsonField(versionData[dbField], field);
+        console.log(`Processed ${field} using parsePartJsonField utility`);
       });
       
       // 3. Validate numeric fields

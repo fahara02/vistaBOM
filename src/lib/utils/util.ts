@@ -173,6 +173,144 @@ export function parseContactInfo(
   }
 
 /**
+ * Parses and formats part JSON fields for submission to database
+ * Handles various formats (JSON strings, objects, key-value strings) and ensures
+ * valid JSON objects are returned for database storage
+ * 
+ * @param input The JSON field content to parse (can be string, object, null, etc)
+ * @param fieldName The name of the field for logging purposes
+ * @returns A properly formatted object for database storage
+ */
+export function parsePartJsonField(input: any, fieldName: string): Record<string, any> {
+  // Return empty object for null/undefined/empty inputs
+  if (input === null || input === undefined || input === '') {
+    return {};
+  }
+  
+  // If already an object, return as is
+  if (typeof input === 'object' && !Array.isArray(input)) {
+    return input;
+  }
+  
+  // If it's a string, try to parse it as JSON
+  if (typeof input === 'string') {
+    const cleanInput = input.trim();
+    
+    // If it's already a JSON string, parse it
+    if (cleanInput.startsWith('{') && cleanInput.endsWith('}')) {
+      try {
+        return JSON.parse(cleanInput);
+      } catch (e) {
+        // If JSON parse fails, attempt to fix common issues
+        try {
+          // Try to fix unquoted keys
+          const fixedJson = cleanInput
+            .replace(/([{,])\s*([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // Add quotes to keys
+            .replace(/:\s*([a-zA-Z0-9_]+)\s*([,}])/g, ':"$1"$2'); // Add quotes to string values
+          
+          return JSON.parse(fixedJson);
+        } catch (fixError) {
+          console.log(`Failed to parse ${fieldName} JSON after fixing: ${fixError}`);
+          // Fall through to key-value parsing
+        }
+      }
+    }
+    
+    // Try to parse as key-value pairs (key: value; key2: value2)
+    if (cleanInput.includes(':')) {
+      const result: Record<string, any> = {};
+      try {
+        // Split by semicolons, commas, or line breaks
+        const pairs = cleanInput.split(/[;,\n]+/);
+        
+        for (const pair of pairs) {
+          // Split by colon to get key and value
+          const parts = pair.split(':');
+          if (parts.length >= 2) {
+            const key = parts[0].trim().replace(/[^a-zA-Z0-9_]/g, '_');
+            const valueStr = parts.slice(1).join(':').trim(); // Join in case value itself contained colons
+            
+            // Try to convert value to appropriate type (as any to avoid TS errors)
+            let value: any = valueStr;
+            if (valueStr.toLowerCase() === 'true') value = true;
+            else if (valueStr.toLowerCase() === 'false') value = false;
+            else if (!isNaN(Number(valueStr)) && valueStr !== '') value = Number(valueStr);
+            
+            if (key) {
+              result[key] = value;
+            }
+          }
+        }
+        
+        if (Object.keys(result).length > 0) {
+          return result;
+        }
+      } catch (e) {
+        console.log(`Error parsing ${fieldName} key-value pairs: ${e}`);
+      }
+    }
+  }
+  
+  // Default fallback to empty object
+  console.log(`Failed to parse ${fieldName}, returning empty object`);
+  return {};
+}
+
+/**
+ * Formats part JSON fields for display in the UI
+ * Takes a field that may be JSON string or object and returns a consistently
+ * formatted string for display purposes
+ * 
+ * @param input The JSON field content to format (can be string, object, null, etc)
+ * @param fieldName The name of the field for display purposes
+ * @returns Formatted string with key-value pairs for display
+ */
+export function formatPartJsonFieldForDisplay(input: any, fieldName: string): string {
+  if (input === null || input === undefined || input === '') {
+    return '';
+  }
+  
+  let dataObj: Record<string, any>;
+  
+  // If it's a string, try to parse it
+  if (typeof input === 'string') {
+    try {
+      dataObj = JSON.parse(input.trim());
+    } catch (e) {
+      return input; // Return as-is if parsing fails
+    }
+  } else if (typeof input === 'object' && !Array.isArray(input)) {
+    dataObj = input;
+  } else {
+    return String(input); // Return stringified version for other types
+  }
+  
+  // Format as key-value pairs
+  return Object.entries(dataObj)
+    .map(([key, value]) => {
+      // Format key from camelCase or snake_case to Title Case
+      const formattedKey = key
+        .replace(/([A-Z])/g, ' $1') // Add space before uppercase letters
+        .replace(/_/g, ' ')         // Replace underscores with spaces
+        .replace(/^./, str => str.toUpperCase())  // Capitalize first letter
+        .trim();
+      
+      // Format value based on type
+      let formattedValue: string;
+      if (typeof value === 'object' && value !== null) {
+        formattedValue = JSON.stringify(value, null, 2);
+      } else if (typeof value === 'boolean') {
+        formattedValue = value ? 'Yes' : 'No';
+      } else {
+        formattedValue = String(value);
+      }
+      
+      return `${formattedKey}: ${formattedValue}`;
+    })
+    .join('; ');
+}
+
+/**
  * Formats contact information for display in the UI
  * Takes a contact info string (which may be JSON or key-value format) and
  * returns a consistently formatted string for display purposes
