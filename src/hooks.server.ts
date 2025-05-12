@@ -12,5 +12,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.cookies.delete(sessionCookieName, { path: '/' });
 		}
 	}
+	if (
+		event.url.pathname.startsWith(
+			'/.well-known/appspecific/com.chrome.devtools'
+		)
+	) {
+		return new Response(null, { status: 204 }); // Return empty response with 204 No Content
+	}
 	return resolve(event);
 };

@@ -4,7 +4,8 @@ export interface ContactInfo {
 	address?: string;
 	email?: string;
 	phone?: string;
-	fax?:string;
+	mobile?: string;
+	fax?: string;
 	
   }
 // ======================

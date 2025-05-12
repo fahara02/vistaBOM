@@ -3,9 +3,10 @@ import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
 import { getSupplier } from '$lib/server/supplier';
 import { z } from 'zod';
-import { superValidate, message } from 'sveltekit-superforms';
+import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
+import { parseContactInfo } from '$lib/utils/util';
 
 // Edit schema - allow more fields to be optional for updates
 const supplierEditSchema = z.object({
@@ -22,6 +23,42 @@ const supplierEditSchema = z.object({
   updated_by: z.string().optional().nullable(),
   updated_at: z.any().optional()
 });
+
+// Helper function to get custom fields for a supplier
+async function getSupplierCustomFields(supplierId: string): Promise<Record<string, any>> {
+  try {
+    const customFieldRows = await sql`
+      SELECT cf.field_name, cf.data_type, scf.value
+      FROM suppliercustomfield scf
+      JOIN customfield cf ON scf.field_id = cf.id
+      WHERE scf.supplier_id = ${supplierId}
+    `;
+    
+    const customFields: Record<string, any> = {};
+    
+    for (const row of customFieldRows) {
+      // Convert the value based on the data type
+      let typedValue = row.value;
+      
+      // For PostgreSQL JSONB, we need to extract the actual value
+      if (typeof typedValue === 'string') {
+        try {
+          typedValue = JSON.parse(typedValue);
+        } catch (e) {
+          // If it's not valid JSON, keep it as a string
+          console.warn(`Failed to parse JSON value for ${row.field_name}:`, e);
+        }
+      }
+      
+      customFields[row.field_name] = typedValue;
+    }
+    
+    return customFields;
+  } catch (error) {
+    console.error('Error fetching supplier custom fields:', error);
+    return {};
+  }
+}
 
 export const load: PageServerLoad = async ({ params, locals }) => {
   const userId = locals.user?.id;
@@ -121,47 +158,136 @@ export const actions: Actions = {
       
       // Process contact info - ensure it's in the correct format
       let contactInfo = form.data.contact_info;
-      if (contactInfo) {
-        // If it's not already JSON format but contains key-value pairs, convert it to JSON
-        if (!contactInfo.trim().startsWith('{') && 
-           (contactInfo.includes(':') || contactInfo.includes(';'))) {
+      
+      // Ensure contactInfo is a string before processing
+      if (contactInfo && typeof contactInfo === 'string') {
+        // First ensure we don't have an HTML error in the input
+        if (contactInfo.trim().toLowerCase().startsWith('<!doctype')) {
+          console.error('HTML content detected in contact_info, clearing to prevent errors');
+          contactInfo = '{}';
+        } else {
           try {
-            // Parse key-value pairs in the format "key: value; key2: value2"
-            const pairs = contactInfo.split(/[;\n]+/);
-            const contactObj: Record<string, string> = {};
-            
-            for (const pair of pairs) {
-              const parts = pair.split(':');
-              if (parts.length >= 2) {
-                const key = parts[0].trim().toLowerCase();
-                const value = parts.slice(1).join(':').trim();
-                
-                if (key === 'email' || key.includes('email')) contactObj.email = value;
-                else if (key === 'phone' || key.includes('phone')) contactObj.phone = value;
-                else if (key === 'address' || key.includes('address')) contactObj.address = value;
-                else contactObj[key] = value;
-              }
-            }
-            
-            // Convert to JSON string if we found any pairs
-            if (Object.keys(contactObj).length > 0) {
-              contactInfo = JSON.stringify(contactObj);
-            }
+            // Use our utility function to parse and standardize the contact info
+            const parsedContactInfo = parseContactInfo(contactInfo);
+            contactInfo = parsedContactInfo;
+            console.log('Processed contact info using utility function:', contactInfo);
           } catch (e) {
-            console.error('Error converting contact info to JSON:', e);
-            // Keep it as a string if conversion fails
+            console.error('Error using parseContactInfo utility:', e);
+            
+            // Fall back to manual parsing
+            try {
+              // At this point we know contactInfo is a string due to the outer check
+              const contactInfoStr = contactInfo as string;
+              // First try to parse as JSON if it appears to be JSON format
+              if (contactInfoStr.trim().startsWith('{') && contactInfoStr.trim().endsWith('}')) {
+                try {
+                  // Check if it contains unquoted values with hyphens (common issue)
+                  // Example: { "mobile":0086-755-83210457,"email":"sales@lcsc.com" }
+                  if (contactInfoStr.match(/"(mobile|phone)"\s*:\s*(\d+\-\d+|\d+\-\d+\-\d+)/)) {
+                    // Extract the problematic fields
+                    const contactObj: Record<string, string> = {};
+                    
+                    // Extract mobile/phone with regex
+                    const phoneMatch = contactInfoStr.match(/"(mobile|phone)"\s*:\s*([\d\-]+)/);
+                    if (phoneMatch && phoneMatch.length > 2) {
+                      contactObj[phoneMatch[1]] = phoneMatch[2];
+                    }
+                    
+                    // Extract email if present
+                    const emailMatch = contactInfoStr.match(/"email"\s*:\s*"([^"]+)"/); 
+                    if (emailMatch && emailMatch.length > 1) {
+                      contactObj.email = emailMatch[1];
+                    }
+                    
+                    contactInfo = JSON.stringify(contactObj);
+                    console.log('Fixed unquoted values in JSON:', contactInfo);
+                  } else {
+                    // Try standard JSON parse
+                    JSON.parse(contactInfoStr);
+                    // If successful, keep it as is
+                    console.log('Contact info is valid JSON, keeping as is');
+                  }
+                } catch (e) {
+                  // Attempt to fix common JSON formatting issues
+                  console.log('Attempting to fix malformed JSON');
+                  
+                  // 1. Fix missing quotes around values
+                  let fixedJson = contactInfoStr.replace(/"([^"]+)"\s*:\s*([^\{\}\[\]\,"\d][^\,\}]*)(,|\})/g, '"$1": "$2"$3');
+                  
+                  // 2. Make sure numbers with hyphens are quoted
+                  fixedJson = fixedJson.replace(/"(mobile|phone)"\s*:\s*(\d+[\-\d]+)/g, '"$1": "$2"');
+                  
+                  // 3. Fix line breaks and extra spaces
+                  fixedJson = fixedJson.replace(/\n\s*/g, ' ').replace(/\s+,/g, ',');
+                  
+                  try {
+                    JSON.parse(fixedJson);
+                    contactInfo = fixedJson;
+                    console.log('Successfully fixed JSON:', fixedJson);
+                  } catch (innerE) {
+                    console.error('Failed to fix JSON:', innerE);
+                    // Create a new clean object instead of using broken JSON
+                    const contactObj: Record<string, string> = {};
+                    
+                    // Extract any identifiable fields using regex
+                    const emailMatch = contactInfoStr.match(/"email"\s*:\s*"?([^",}]+)"?/);
+                    if (emailMatch) contactObj.email = emailMatch[1].trim();
+                    
+                    const phoneMatch = contactInfoStr.match(/"(phone|mobile)"\s*:\s*"?([^",}]+)"?/);
+                    if (phoneMatch) contactObj[phoneMatch[1]] = phoneMatch[2].trim();
+                    
+                    const addressMatch = contactInfoStr.match(/"address"\s*:\s*"?([^",}]+)"?/);
+                    if (addressMatch) contactObj.address = addressMatch[1].trim();
+                    
+                    contactInfo = JSON.stringify(contactObj);
+                  }
+                }
+              } else if (contactInfoStr.includes(':')) {
+                // Process as key-value pairs (e.g., "email: test@example.com; phone: 123-456")
+                const pairs = contactInfoStr.split(/[;\n]+/);
+                const contactObj: Record<string, string> = {};
+                
+                for (const pair of pairs) {
+                  const parts = pair.split(':');
+                  if (parts.length >= 2) {
+                    const key = parts[0].trim().toLowerCase();
+                    const value = parts.slice(1).join(':').trim();
+                    
+                    if (key === 'email' || key.includes('email')) contactObj.email = value;
+                    else if (key === 'phone' || key.includes('phone')) contactObj.phone = value;
+                    else if (key === 'mobile' || key.includes('mobile')) contactObj.mobile = value;
+                    else if (key === 'address' || key.includes('address')) contactObj.address = value;
+                    else if (key === 'fax' || key.includes('fax')) contactObj.fax = value;
+                    else contactObj[key] = value;
+                  }
+                }
+                
+                // Convert to JSON string if we found any pairs
+                if (Object.keys(contactObj).length > 0) {
+                  contactInfo = JSON.stringify(contactObj);
+                  console.log('Converted key-value pairs to JSON:', contactInfo);
+                }
+              }
+            } catch (e) {
+              console.error('Error in fallback contact info processing:', e);
+              // If all else fails, store an empty object to prevent future errors
+              contactInfo = '{}';
+            }
           }
         }
+      } else {
+        // If there's no contact info, use an empty object
+        contactInfo = '{}';
       }
       
+      // Update the supplier in the database - use lowercase table name to match actual DB table
       const result = await sql`
-        UPDATE supplier
-        SET 
+        UPDATE supplier SET
           name = ${form.data.name},
           description = ${form.data.description || null},
           website_url = ${form.data.website_url || null},
-          logo_url = ${form.data.logo_url || null},
           contact_info = ${contactInfo || null},
+          logo_url = ${form.data.logo_url || null},
           updated_by = ${userId},
           updated_at = NOW()
         WHERE id = ${supplierId}
@@ -265,39 +391,3 @@ export const actions: Actions = {
     }
   }
 };
-
-// Function to get custom fields for a supplier
-async function getSupplierCustomFields(supplierId: string): Promise<Record<string, any>> {
-  try {
-    const customFieldRows = await sql`
-      SELECT cf.field_name, cf.data_type, scf.value
-      FROM suppliercustomfield scf
-      JOIN customfield cf ON scf.field_id = cf.id
-      WHERE scf.supplier_id = ${supplierId}
-    `;
-    
-    const customFields: Record<string, any> = {};
-    
-    for (const row of customFieldRows) {
-      // Convert the value based on the data type
-      let typedValue = row.value;
-      
-      // For PostgreSQL JSONB, we need to extract the actual value
-      if (typeof typedValue === 'string') {
-        try {
-          typedValue = JSON.parse(typedValue);
-        } catch (e) {
-          // If it's not valid JSON, keep it as a string
-          console.warn(`Failed to parse JSON value for ${row.field_name}:`, e);
-        }
-      }
-      
-      customFields[row.field_name] = typedValue;
-    }
-    
-    return customFields;
-  } catch (error) {
-    console.error('Error fetching supplier custom fields:', error);
-    return {};
-  }
-}

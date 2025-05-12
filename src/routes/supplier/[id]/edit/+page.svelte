@@ -3,11 +3,18 @@
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
   import { goto } from '$app/navigation';
+  import { parseContactInfo, formatContactInfoForDisplay } from '$lib/utils/util';
+  import type { ContactInfo } from '$lib/server/db/types';
   
   export let data: PageData;
   
   // Extract supplier data
   const { supplier } = data;
+  
+  // Track if we've already formatted the contact info to prevent loops
+  let contactInfoFormatted = false;
+  
+  // Note: formatContactInfoForDisplay has been moved to the shared utils file
   
   // Initialize the form with SuperForms - moved to top level to avoid store subscription issues
   const { form, errors, enhance, submitting, delayed, message } = superForm(data.form, {
@@ -165,21 +172,52 @@
             <div class="contact-info-help">
               <span class="field-hint">Enter contact details such as email, phone, or address</span>
             </div>
-            <input 
+            <!-- Initialize contact_info with formatted value if not already done -->
+            {#if $form.contact_info && !contactInfoFormatted}
+              <!-- One-time initialization to format contact info for better display -->
+              {@const formattedContact = formatContactInfoForDisplay($form.contact_info)}
+              {@const _ = formattedContact && ($form.contact_info = formattedContact) && (contactInfoFormatted = true)}
+            {/if}
+            <textarea 
               id="contact_info" 
               name="contact_info" 
               bind:value={$form.contact_info}
               class="form-control"
+              rows="3"
               placeholder="email: example@domain.com; phone: (123) 456-7890"
-            />
+            ></textarea>
             {#if $errors.contact_info}
               <span class="error-message">{$errors.contact_info}</span>
             {/if}
+            <div class="contact-info-preview">
+              {#if $form.contact_info}
+                <div class="preview-heading">Contact Information Preview:</div>
+                <div class="contact-list">
+                  {#each formatContactInfoForDisplay($form.contact_info).split(';') as contactItem}
+                    {#if contactItem.trim()}
+                      <div class="contact-item">
+                        {#if contactItem.toLowerCase().includes('email')}
+                          <span class="contact-icon">📧</span>
+                        {:else if contactItem.toLowerCase().includes('phone') || contactItem.toLowerCase().includes('mobile')}
+                          <span class="contact-icon">📞</span>
+                        {:else if contactItem.toLowerCase().includes('address')}
+                          <span class="contact-icon">📍</span>
+                        {:else}
+                          <span class="contact-icon">ℹ️</span>
+                        {/if}
+                        <span class="contact-text">{contactItem.trim()}</span>
+                      </div>
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
+            </div>
             <div class="field-examples">
               <p>Examples:</p>
               <ul>
                 <li><code>email: contact@example.com; phone: (123) 456-7890; address: 123 Main St</code></li>
                 <li><code>{`{"email":"contact@example.com","phone":"(123) 456-7890"}`}</code> (JSON format)</li>
+                <li><code>{`{"mobile":"0086-755-83210457","email":"sales@lcsc.com"}`}</code> (JSON with mobile)</li>
               </ul>
             </div>
           </div>
@@ -591,13 +629,7 @@
     color: #4b5563;
   }
   
-  .info-hint pre {
-    background-color: #f3f4f6;
-    padding: 0.75rem;
-    border-radius: 0.375rem;
-    overflow: auto;
-    font-size: 0.75rem;
-  }
+  /* Removed unused .info-hint pre selector */
   
   /* Custom Fields Styling */
   .custom-fields-container {
@@ -711,6 +743,47 @@
     margin: 0.5rem 0 0;
     font-size: 0.75rem;
     overflow: auto;
+  }
+  
+  /* Contact Information Preview Styling */
+  .contact-info-preview {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+  }
+  
+  .preview-heading {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4b5563;
+    margin-bottom: 0.5rem;
+  }
+  
+  .contact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .contact-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.25rem;
+  }
+  
+  .contact-icon {
+    font-size: 1.25rem;
+  }
+  
+  .contact-text {
+    font-size: 0.875rem;
+    color: #374151;
   }
   
   .modal-overlay {
