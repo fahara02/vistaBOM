@@ -8,7 +8,10 @@ const config = {
 		adapter: adapter(),
 		env: {
 			publicPrefix: 'VITE_'
-		}
+		},
+		alias: {
+			"@/*": "./src/lib/*",
+		  },
 	},
 	extensions: ['.svelte', '.svx']
 };

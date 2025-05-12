@@ -1,49 +1,62 @@
-/**
- * Utility functions for the application
- */
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import { cubicOut } from "svelte/easing";
+import type { TransitionConfig } from "svelte/transition";
 
-/**
- * Format a date to a readable string
- * @param date Date to format
- * @returns Formatted date string
- */
-export function formatDate(date: Date | null | undefined): string {
-  if (!date) return 'Not specified';
-  
-  // Options for formatting the date
-  const options: Intl.DateTimeFormatOptions = {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  };
-
-  return new Date(date).toLocaleDateString(undefined, options);
+export function cn(...inputs: ClassValue[]) {
+	return twMerge(clsx(inputs));
 }
 
-/**
- * Format a number with unit
- * @param value Number to format
- * @param unit Unit to append
- * @param defaultText Text to display if value is undefined or null
- * @returns Formatted string with value and unit
- */
-export function formatWithUnit(
-  value: number | null | undefined, 
-  unit: string | null | undefined, 
-  defaultText = 'Not specified'
-): string {
-  if (value === null || value === undefined) return defaultText;
-  return `${value}${unit ? ` ${unit}` : ''}`;
-}
+type FlyAndScaleParams = {
+	y?: number;
+	x?: number;
+	start?: number;
+	duration?: number;
+};
 
-/**
- * Format JSON data for display
- * @param json JSON data to format
- * @returns Formatted JSON string
- */
-export function formatJson(json: any): string {
-  if (!json) return 'Not specified';
-  return JSON.stringify(json, null, 2);
-}
+export const flyAndScale = (
+	node: Element,
+	params: FlyAndScaleParams = { y: -8, x: 0, start: 0.95, duration: 150 }
+): TransitionConfig => {
+	const style = getComputedStyle(node);
+	const transform = style.transform === "none" ? "" : style.transform;
+
+	const scaleConversion = (
+		valueA: number,
+		scaleA: [number, number],
+		scaleB: [number, number]
+	) => {
+		const [minA, maxA] = scaleA;
+		const [minB, maxB] = scaleB;
+
+		const percentage = (valueA - minA) / (maxA - minA);
+		const valueB = percentage * (maxB - minB) + minB;
+
+		return valueB;
+	};
+
+	const styleToString = (
+		style: Record<string, number | string | undefined>
+	): string => {
+		return Object.keys(style).reduce((str, key) => {
+			if (style[key] === undefined) return str;
+			return str + `${key}:${style[key]};`;
+		}, "");
+	};
+
+	return {
+		duration: params.duration ?? 200,
+		delay: 0,
+		css: (t) => {
+			const y = scaleConversion(t, [0, 1], [params.y ?? 5, 0]);
+			const x = scaleConversion(t, [0, 1], [params.x ?? 0, 0]);
+			const scale = scaleConversion(t, [0, 1], [params.start ?? 0.95, 1]);
+
+			return styleToString({
+				transform: `${transform} translate3d(${x}px, ${y}px, 0) scale(${scale})`,
+				opacity: t
+			});
+		},
+		easing: cubicOut
+	};
+};
