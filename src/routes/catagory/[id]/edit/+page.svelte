@@ -1,7 +1,10 @@
+<!-- //src/routes/catagory/[id]/edit/+page.svelte -->
 <script lang="ts">
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
   import { formatJSON, isJSONValid } from '$lib/utils/formatters';
+  import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
+  import type { Category } from '$lib/server/db/types';
 
   export let data: PageData;
   const { form, errors, enhance, submitting } = superForm(data.form, {
@@ -70,16 +73,12 @@
 
         <div class="form-group">
           <label for="parent_id">Parent Category</label>
-          <select 
-            id="parent_id" 
-            name="parent_id" 
+          <CategoryComboBox
+            categories={data.categories as unknown as Category[]}
             bind:value={$form.parent_id}
-          >
-            <option value="">None</option>
-            {#each data.categories as category}
-              <option value={category.id}>{category.name}</option>
-            {/each}
-          </select>
+            name="parent_id"
+            placeholder="Select parent category..."
+          />
           {#if $errors.parent_id}
             <span class="error-text">{$errors.parent_id}</span>
           {/if}
@@ -149,7 +148,7 @@
             bind:value={$form.customFieldsJson} 
             rows="8"
             class:error={!customFieldsJsonValid || $errors.customFieldsJson}
-            placeholder='{"fieldName": "value", "anotherField": true, "numericField": 42}'
+            placeholder="Enter JSON object here (example in code below)"
           ></textarea>
           {#if !customFieldsJsonValid}
             <span class="error-text">Invalid JSON format: {customFieldsFormatError}</span>
@@ -159,7 +158,11 @@
           {/if}
           <div class="json-examples">
             <p>Examples:</p>
-            <code>{{"certification": "ISO 9001", "yearEstablished": 1995, "isVerified": true}}</code>
+            <div class="example-code">
+              certification: "ISO 9001",<br>
+              yearEstablished: 1995,<br>
+              isVerified: true
+            </div>
           </div>
         </div>
       </div>
@@ -233,10 +236,9 @@
     color: #4b5563;
   }
 
+  /* Input styles - reduced to only what's used */
   input[type="text"],
-  input[type="url"],
-  textarea,
-  select {
+  textarea {
     width: 100%;
     padding: 0.75rem;
     border: 1px solid #d1d5db;
@@ -246,17 +248,14 @@
   }
 
   input[type="text"]:focus,
-  input[type="url"]:focus,
-  textarea:focus,
-  select:focus {
+  textarea:focus {
     outline: none;
     border-color: #4f46e5;
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
   }
 
   input.error,
-  textarea.error,
-  select.error {
+  textarea.error {
     border-color: #ef4444;
   }
 
@@ -343,7 +342,7 @@
     color: #6b7280;
   }
 
-  .json-examples code {
+  .example-code {
     display: block;
     background: #f3f4f6;
     padding: 0.5rem;

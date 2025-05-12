@@ -207,6 +207,45 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
+	// Category creation and editing
+	category: async (event) => {
+		const user = event.locals.user as User | null;
+		if (!user) throw redirect(302, '/login');
+
+		// Validate the form data
+		const form = await superValidate(event.request, zod(categorySchema));
+		if (!form.valid) {
+			return fail(400, { categoryForm: form });
+		}
+
+		try {
+			// Extract form data
+			const { name, description, parent_id, is_public } = form.data;
+
+			// Create the category
+			const result = await createCategory({
+				name: name as string,
+				description: description as string || null,
+				parent_id: parent_id || null,
+				is_public: Boolean(is_public),
+				created_by: user.id
+			});
+
+			// Return success message
+			return { 
+				categoryForm: form,
+				success: true,
+				message: message(form, 'Category created successfully!') 
+			};
+		} catch (error) {
+			console.error('Error creating category:', error);
+			return fail(500, { 
+				categoryForm: form,
+				error: true, 
+				message: message(form, 'Failed to create category. Please try again.', { status: 'error' })
+			});
+		}
+	},
 	// Default action handler to route based on intent parameter
 	default: async (event) => {
 		const intent = event.url.searchParams.get('intent');
@@ -403,13 +442,18 @@ export const actions: Actions = {
 		}
 	},
 	
-	// Category creation action
+	// Category creation and editing action
 	category: async (event) => {
 		const user = event.locals.user as User | null;
 		if (!user) throw redirect(302, '/');
 		
+		// Get form data to check if we're editing or creating
+		const formData = await event.request.formData();
+		const categoryId = formData.get('categoryId');
+		const isEditMode = categoryId && typeof categoryId === 'string' && categoryId.trim() !== '';
+		
 		// Create schema for validation
-		const createCategorySchema = categorySchema.pick({
+		const categoryFormSchema = categorySchema.pick({
 			name: true,
 			parent_id: true,
 			description: true,
@@ -417,28 +461,55 @@ export const actions: Actions = {
 		});
 		
 		// Validate the form
-		const form = await superValidate(event.request, zod(createCategorySchema));
+		const form = await superValidate(formData, zod(categoryFormSchema));
 		
 		if (!form.valid) {
 			return message(form, 'Invalid form data. Please check the fields.');
 		}
 		
 		try {
-			// Call createCategory with the form data
-			await createCategory({
-				name: form.data.name,
-				parentId: form.data.parent_id ?? undefined,
-				description: form.data.description ?? undefined,
-				isPublic: form.data.is_public,
-				createdBy: user.id
-			});
-			
-			// Return success message
-			return message(form, 'Category created successfully');
+			if (isEditMode) {
+				// EDIT MODE: Check if the category exists and belongs to the user
+				const categoryCheck = await sql`
+					SELECT * FROM category WHERE id = ${categoryId} AND created_by = ${user.id}
+				`;
+				
+				if (categoryCheck.length === 0) {
+					return message(form, 'Category not found or you do not have permission to edit it.', { status: 403 });
+				}
+				
+				// Update the category
+				await sql`
+					UPDATE category 
+					SET 
+						name = ${form.data.name},
+						description = ${form.data.description || null},
+						parent_id = ${form.data.parent_id || null},
+						is_public = ${Boolean(form.data.is_public)},
+						updated_at = NOW(),
+						updated_by = ${user.id}
+					WHERE id = ${categoryId}
+				`;
+				
+				// Return success message
+				return message(form, 'Category updated successfully');
+			} else {
+				// CREATE MODE: Create new category
+				await createCategory({
+					name: form.data.name,
+					parentId: form.data.parent_id ?? undefined,
+					description: form.data.description ?? undefined,
+					isPublic: form.data.is_public,
+					createdBy: user.id
+				});
+				
+				// Return success message
+				return message(form, 'Category created successfully');
+			}
 		} catch (err) {
-			console.error('Create category error:', err);
+			console.error(isEditMode ? 'Update category error:' : 'Create category error:', err);
 			// Return form with error message
-			return message(form, 'Failed to create category: ' + (err instanceof Error ? err.message : 'Unknown error'));
+			return message(form, `Failed to ${isEditMode ? 'update' : 'create'} category: ` + (err instanceof Error ? err.message : 'Unknown error'));
 		}
-	}
+	},
 };

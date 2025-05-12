@@ -5,6 +5,7 @@
 	import { superForm } from 'sveltekit-superforms/client';
 	import { parseContactInfo } from '$lib/utils/util';
 	import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
+	import Category from '$lib/components/category.svelte';
 
 	export let data: PageData;
 	const user = data.user!;
@@ -144,19 +145,35 @@
 
 	// Initialize category form with superForm
 	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
-		dataType: 'json',
+		dataType: 'form',
+		resetForm: true,
 		onSubmit: ({ cancel, action }) => {
-			// Set the form action to the category action
-			action.searchParams.append('intent', 'category');
-		},
-		onResult: ({ result }) => {
-			// Handle successful submission
-			if (result.type === 'success') {
-				showCategoryForm = false;
-				// Reload the page to get updated categories list
-				window.location.reload();
+			// For create mode in dashboard, we use the category intent
+			if (!editCategoryMode) {
+				action.searchParams.append('intent', 'category');
 			}
-			// Don't reset the form on error to preserve user input
+		},
+		
+		onResult: ({ result }) => {
+			if (result.type === 'success') {
+				// Close the form
+				showCategoryForm = false;
+				
+				// Reset edit mode
+				editCategoryMode = false;
+				currentCategoryId = null;
+				
+				// Reset the form to initial values
+				// Form will be reset automatically due to resetForm: true
+				
+				// Display a success message
+				$categoryMessage = editCategoryMode ? 'Category updated successfully!' : 'Category created successfully!';
+				
+				// Reload the page to refresh data
+				setTimeout(() => {
+					window.location.reload();
+				}, 500);
+			}
 		}
 	});
 
@@ -166,6 +183,68 @@
 	const userSuppliers = data.userSuppliers || [];
 	const userCategories = data.userCategories || [];
 	const categories = data.categories || [];
+
+	// Edit mode tracking
+	let editCategoryMode = false;
+	let currentCategoryId: string | null = null;
+	
+	// Function to handle edit button click
+	function editCategory(category: any) {
+		// Set category ID being edited
+		currentCategoryId = category.id;
+		
+		// Populate form with category data
+		$categoryForm = {
+			name: category.name,
+			description: category.description || '',
+			parent_id: category.parent_id || '',
+			is_public: Boolean(category.is_public)
+		};
+		
+		// Show form and set edit mode
+		showCategoryForm = true;
+		editCategoryMode = true;
+	}
+	
+	// Function to cancel editing
+	function cancelCategoryEdit() {
+		// Reset edit mode flags
+		editCategoryMode = false;
+		currentCategoryId = null;
+		showCategoryForm = false;
+		
+		// Reset form to initial state
+		$categoryForm = {
+			name: '',
+			description: '',
+			parent_id: '',
+			is_public: false
+		};
+	}
+	
+	// Function to toggle category form visibility
+	function toggleCategoryForm() {
+		// If we're closing the form and in edit mode, cancel the edit
+		if (showCategoryForm && editCategoryMode) {
+			cancelCategoryEdit();
+		} else {
+			// If we're opening the form for a new category, reset edit mode
+			if (!showCategoryForm) {
+				editCategoryMode = false;
+				currentCategoryId = null;
+				// Reset form
+				$categoryForm = {
+					name: '',
+					description: '',
+					parent_id: '',
+					is_public: false
+				};
+			}
+			
+			// Toggle form visibility
+			showCategoryForm = !showCategoryForm;
+		}
+	}
 </script>
 
 <div class="dashboard-container">
@@ -642,17 +721,7 @@
 				{#if userCategories.length > 0}
 					<div class="user-items-grid">
 						{#each userCategories as category}
-							<div class="entity-card">
-								<h3>{category.name}</h3>
-								{#if category.description}
-									<p>{category.description}</p>
-								{/if}
-								<p class="entity-meta">Public: {category.is_public ? 'Yes' : 'No'}</p>
-								<div class="entity-actions">
-									<a href={`/catagory?id=${category.id}`} class="icon-btn view-btn" title="View Category Details">👁️</a>
-									<a href={`/catagory?id=${category.id}&edit=true`} class="icon-btn edit-btn" title="Edit Category">✏️</a>
-								</div>
-							</div>
+							<Category {category} currentUserId={user.id} />
 						{/each}
 					</div>
 				{:else}
@@ -660,7 +729,7 @@
 				{/if}
 				
 				<div class="action-buttons">
-					<button type="button" class="primary-btn" on:click={() => showCategoryForm = !showCategoryForm}>
+					<button type="button" class="primary-btn" on:click={toggleCategoryForm}>
 						{showCategoryForm ? 'Cancel' : 'Add New Category'}
 					</button>
 					<a href="/catagory" class="secondary-btn">View All Categories</a>
@@ -668,7 +737,7 @@
 				
 				{#if showCategoryForm}
 					<div class="form-container">
-						<h2>Create New Category</h2>
+						<h2>{editCategoryMode ? 'Edit' : 'Create New'} Category</h2>
 						
 						{#if $categoryMessage}
 							<div class="form-message {$categoryMessage.includes('Failed') ? 'error' : 'success'}">
@@ -677,7 +746,10 @@
 						{/if}
 						
 						<div class="embedded-form">
-							<form method="POST" use:categoryEnhance>
+							<form method="POST" action="?/category" use:categoryEnhance enctype="application/x-www-form-urlencoded">
+								{#if editCategoryMode}
+									<input type="hidden" name="categoryId" value={currentCategoryId} />
+								{/if}
 								<div class="form-group">
 									<label for="name">Name*</label>
 									<input id="name" name="name" bind:value={$categoryForm.name} required />
@@ -711,9 +783,9 @@
 								
 								<div class="form-button-group">
 									<button type="submit" class="primary-btn" disabled={$categorySubmitting}>
-										{$categorySubmitting ? 'Creating...' : 'Create Category'}
+										{$categorySubmitting ? (editCategoryMode ? 'Saving...' : 'Creating...') : (editCategoryMode ? 'Save Changes' : 'Create Category')}
 									</button>
-									<button type="button" class="secondary-btn" on:click={() => showCategoryForm = false}>Cancel</button>
+									<button type="button" class="secondary-btn" on:click={cancelCategoryEdit}>Cancel</button>
 								</div>
 							</form>
 						</div>
