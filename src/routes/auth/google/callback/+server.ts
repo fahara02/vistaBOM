@@ -2,7 +2,7 @@
 
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from '$lib/env';
 import { createSession, generateSessionToken } from '$lib/server/auth';
-import client from '$lib/server/db/index';
+import sql from '$lib/server/db/index'; // Using the consolidated postgres client
 import type { User } from '$lib/server/db/types';
 import type { RequestEvent } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
@@ -32,74 +32,143 @@ export async function GET({ url, cookies }: RequestEvent) {
 	const userInfo = await userRes.json();
 	if (!userRes.ok) throw error(500, 'Failed to fetch user info');
 
-	function rowToUser(raw: any): User {
-		const [
-			id,
-			username,
-			email,
-			fullName,
-			passwordHash,
-			googleId,
-			avatarUrl,
-			createdAt,
-			updatedAt,
-			lastLoginAt,
-			isActive,
-			isAdmin,
-			isDeleted
-		] = raw;
-		return {
-			id,
-			username,
-			email,
-			fullName,
-			passwordHash,
-			googleId,
-			avatarUrl,
-			createdAt,
-			updatedAt,
-			lastLoginAt,
-			isActive,
-			isAdmin,
-			isDeleted
-		};
+	// User mapping function that works with both object and array formats
+	function rowToUser(row: any): User {
+		// With porsager/postgres, results are objects with named properties
+		if (row && typeof row === 'object' && !Array.isArray(row)) {
+			// Object style access for porsager/postgres
+			return {
+				id: row.id,
+				username: row.username,
+				email: row.email,
+				fullName: row.fullName,
+				passwordHash: row.passwordHash,
+				googleId: row.googleId,
+				avatarUrl: row.avatarUrl,
+				createdAt: row.createdAt,
+				updatedAt: row.updatedAt,
+				lastLoginAt: row.lastLoginAt,
+				isActive: row.isActive,
+				isAdmin: row.isAdmin,
+				isDeleted: row.isDeleted
+			};
+		} else if (Array.isArray(row)) {
+			// Legacy array-style access for ts-postgres
+			const [
+				id,
+				username,
+				email,
+				fullName,
+				passwordHash,
+				googleId,
+				avatarUrl,
+				createdAt,
+				updatedAt,
+				lastLoginAt,
+				isActive,
+				isAdmin,
+				isDeleted
+			] = row;
+			return {
+				id,
+				username,
+				email,
+				fullName,
+				passwordHash,
+				googleId,
+				avatarUrl,
+				createdAt,
+				updatedAt,
+				lastLoginAt,
+				isActive,
+				isAdmin,
+				isDeleted
+			};
+		}
+
+		// Return empty user if we somehow got an invalid format
+		console.error('Invalid row format for user mapping:', row);
+		return {} as User;
 	}
 
 	let user: User;
-	const find = await client.query(
-		`SELECT id, username, email, full_name AS "fullName", password_hash AS "passwordHash", 
-            google_id AS "googleId", avatar_url AS "avatarUrl", created_at AS "createdAt", 
-            updated_at AS "updatedAt", last_login_at AS "lastLoginAt", is_active AS "isActive", 
-            is_admin AS "isAdmin", is_deleted AS "isDeleted"
-     FROM "User" WHERE google_id = $1 OR email = $2`,
-		[userInfo.id, userInfo.email]
-	);
 
-	if (find.rows.length > 0) {
-		user = rowToUser(find.rows[0]);
+	// Use porsager/postgres template literals for queries
+	const find = await sql`
+		SELECT 
+			id, 
+			username, 
+			email, 
+			full_name AS "fullName", 
+			password_hash AS "passwordHash", 
+			google_id AS "googleId", 
+			avatar_url AS "avatarUrl", 
+			created_at AS "createdAt", 
+			updated_at AS "updatedAt", 
+			last_login_at AS "lastLoginAt", 
+			is_active AS "isActive", 
+			is_admin AS "isAdmin", 
+			is_deleted AS "isDeleted"
+		FROM "User" 
+		WHERE google_id = ${userInfo.id} OR email = ${userInfo.email}
+	`;
+
+	if (find.length > 0) {
+		user = rowToUser(find[0]);
+
 		if (!user.googleId || user.avatarUrl !== userInfo.picture) {
-			const upd = await client.query(
-				`UPDATE "User" SET google_id = $1, avatar_url = $2 WHERE id = $3
-         RETURNING id, username, email, full_name AS "fullName", password_hash AS "passwordHash", 
-                  google_id AS "googleId", avatar_url AS "avatarUrl", created_at AS "createdAt", 
-                  updated_at AS "updatedAt", last_login_at AS "lastLoginAt", is_active AS "isActive", 
-                  is_admin AS "isAdmin", is_deleted AS "isDeleted"`,
-				[userInfo.id, userInfo.picture, user.id]
-			);
-			user = rowToUser(upd.rows[0]);
+			// Update user with Google info if needed
+			const upd = await sql`
+				UPDATE "User" 
+				SET 
+					google_id = ${userInfo.id}, 
+					avatar_url = ${userInfo.picture} 
+				WHERE id = ${user.id}
+				RETURNING 
+					id, 
+					username, 
+					email, 
+					full_name AS "fullName", 
+					password_hash AS "passwordHash", 
+					google_id AS "googleId", 
+					avatar_url AS "avatarUrl", 
+					created_at AS "createdAt", 
+					updated_at AS "updatedAt", 
+					last_login_at AS "lastLoginAt", 
+					is_active AS "isActive", 
+					is_admin AS "isAdmin", 
+					is_deleted AS "isDeleted"
+			`;
+			user = rowToUser(upd[0]);
 		}
 	} else {
+		// Insert new user with Google info
 		const newId = randomUUID();
-		const ins = await client.query(
-			`INSERT INTO "User"(id, email, full_name, google_id, avatar_url)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, username, email, full_name AS "fullName", password_hash AS "passwordHash", 
-                google_id AS "googleId", avatar_url AS "avatarUrl", created_at AS "createdAt", 
-                updated_at AS "updatedAt", last_login_at AS "lastLoginAt", is_active AS "isActive", 
-                is_admin AS "isAdmin", is_deleted AS "isDeleted"`,
-			[newId, userInfo.email, userInfo.name, userInfo.id, userInfo.picture]
-		);
-		user = rowToUser(ins.rows[0]);
+		const ins = await sql`
+			INSERT INTO "User"(id, email, full_name, google_id, avatar_url)
+			VALUES (
+				${newId}, 
+				${userInfo.email}, 
+				${userInfo.name}, 
+				${userInfo.id}, 
+				${userInfo.picture}
+			)
+			RETURNING 
+				id, 
+				username, 
+				email, 
+				full_name AS "fullName", 
+				password_hash AS "passwordHash", 
+				google_id AS "googleId", 
+				avatar_url AS "avatarUrl", 
+				created_at AS "createdAt", 
+				updated_at AS "updatedAt", 
+				last_login_at AS "lastLoginAt", 
+				is_active AS "isActive", 
+				is_admin AS "isAdmin", 
+				is_deleted AS "isDeleted"
+		`;
+		user = rowToUser(ins[0]);
 	}
 
 	if (!user) throw error(500, 'User creation failed');

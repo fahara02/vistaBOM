@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import client from '$lib/server/db/index';
-import { updateCategory, deleteCategory } from '$lib/server/catagory';
+import { updateCategory, deleteCategory } from '$lib/server/category';
 
 export const PUT: RequestHandler = async ({ params, request }) => {
   const { id } = params;

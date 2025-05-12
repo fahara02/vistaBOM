@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import client from '$lib/server/db/index';
+import sql from '$lib/server/db/index';
 import { listSuppliers, createSupplier } from '$lib/server/supplier';
 import { supplierSchema } from '$lib/server/db/schema';
 import { superValidate } from 'sveltekit-superforms';
@@ -17,7 +17,8 @@ const createSupplierSchema = supplierSchema.pick({
 
 export const load: PageServerLoad = async (event) => {
   const user = event.locals.user;
-  const suppliers = await listSuppliers(client);
+  // Call listSuppliers without the client parameter
+  const suppliers = await listSuppliers();
   const form = await superValidate(event, zod(createSupplierSchema), { id: 'create-supplier' });
   return { user, suppliers, form };
 };
@@ -30,7 +31,8 @@ export const actions: Actions = {
     if (!form.valid) return fail(400, { form });
     if (!user) return fail(401, { form, message: 'Unauthorized' });
     try {
-      await createSupplier(client, {
+      // Call createSupplier without the client parameter
+      await createSupplier({
         name: form.data.name,
         description: form.data.description ?? undefined,
         websiteUrl: form.data.website_url ?? undefined,

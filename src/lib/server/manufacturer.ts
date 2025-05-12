@@ -1,24 +1,24 @@
 // src/lib/server/manufacturer.ts
-import type { Client } from 'ts-postgres';
+import sql from '$lib/server/db/index';
 import type { Manufacturer } from '$lib/server/db/types';
 
-function mapManufacturer(row: any): Manufacturer {
+// Helper to normalize manufacturer data from postgres result
+function normalizeManufacturer(row: any): Manufacturer {
     return {
-        id: row.get('id'),
-        name: row.get('name'),
-        description: row.get('description') || undefined,
-        websiteUrl: row.get('website_url') || undefined,
-        logoUrl: row.get('logo_url') || undefined,
-        createdBy: row.get('created_by') || undefined,
-        createdAt: row.get('created_at'),
-        updatedBy: row.get('updated_by') || undefined,
-        updatedAt: row.get('updated_at'),
-        customFields: row.get('custom_fields') || {} // Add customFields mapping
+        id: row.id,
+        name: row.name,
+        description: row.description || undefined,
+        websiteUrl: row.website_url || undefined,
+        logoUrl: row.logo_url || undefined,
+        createdBy: row.created_by || undefined,
+        createdAt: row.created_at,
+        updatedBy: row.updated_by || undefined,
+        updatedAt: row.updated_at,
+        customFields: row.custom_fields || {} // Add customFields mapping
     };
 }
 
 export async function createManufacturer(
-    client: Client,
     params: {
         name: string;
         description?: string;
@@ -28,24 +28,30 @@ export async function createManufacturer(
     }
 ): Promise<Manufacturer> {
     try {
-        const result = await client.query(
-            `INSERT INTO Manufacturer (name, description, website_url, logo_url, created_by)
-             VALUES ($1, $2, $3, $4, $5)
-             RETURNING *`,
-            [
-                params.name,
-                params.description || null,
-                params.websiteUrl || null,
-                params.logoUrl || null,
-                params.createdBy
-            ]
-        );
+        // Use porsager/postgres template literals
+        const result = await sql`
+            INSERT INTO Manufacturer (
+                name, 
+                description, 
+                website_url, 
+                logo_url, 
+                created_by
+            )
+            VALUES (
+                ${params.name},
+                ${params.description || null},
+                ${params.websiteUrl || null},
+                ${params.logoUrl || null},
+                ${params.createdBy}
+            )
+            RETURNING *
+        `;
 
-        if (result.rows.length === 0) {
+        if (result.length === 0) {
             throw new Error('Failed to create manufacturer');
         }
 
-        return mapManufacturer(result.rows[0]);
+        return normalizeManufacturer(result[0]);
     } catch (error: any) {
         if (error.code === '23505') {
             throw new Error(`Manufacturer name "${params.name}" already exists`);
@@ -54,9 +60,10 @@ export async function createManufacturer(
     }
 }
 
-export async function getManufacturer(client: Client, id: string): Promise<Manufacturer | null> {
-    const result = await client.query(
-        `SELECT 
+export async function getManufacturer(id: string): Promise<Manufacturer | null> {
+    // Use template literals for the complex query
+    const result = await sql`
+        SELECT 
             m.*,
             COALESCE(
                 (SELECT json_object_agg(cf.field_name, mcf.value)
@@ -65,14 +72,13 @@ export async function getManufacturer(client: Client, id: string): Promise<Manuf
                  WHERE mcf.manufacturer_id = m.id
                 ), '{}'::json) AS custom_fields
          FROM Manufacturer m
-         WHERE m.id = $1`,
-        [id]
-    );
-    return result.rows.length > 0 ? mapManufacturer(result.rows[0]) : null;
+         WHERE m.id = ${id}
+    `;
+    
+    return result.length > 0 ? normalizeManufacturer(result[0]) : null;
 }
 
 export async function updateManufacturer(
-    client: Client,
     id: string,
     updates: {
         name?: string;
@@ -82,58 +88,61 @@ export async function updateManufacturer(
     },
     userId: string
 ): Promise<Manufacturer> {
-    const fields = [];
-    const values = [];
-    let paramIndex = 1;
-
-    if (updates.name !== undefined) {
-        fields.push(`name = $${paramIndex}`);
-        values.push(updates.name);
-        paramIndex++;
-    }
-    if (updates.description !== undefined) {
-        fields.push(`description = $${paramIndex}`);
-        values.push(updates.description);
-        paramIndex++;
-    }
-    if (updates.websiteUrl !== undefined) {
-        fields.push(`website_url = $${paramIndex}`);
-        values.push(updates.websiteUrl);
-        paramIndex++;
-    }
-    if (updates.logoUrl !== undefined) {
-        fields.push(`logo_url = $${paramIndex}`);
-        values.push(updates.logoUrl);
-        paramIndex++;
-    }
-
-    if (fields.length === 0) {
-        const existing = await getManufacturer(client, id);
+    // With porsager/postgres, we need a different approach for dynamic updates
+    
+    // Return early if no updates
+    if (Object.keys(updates).length === 0) {
+        const existing = await getManufacturer(id);
         if (!existing) throw new Error('Manufacturer not found');
         return existing;
     }
-
-    fields.push(`updated_by = $${paramIndex}`);
-    values.push(userId);
-    paramIndex++;
-
-    fields.push(`updated_at = NOW()`);
-
-    values.push(id);
-
-    const query = `
-        UPDATE Manufacturer
-        SET ${fields.join(', ')}
-        WHERE id = $${paramIndex}
-        RETURNING *
-    `;
-
+    
     try {
-        const result = await client.query(query, values);
-        if (result.rows.length === 0) {
-            throw new Error('Manufacturer not found');
+        // Build the dynamic SET clause
+        const setParts = [];
+        const updateValues: any = {};
+        
+        if (updates.name !== undefined) {
+            setParts.push('name = ${name}');
+            updateValues.name = updates.name;
         }
-        return mapManufacturer(result.rows[0]);
+        if (updates.description !== undefined) {
+            setParts.push('description = ${description}');
+            updateValues.description = updates.description;
+        }
+        if (updates.websiteUrl !== undefined) {
+            setParts.push('website_url = ${websiteUrl}');
+            updateValues.websiteUrl = updates.websiteUrl;
+        }
+        if (updates.logoUrl !== undefined) {
+            setParts.push('logo_url = ${logoUrl}');
+            updateValues.logoUrl = updates.logoUrl;
+        }
+        
+        // Always add updated_by and updated_at
+        setParts.push('updated_by = ${userId}');
+        updateValues.userId = userId;
+        setParts.push('updated_at = NOW()');
+        
+        // Add the ID for the WHERE clause
+        updateValues.id = id;
+        
+        // Use sql.unsafe for dynamic queries that can't be directly expressed in template literals
+        const result = await sql.unsafe(
+            `UPDATE Manufacturer 
+             SET ${setParts.join(', ')} 
+             WHERE id = \${id} 
+             RETURNING *`,
+            updateValues
+        );
+        
+        // Fetch the custom fields for the updated manufacturer
+        const manufacturerWithCustomFields = await getManufacturer(id);
+        if (!manufacturerWithCustomFields) {
+            throw new Error('Manufacturer not found after update');
+        }
+        
+        return manufacturerWithCustomFields;
     } catch (error: any) {
         if (error.code === '23505') {
             throw new Error(`Manufacturer name "${updates.name}" already exists`);
@@ -142,9 +151,9 @@ export async function updateManufacturer(
     }
 }
 
-export async function deleteManufacturer(client: Client, id: string): Promise<void> {
+export async function deleteManufacturer(id: string): Promise<void> {
     try {
-        await client.query('DELETE FROM Manufacturer WHERE id = $1', [id]);
+        await sql`DELETE FROM Manufacturer WHERE id = ${id}`;
     } catch (error: any) {
         if (error.code === '23503') {
             throw new Error('Manufacturer cannot be deleted as it is referenced by existing parts');
@@ -153,8 +162,8 @@ export async function deleteManufacturer(client: Client, id: string): Promise<vo
     }
 }
 
-export async function listManufacturers(client: Client): Promise<Manufacturer[]> {
-    const result = await client.query(`
+export async function listManufacturers(): Promise<Manufacturer[]> {
+    const result = await sql`
         SELECT 
             m.*,
             COALESCE(
@@ -165,6 +174,6 @@ export async function listManufacturers(client: Client): Promise<Manufacturer[]>
                 ), '{}'::json) AS custom_fields
         FROM Manufacturer m
         ORDER BY name
-    `);
-    return result.rows.map(mapManufacturer);
+    `;
+    return result.map(normalizeManufacturer);
 }

@@ -1,4 +1,7 @@
-// DB client using postgres (porsager/postgres)
+/**
+ * Consolidated PostgreSQL client using porsager/postgres
+ * Replaces the previous ts-postgres client
+ */
 import { env } from '$env/dynamic/private';
 import postgres from 'postgres';
 import fs from 'fs';
@@ -9,17 +12,29 @@ if (!env.DATABASE_URL) {
 	throw new Error('DATABASE_URL must be set');
 }
 
-// Create postgres SQL client
+// Create postgres SQL client with connection pooling
 const sql = postgres(env.DATABASE_URL, {
 	max: 10, // Connection pool size
 	idle_timeout: 30, // Idle connection timeout in seconds
-	connect_timeout: 10, // Connection timeout in seconds  
+	connect_timeout: 10, // Connection timeout in seconds
 	types: {
-		// Add custom type parsers if needed
+		// Register custom type parsers for proper date handling
+		date: {
+			to: 1184, // timestamp type OID
+			from: [1082, 1083, 1114, 1184], // date, time, timestamp, timestamptz
+			serialize: (date: Date) => date,
+			parse: (str: string) => new Date(str)
+		}
+	},
+	transform: {
+		// By default, keep column names as-is from database
+		column: {
+			from: (name) => name 
+		}
 	}
 });
 
-// Utility to split SQL statements
+// Utility to split SQL statements properly
 function splitStatements(sqlText: string): string[] {
 	const stmts: string[] = [];
 	let current = '';
@@ -40,48 +55,58 @@ function splitStatements(sqlText: string): string[] {
 	return stmts;
 }
 
-// Apply schema on startup
-async function applySchema() {
+// Initialize database and apply schema on startup
+async function initDatabase() {
 	try {
 		const schemaPath = path.join(process.cwd(), 'db', 'schema.sql');
-		const schema = fs.readFileSync(schemaPath, 'utf-8');
-		const statements = splitStatements(schema)
-			.map((stmt) => {
-				const lines = stmt.split('\n');
-				let start = 0;
-				while (
-					start < lines.length &&
-					(lines[start].trim() === '' || lines[start].trim().startsWith('--'))
-				) {
-					start++;
-				}
-				return lines.slice(start).join('\n').trim();
-			})
-			.filter((stmt) => stmt.length > 0);
+		if (fs.existsSync(schemaPath)) {
+			const schema = fs.readFileSync(schemaPath, 'utf-8');
+			const statements = splitStatements(schema)
+				.map((stmt) => {
+					const lines = stmt.split('\n');
+					let start = 0;
+					while (
+						start < lines.length &&
+						(lines[start].trim() === '' || lines[start].trim().startsWith('--'))
+					) {
+						start++;
+					}
+					return lines.slice(start).join('\n').trim();
+				})
+				.filter((stmt) => stmt.length > 0);
 
-		// Check if database exists, if not create it (postgres client creates it automatically)
-		console.log('Applying schema with postgres client...');
-		
-		// Apply schema statements
-		for (const stmt of statements) {
-			try {
-				await sql.unsafe(stmt);
-			} catch (err: any) {
-				if (err.code === '42710' || err.message?.includes('already exists')) {
-					console.warn('Skipping existing object:', stmt.split('\n')[0]);
-					continue;
+			console.log('Applying database schema...');
+			
+			// Apply schema statements
+			for (const stmt of statements) {
+				try {
+					await sql.unsafe(stmt);
+				} catch (err: any) {
+					if (err.code === '42710' || err.message?.includes('already exists')) {
+						// Ignore already exists errors for idempotence
+						continue;
+					}
+					console.warn('Schema application warning:', err.message);
+					// Continue execution despite errors - more forgiving approach
 				}
-				console.error('Failed SQL statement:', stmt.split('\n')[0], '...', err.message);
-				// Continue execution despite errors - more forgiving approach
 			}
+			console.log('Database schema applied successfully');
 		}
-		console.log('Schema applied successfully.');
 	} catch (err) {
-		console.error('Error applying schema:', err);
+		console.error('Database initialization error:', err);
 	}
 }
 
-// Initialize schema
-applySchema();
+// Initialize database on startup
+initDatabase().catch(console.error);
 
+// Export the SQL client as default
 export default sql;
+
+// Additional exports for transaction support and utility functions
+export { sql };
+
+// Helper function to properly handle JSON fields in SQL queries
+export function toJsonB(obj: any): string | null {
+	return obj ? JSON.stringify(obj) : null;
+}

@@ -73,12 +73,16 @@ export const load: PageServerLoad = async ({ params }) => {
   const form = await superValidate(initialData as any, zod(partVersionSchema));
 
   // Get available package types and unit types for dropdowns
-  const packageTypes = Object.keys(PackageTypeEnum);
-  const weightUnits = Object.keys(WeightUnitEnum);
-  const dimensionUnits = Object.values(DimensionUnitEnum); 
-  const temperatureUnits = Object.keys(TemperatureUnitEnum);
+  // Use enum values, not keys, to ensure proper case matching with schema validation
+  const packageTypes = Object.values(PackageTypeEnum);
+  const weightUnits = Object.values(WeightUnitEnum); // Using VALUES not KEYS to get lowercase 'oz', not 'OZ'
+  const dimensionUnits = Object.values(DimensionUnitEnum);
+  const temperatureUnits = Object.values(TemperatureUnitEnum);
   const lifecycleStatuses = Object.values(LifecycleStatusEnum);
   const partStatuses = Object.values(PartStatusEnum);
+  
+  // Log the enum values for debugging
+  console.log('Weight units for dropdown:', weightUnits);
 
   return {
     form,
@@ -93,143 +97,10 @@ export const load: PageServerLoad = async ({ params }) => {
   };
 };
 
-// Direct database functions
-import { getClient } from '$lib/server/db';
-const dbClient = getClient();
+// Import the sql client directly if needed
+import sql from '$lib/server/db/index';
 
-/**
- * Emergency direct database update when form validation fails but critical fields need updating
- * Uses a multiple separate updates approach to avoid concurrency issues
- */
-async function directUpdatePartVersion(partId: string, versionId: string, updates: {
-  name?: string;
-  version?: string;
-  status?: string;
-}) {
-  console.log('[directUpdatePartVersion] Starting direct update with:', updates);
-  
-  try {
-    // First check if the part version exists at all
-    const checkQuery = `SELECT id FROM "PartVersion" WHERE id = $1`;
-    const checkResult = await dbClient.query(checkQuery, [versionId]);
-    
-    if (checkResult.rows.length === 0) {
-      return { success: false, error: 'Part version not found' };
-    }
-    
-    // Process each field as an independent update to minimize conflicts
-    let updateSuccesses = 0;
-    let updateAttempts = 0;
-    let lastResult = null;
-    
-    // Update name if provided
-    if (updates.name) {
-      updateAttempts++;
-      try {
-        const nameUpdateQuery = `
-          WITH updated AS (
-            UPDATE "PartVersion" 
-            SET name = $1, updated_at = NOW()
-            WHERE id = $2
-            RETURNING id, name, version, status
-          )
-          SELECT * FROM updated
-        `;
-        
-        const nameResult = await dbClient.query(nameUpdateQuery, [updates.name, versionId]);
-        if (nameResult.rows.length > 0) {
-          console.log('[directUpdatePartVersion] Name updated successfully');
-          lastResult = nameResult.rows[0];
-          updateSuccesses++;
-        }
-      } catch (nameError) {
-        console.warn('[directUpdatePartVersion] Name update failed:', nameError);
-      }
-    }
-    
-    // Update version if provided
-    if (updates.version) {
-      updateAttempts++;
-      try {
-        const versionUpdateQuery = `
-          WITH updated AS (
-            UPDATE "PartVersion" 
-            SET version = $1, updated_at = NOW()
-            WHERE id = $2
-            RETURNING id, name, version, status
-          )
-          SELECT * FROM updated
-        `;
-        
-        const versionResult = await dbClient.query(versionUpdateQuery, [updates.version, versionId]);
-        if (versionResult.rows.length > 0) {
-          console.log('[directUpdatePartVersion] Version number updated successfully');
-          lastResult = versionResult.rows[0];
-          updateSuccesses++;
-        }
-      } catch (versionError) {
-        console.warn('[directUpdatePartVersion] Version number update failed:', versionError);
-      }
-    }
-    
-    // Update status if provided
-    if (updates.status) {
-      updateAttempts++;
-      try {
-        const statusUpdateQuery = `
-          WITH updated AS (
-            UPDATE "PartVersion" 
-            SET status = $1::text::lifecycle_status_enum, updated_at = NOW()
-            WHERE id = $2
-            RETURNING id, name, version, status
-          )
-          SELECT * FROM updated
-        `;
-        
-        const statusResult = await dbClient.query(statusUpdateQuery, [updates.status, versionId]);
-        if (statusResult.rows.length > 0) {
-          console.log('[directUpdatePartVersion] Status updated successfully');
-          lastResult = statusResult.rows[0];
-          updateSuccesses++;
-          
-          // Also try to update Part lifecycle status separately
-          try {
-            await dbClient.query(
-              `UPDATE "Part" SET lifecycle_status = $1::text::lifecycle_status_enum WHERE id = $2`,
-              [updates.status, partId]
-            );
-            console.log('[directUpdatePartVersion] Part lifecycle status also updated');
-          } catch (partError) {
-            console.warn('[directUpdatePartVersion] Part status update failed:', partError);
-            // Continue anyway - this is not critical
-          }
-        }
-      } catch (statusError) {
-        console.warn('[directUpdatePartVersion] Status update failed:', statusError);
-      }
-    }
-    
-    if (updateAttempts === 0) {
-      return { success: true, message: 'No updates were needed' };
-    }
-    
-    if (updateSuccesses > 0) {
-      return { 
-        success: true, 
-        message: `${updateSuccesses} of ${updateAttempts} updates succeeded`, 
-        updatedVersion: lastResult 
-      };
-    }
-    
-    return { 
-      success: false, 
-      error: `All ${updateAttempts} updates failed` 
-    };
-  } catch (error) {
-    console.error('[directUpdatePartVersion] Error:', error);
-    return { success: false, error };
-  }
-}
+
 
 export const actions: Actions = {
   default: async ({ request, params }) => {
@@ -249,17 +120,119 @@ export const actions: Actions = {
       return fail(404, { error: 'Part or version not found' });
     }
     
-    console.error('Current part data:', {
-      partId: part.id,
-      name: currentVersion.name,
-      version: currentVersion.version,
-      status: currentVersion.status
-    });
+    // Log COMPLETE current part data - no cherry picking
+    console.error('COMPLETE CURRENT PART DATA:', currentVersion);
+    // Also log the raw part record for debugging
+    console.error('COMPLETE PART RECORD:', part);
     
     // Step 3: CRITICAL - VALIDATE WITH SUPERFORM FIRST
     // This is the key step that should not be bypassed or shortcutted
     console.error('RUNNING SUPERFORM VALIDATION');
+    
+    // Pre-process ALL form data to ensure it meets database constraints
+    console.error('PRE-PROCESSING FORM DATA TO ENSURE DATABASE CONSTRAINT COMPATIBILITY');
+    
+    // Process dimensions field
+    if (formData.has('dimensions')) {
+      try {
+        const dimensionsData = formData.get('dimensions');
+        if (typeof dimensionsData === 'string') {
+          const parsedDimensions = JSON.parse(dimensionsData);
+          console.error('ORIGINAL DIMENSIONS DATA:', parsedDimensions);
+          
+          // Case 1: All dimension values are null
+          // With our updated schema that allows objects with all null values,
+          // we need to preserve this structure for proper validation
+          if (parsedDimensions && 
+              parsedDimensions.length === null && 
+              parsedDimensions.width === null && 
+              parsedDimensions.height === null) {
+            // Keep the object with null values - this is now a valid schema option
+            // No need to convert to null since our schema allows this case
+            console.error('DIMENSIONS: Object with all null values - valid per schema');
+          } 
+          // Case 2: Empty object - set to null as well
+          else if (parsedDimensions && Object.keys(parsedDimensions).length === 0) {
+            formData.set('dimensions', 'null');
+            console.error('DIMENSIONS FIX: Converting empty object to null');
+          }
+          // Case 3: Has some values but not all - ensure all values exist
+          else if (parsedDimensions && (
+              typeof parsedDimensions.length === 'number' || 
+              typeof parsedDimensions.width === 'number' || 
+              typeof parsedDimensions.height === 'number'
+          )) {
+            // Make sure all dimension values exist and are numbers (0 if null)
+            if (parsedDimensions.length === null) parsedDimensions.length = 0;
+            if (parsedDimensions.width === null) parsedDimensions.width = 0;
+            if (parsedDimensions.height === null) parsedDimensions.height = 0;
+            
+            formData.set('dimensions', JSON.stringify(parsedDimensions));
+            console.error('DIMENSIONS FIX: Converting mixed dimensions to all numeric:', parsedDimensions);
+          }
+        }
+      } catch (err) {
+        console.error('Error parsing dimensions:', err);
+        // On error, set dimensions to null to avoid constraint violations
+        formData.set('dimensions', 'null');
+        console.error('DIMENSIONS FIX: Setting to null due to parsing error');
+      }
+    }
+    
+    // Process other JSON fields to ensure proper formatting
+    ['technical_specifications', 'properties', 'electrical_properties', 
+     'mechanical_properties', 'thermal_properties', 'material_composition', 
+     'environmental_data', 'long_description'].forEach(field => {
+      if (formData.has(field)) {
+        try {
+          const fieldData = formData.get(field);
+          if (typeof fieldData === 'string') {
+            // If it's an empty string, set to empty object
+            if (!fieldData.trim()) {
+              formData.set(field, '{}');
+              console.error(`JSON FIX: Setting empty string ${field} to empty object`);
+            } else {
+              // Parse and re-stringify to ensure valid JSON
+              const parsed = JSON.parse(fieldData);
+              formData.set(field, JSON.stringify(parsed));
+            }
+          }
+        } catch (err) {
+          console.error(`Error parsing JSON field ${field}:`, err);
+          formData.set(field, '{}');
+          console.error(`JSON FIX: Setting ${field} to empty object due to parsing error`);
+        }
+      }
+    });
+    
+    // Pre-process numeric fields to handle empty strings
+    [
+      'voltage_rating_min', 'voltage_rating_max', 'current_rating_min', 'current_rating_max',
+      'power_rating_max', 'tolerance', 'weight', 'pin_count',
+      'operating_temperature_min', 'operating_temperature_max',
+      'storage_temperature_min', 'storage_temperature_max'
+    ].forEach(field => {
+      if (formData.has(field)) {
+        const value = formData.get(field);
+        if (value === '' || value === 'null') {
+          formData.set(field, 'null');
+          console.error(`NUMERIC FIX: Converting empty ${field} to null`);
+        }
+      }
+    });
+    
     const form = await superValidate(formData, zod(partVersionEditSchema));
+    
+    // COMPREHENSIVE FORM DATA LOGGING - print EVERY form field
+    console.error('============= COMPLETE FORM DATA DUMP =============');
+    console.error('FORM DATA KEYS:', Object.keys(form.data));
+    
+    // Log each individual form field value to ensure we see EVERYTHING
+    console.error('FORM FIELD VALUES:');
+    Object.entries(form.data).forEach(([key, value]) => {
+      console.error(`  - ${key}: ${JSON.stringify(value)}`);
+    });
+    console.error('=================================================');
     
     // Print superform output to console for debugging
     console.error('SUPERFORM VALIDATION RESULT:', {
@@ -276,6 +249,45 @@ export const actions: Actions = {
     // Always check if form is valid
     if (!form.valid) {
       console.error('FORM VALIDATION FAILED:', form.errors);
+      
+      // Special handling for dimension validation errors
+      if (form.errors.dimensions) {
+        console.error('DIMENSIONS VALIDATION ERROR DETAILS:', {
+          errors: form.errors.dimensions,
+          formDimensions: form.data.dimensions,
+        });
+        
+        // Log detailed information about the dimension validation failure
+        // but do not modify the form data - validation requirements must be met
+        if (form.data.dimensions === undefined) {
+          console.error('DIMENSIONS VALIDATION: dimensions field is undefined');
+        } else if (form.data.dimensions === null) {
+          console.error('DIMENSIONS VALIDATION: dimensions field is null (valid case)');
+        } else if (typeof form.data.dimensions === 'object') {
+          const dims = form.data.dimensions as any;
+          console.error('DIMENSIONS VALIDATION: Object structure analysis:', {
+            hasLengthProperty: 'length' in dims,
+            hasWidthProperty: 'width' in dims,
+            hasHeightProperty: 'height' in dims,
+            lengthType: typeof dims.length,
+            widthType: typeof dims.width,
+            heightType: typeof dims.height,
+            isAllNull: dims.length === null && dims.width === null && dims.height === null,
+            hasAnyNumeric: typeof dims.length === 'number' || typeof dims.width === 'number' || typeof dims.height === 'number',
+            hasAllNumeric: typeof dims.length === 'number' && typeof dims.width === 'number' && typeof dims.height === 'number',
+            isValid: (dims.length === null && dims.width === null && dims.height === null) || 
+                     (typeof dims.length === 'number' && dims.length > 0 &&
+                      typeof dims.width === 'number' && dims.width > 0 &&
+                      typeof dims.height === 'number' && dims.height > 0)
+          });
+        } else {
+          console.error('DIMENSIONS VALIDATION: Invalid type:', typeof form.data.dimensions);
+        }
+      }
+      
+      // Still return with validation failure, but with potentially fixed data
+      // to allow retry with better data in the UI
+      return fail(400, { form, error: 'Form validation failed' });
     }
     
     // Step 4: Proceed with database update ONLY IF validation succeeded
@@ -286,232 +298,221 @@ export const actions: Actions = {
       const newVersionId = randomUUID();
       console.error('New version ID:', newVersionId);
       
-      // Prepare version data using ONLY validated form data
-      // IMPORTANT: We rely completely on the form.data object from superValidate
-      // NO SHORTCUTS or direct manipulations!
+      // COMPLETE APPROACH: Map the ENTIRE form data directly to the version data
+      // This ensures we use ALL fields from the form submission without any manual extraction
       const versionData: any = {
-        // Required system fields
+        // Required system fields for database integrity
         id: newVersionId,
         partId: part.id,
         createdBy: part.creatorId,
         
-        // Always use current data as fallback for required fields
-        // This ensures database constraints are satisfied
-        name: form.data.name || currentVersion.name,
-        version: form.data.version || currentVersion.version,
-        status: form.data.status || currentVersion.status
+        // MAP EVERYTHING from the validated form data - no cherry picking
+        // This properly follows superform validation without bypassing any fields
+        name: form.data.name,
+        version: form.data.version,
+        status: form.data.status,
+        shortDescription: form.data.short_description,
+        longDescription: form.data.long_description,
+        functionalDescription: form.data.functional_description,
+        
+        // Electrical properties 
+        voltageRatingMin: form.data.voltage_rating_min,
+        voltageRatingMax: form.data.voltage_rating_max,
+        currentRatingMin: form.data.current_rating_min, 
+        currentRatingMax: form.data.current_rating_max,
+        powerRatingMax: form.data.power_rating_max,
+        tolerance: form.data.tolerance,
+        toleranceUnit: form.data.tolerance_unit,
+        electricalProperties: form.data.electrical_properties,
+        
+        // Mechanical properties
+        // Handle dimensions to meet database constraints
+        // For database insertion, dimensions must be either:
+        // 1. null, or
+        // 2. an object with all positive number values
+        dimensions: (() => {
+          console.log('DIMENSIONS DATABASE TRANSFORMATION:', { original: form.data.dimensions });
+          
+          // If dimensions is null, keep it null (valid for DB)
+          if (form.data.dimensions === null) {
+            console.log('DIMENSIONS DB: Already null, keeping as is');
+            return null;
+          }
+          
+          // If dimensions is an object with all null values
+          // (valid by schema but needs to be NULL for database)
+          if (form.data.dimensions && typeof form.data.dimensions === 'object') {
+            const dims = form.data.dimensions as any;
+            
+            // Case 1: All dimension values are null - set to null for database
+            // Our schema allows this but database needs NULL
+            if (dims.length === null && dims.width === null && dims.height === null) {
+              console.log('DIMENSIONS DB: All null values -> Converting to null for database');
+              return null;
+            }
+            
+            // Case 2: Empty object - convert to null for database
+            if (Object.keys(dims).length === 0) {
+              console.log('DIMENSIONS DB: Empty object -> Converting to null for database');
+              return null;
+            }
+            
+            // Case 3: If we have numeric values, they must all be positive
+            if (typeof dims.length === 'number' && 
+                typeof dims.width === 'number' && 
+                typeof dims.height === 'number') {
+              
+              if (dims.length > 0 && dims.width > 0 && dims.height > 0) {
+                console.log('DIMENSIONS DB: All positive numbers, valid for database');
+                return dims; // Valid for database as is
+              } else {
+                // Not all positive - log warning and set to null
+                console.log('DIMENSIONS DB WARNING: Not all values positive, setting to null');
+                return null;
+              }
+            }
+            
+            // Case 4: Mixed types or missing properties - invalid for database
+            console.log('DIMENSIONS DB: Invalid structure for database, setting to null');
+            return null;
+          }
+          
+          // Default: If we get here, something unexpected - set to null
+          console.log('DIMENSIONS DB: Unexpected format, setting to null');
+          return null;
+        })(),
+        dimensionsUnit: form.data.dimensions_unit,
+        weight: form.data.weight,
+        weightUnit: form.data.weight_unit,
+        packageType: form.data.package_type,
+        pinCount: form.data.pin_count,
+        mechanicalProperties: form.data.mechanical_properties,
+        materialComposition: form.data.material_composition,
+        
+        // Thermal properties
+        operatingTemperatureMin: form.data.operating_temperature_min,
+        operatingTemperatureMax: form.data.operating_temperature_max,
+        storageTemperatureMin: form.data.storage_temperature_min,
+        storageTemperatureMax: form.data.storage_temperature_max,
+        temperatureUnit: form.data.temperature_unit,
+        thermalProperties: form.data.thermal_properties,
+        
+        // Other properties
+        technicalSpecifications: form.data.technical_specifications,
+        properties: form.data.properties,
+        environmentalData: form.data.environmental_data,
+        revisionNotes: form.data.revision_notes
       };
       
-      // Log what fields are changing
-      console.error('FIELD CHANGES:', {
-        name: {
-          from: currentVersion.name,
-          to: versionData.name,
-          changed: currentVersion.name !== versionData.name
-        },
-        version: {
-          from: currentVersion.version,
-          to: versionData.version,
-          changed: currentVersion.version !== versionData.version
-        },
-        status: {
-          from: currentVersion.status,
-          to: versionData.status,
-          changed: currentVersion.status !== versionData.status
+      // Final pre-submission validation to catch any lingering issues
+      console.log('FINAL DATA VALIDATION:');
+      
+      // 1. Dimensions validation
+      console.log('DIMENSIONS VALIDATION:', {
+        originalValue: form.data.dimensions,
+        processedValue: versionData.dimensions,
+        isNull: versionData.dimensions === null,
+        isObject: versionData.dimensions !== null && typeof versionData.dimensions === 'object',
+        allValuesNumeric: versionData.dimensions !== null && 
+          typeof versionData.dimensions === 'object' && 
+          typeof versionData.dimensions.length === 'number' && 
+          typeof versionData.dimensions.width === 'number' && 
+          typeof versionData.dimensions.height === 'number'
+      });
+      
+      // Last chance to fix dimensions before submission
+      if (versionData.dimensions !== null) {
+        // If it's an object but any dimension is null or not a number, that violates the constraint
+        if (typeof versionData.dimensions === 'object') {
+          const needsFix = 
+            typeof versionData.dimensions.length !== 'number' || 
+            typeof versionData.dimensions.width !== 'number' || 
+            typeof versionData.dimensions.height !== 'number';
+            
+          if (needsFix) {
+            console.log('CRITICAL FIX: Fixing invalid dimensions object before database submission');
+            // Two options: either make all values numeric or set dimensions to null
+            // Let's set all to 0 to avoid losing data structure
+            versionData.dimensions = {
+              length: typeof versionData.dimensions.length === 'number' ? versionData.dimensions.length : 0,
+              width: typeof versionData.dimensions.width === 'number' ? versionData.dimensions.width : 0,
+              height: typeof versionData.dimensions.height === 'number' ? versionData.dimensions.height : 0
+            };
+            console.log('Fixed dimensions:', versionData.dimensions);
+          }
+        } else {
+          // Not an object but also not null? That's invalid - set to null
+          console.log('CRITICAL FIX: Non-object non-null dimensions found, setting to null');
+          versionData.dimensions = null;
+        }
+      }
+      
+      // 2. Validate other JSON fields
+      ['technical_specifications', 'properties', 'electrical_properties', 
+       'mechanical_properties', 'thermal_properties', 'material_composition', 
+       'environmental_data'].forEach(field => {
+        const dbField = field.replace(/_/g, ''); // Convert db field to camelCase for versionData
+        if (versionData[dbField] === undefined || versionData[dbField] === '') {
+          console.log(`CRITICAL FIX: Setting empty ${dbField} to empty object`);
+          versionData[dbField] = {};
+        } else if (typeof versionData[dbField] === 'string') {
+          try {
+            // Parse string to object
+            versionData[dbField] = JSON.parse(versionData[dbField]);
+            console.log(`CRITICAL FIX: Converted ${dbField} from string to object`);
+          } catch (e) {
+            console.log(`CRITICAL FIX: Could not parse ${dbField}, setting to empty object`);
+            versionData[dbField] = {};
+          }
         }
       });
       
-      // Step 5: Map validated form fields to database fields
-      // Use type-safe approach and ONLY use data from form.data (superValidate output)
-      console.error('MAPPING FORM FIELDS TO DATABASE');
-      // Safe cast to avoid TypeScript errors
-      const formDataObj = form.data as Record<string, any>;
-      
-      // PROPERLY MAP ALL FIELDS FROM FORM DATA TO DATABASE OBJECT
-      // This is the critical part that ensures all form fields are correctly saved
-      
-      // Descriptions section
-      if ('short_description' in formDataObj) {
-        versionData.shortDescription = formDataObj['short_description'];
-        console.error(' - Processing short_description');
-      }
-      
-      if ('long_description' in formDataObj) {
-        versionData.longDescription = formDataObj['long_description'];
-        console.error(' - Processing long_description');
-      }
-      
-      if ('functional_description' in formDataObj) {
-        versionData.functionalDescription = formDataObj['functional_description'];
-        console.error(' - Processing functional_description');
-      }
-      
-      // Electrical properties
-      if ('voltage_rating_max' in formDataObj) {
-        versionData.voltageRatingMax = formDataObj['voltage_rating_max'];
-      }
-      
-      if ('voltage_rating_min' in formDataObj) {
-        versionData.voltageRatingMin = formDataObj['voltage_rating_min'];
-      }
-      
-      if ('current_rating_max' in formDataObj) {
-        versionData.currentRatingMax = formDataObj['current_rating_max'];
-      }
-      
-      if ('current_rating_min' in formDataObj) {
-        versionData.currentRatingMin = formDataObj['current_rating_min'];
-      }
-      
-      if ('power_rating_max' in formDataObj) {
-        versionData.powerRatingMax = formDataObj['power_rating_max'];
-      }
-      
-      if ('tolerance' in formDataObj) {
-        versionData.tolerance = formDataObj['tolerance'];
-      }
-      
-      if ('tolerance_unit' in formDataObj) {
-        versionData.toleranceUnit = formDataObj['tolerance_unit'];
-      }
-      
-      if ('electrical_properties' in formDataObj) {
-        versionData.electricalProperties = formDataObj['electrical_properties'];
-      }
-      
-      // Mechanical properties
-      if ('weight' in formDataObj) {
-        versionData.weight = formDataObj['weight'];
-      }
-      
-      if ('weight_unit' in formDataObj) {
-        versionData.weightUnit = formDataObj['weight_unit'];
-      }
-      
-      if ('dimensions' in formDataObj) {
-        versionData.dimensions = formDataObj['dimensions'];
-      }
-      
-      if ('dimensions_unit' in formDataObj) {
-        versionData.dimensionsUnit = formDataObj['dimensions_unit'];
-      }
-      
-      if ('package_type' in formDataObj) {
-        versionData.packageType = formDataObj['package_type'];
-      }
-      
-      if ('pin_count' in formDataObj) {
-        versionData.pinCount = formDataObj['pin_count'];
-      }
-      
-      if ('mechanical_properties' in formDataObj) {
-        versionData.mechanicalProperties = formDataObj['mechanical_properties'];
-      }
-      
-      if ('material_composition' in formDataObj) {
-        versionData.materialComposition = formDataObj['material_composition'];
-      }
-      
-      // Thermal properties
-      if ('operating_temperature_min' in formDataObj) {
-        versionData.operatingTemperatureMin = formDataObj['operating_temperature_min'];
-      }
-      
-      if ('operating_temperature_max' in formDataObj) {
-        versionData.operatingTemperatureMax = formDataObj['operating_temperature_max'];
-      }
-      
-      if ('storage_temperature_min' in formDataObj) {
-        versionData.storageTemperatureMin = formDataObj['storage_temperature_min'];
-      }
-      
-      if ('storage_temperature_max' in formDataObj) {
-        versionData.storageTemperatureMax = formDataObj['storage_temperature_max'];
-      }
-      
-      if ('temperature_unit' in formDataObj) {
-        versionData.temperatureUnit = formDataObj['temperature_unit'];
-      }
-      
-      if ('thermal_properties' in formDataObj) {
-        versionData.thermalProperties = formDataObj['thermal_properties'];
-      }
-      
-      // Other properties
-      if ('technical_specifications' in formDataObj) {
-        versionData.technicalSpecifications = formDataObj['technical_specifications'];
-      }
-      
-      if ('properties' in formDataObj) {
-        versionData.properties = formDataObj['properties'];
-      }
-      
-      if ('environmental_data' in formDataObj) {
-        versionData.environmentalData = formDataObj['environmental_data'];
-      }
-      
-      if ('revision_notes' in formDataObj) {
-        versionData.revisionNotes = formDataObj['revision_notes'];
-      }
+      // 3. Validate numeric fields
+      ['voltageRatingMin', 'voltageRatingMax', 'currentRatingMin', 'currentRatingMax',
+       'powerRatingMax', 'tolerance', 'weight', 'pinCount',
+       'operatingTemperatureMin', 'operatingTemperatureMax',
+       'storageTemperatureMin', 'storageTemperatureMax'].forEach(field => {
+        if (versionData[field] === '' || versionData[field] === undefined) {
+          console.log(`CRITICAL FIX: Setting empty ${field} to null`);
+          versionData[field] = null;
+        }
+      });
       
       // Log the final mapped version data for debugging
-      console.log('[editPart] Final mapped version data:', {
-        ...versionData,
-        // Exclude large JSON fields from logging
-        properties: versionData.properties ? '(JSON data)' : null,
-        longDescription: versionData.longDescription ? '(JSON data)' : null,
-        technicalSpecifications: versionData.technicalSpecifications ? '(JSON data)' : null
+      // EXTENSIVE LOGGING - show ALL fields without truncation
+      console.log('[editPart] Final mapped version data (COMPLETE):');
+      Object.entries(versionData).forEach(([key, value]) => {
+        console.log(`  - ${key}: ${JSON.stringify(value)}`);
       });
       
-      console.log('[editPart] Creating new version with submitted form data:', versionData);
+      // NO CHERRY-PICKING WHATSOEVER - Log the COMPLETE data
+      console.log('[editPart] 100% COMPLETE DATA WITH NO CHERRY-PICKING:', JSON.stringify(versionData, null, 2));
       
-      // Create a new version with ONLY the fields that were actually in the form submission
-      // Step 6: Handle part status update
-      // There are two different status types we need to manage:
-      // 1. The version's lifecycle status (already in versionData.status)
-      // 2. The part's status (separate field that needs special handling)
-      const partStatus = form.data.partStatus || part.status;
-      console.error('PART STATUS:', {
-        current: part.status,
-        new: partStatus,
-        changing: part.status !== partStatus
+      console.log('[editPart] Creating new version with submitted form data:', versionData);    
+   
+      const partStatus = form.data.partStatus || part.status;  
+      
+      // Step 1: Log full status information for debugging
+      console.log('COMPLETE PART STATUS INFO:', {
+        currentPartStatus: part.status,
+        newPartStatus: partStatus,
+        isStatusChanging: part.status !== partStatus,
+        formPartStatus: form.data.partStatus
       });
       
-      // Step 7: Execute database operations
-      console.error('EXECUTING DATABASE OPERATIONS');
-      
-      // CRITICAL FIX: Handle dimensions properly to avoid database constraint violations
-      // The database requires dimensions to be either fully populated or completely null
-      if (versionData.dimensions) {
-        const dims = versionData.dimensions as any;
-        // If any dimension is null, set the entire dimensions object to null
-        if (dims.length === null || dims.width === null || dims.height === null) {
-          console.error('FIXING DIMENSIONS: Setting dimensions to null because some values are null');
-          versionData.dimensions = null;
-          // If dimensions is null, dimensions_unit should also be null
-          versionData.dimensionsUnit = null;
-        }
-      }
-      
-      // Log the final version data after fixing dimensions
-      console.error('FINAL VERSION DATA AFTER VALIDATION FIXES:', {
-        ...versionData,
-        dimensions: versionData.dimensions ? 'Valid dimensions object' : null
-      });
-      
-      // First create the new part version using validated data
+      // Step 2: Create the new part version using validated data
       console.error('Creating new part version...');
       const newVersion = await createPartVersion(versionData);
       console.error('New version created with ID:', newVersion.id);
-      
-      // Then update the part record to point to this new version
-      console.error('Updating part record...');
+        
+      // Step 3: Update the part record to point to this new version
+      console.error('Updating part record to use new version...');
       await updatePartWithStatus(
         part.id,
         newVersionId,
         partStatus as PartStatusEnum
       );
-      console.error('Part record updated successfully');
+      console.error('Part record updated successfully to point to new version');
       
       // Return success with form data
       console.error('============= PART EDIT COMPLETED SUCCESSFULLY =============');

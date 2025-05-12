@@ -87,12 +87,24 @@ export const dimensionSchema = z.object({
 	height: z.number().positive()
 });
 
-// Define a nullable dimension schema for editing that properly handles partial updates
-export const nullableDimensionSchema = z.object({
-	length: z.number().positive().nullable(),
-	width: z.number().positive().nullable(),
-	height: z.number().positive().nullable()
-}).nullable();
+// For editing, dimensions handling needs to be more flexible to accommodate the UI
+// This schema now matches what the database constraint requires while allowing for UI states
+export const editDimensionSchema = z.union([
+	// Option 1: All dimensions must be valid positive numbers
+	z.object({
+		length: z.number().positive(),
+		width: z.number().positive(),
+		height: z.number().positive()
+	}),
+	// Option 2: No dimensions (null)
+	z.null(),
+	// Option 3: Object with all null values (to be converted to null before DB insert)
+	z.object({
+		length: z.null(),
+		width: z.null(),
+		height: z.null()
+	})
+]);
 
 export const partSchema = z.object({
 	id: z.string().uuid(),
@@ -198,8 +210,8 @@ export const partVersionEditSchema = partVersionSchemaBase.extend({
   version: z.string().regex(/^\d+\.\d+\.\d+$/).optional(),
   status: z.nativeEnum(LifecycleStatusEnum).optional(),
   
-  // Use nullable dimension schema to properly handle dimension fields
-  dimensions: nullableDimensionSchema,
+  // Use proper dimension schema that enforces database constraints
+  dimensions: editDimensionSchema,
   
   // Add the special part status field for part status updates
   partStatus: z.nativeEnum(PartStatusEnum).optional()
@@ -230,36 +242,8 @@ export const partVersionEditSchema = partVersionSchemaBase.extend({
     });
   }
   
-  // Handle dimensions validation - verify that if present, it's properly formatted
-  if (data.dimensions !== null && data.dimensions !== undefined) {
-    // If any dimension is provided, all dimensions must be valid numbers or null
-    const dims = data.dimensions as any;
-    
-    // If any dimension is not null, validate it
-    if (dims.length !== null && (typeof dims.length !== 'number' || dims.length <= 0)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Length must be a positive number',
-        path: ['dimensions', 'length']
-      });
-    }
-    
-    if (dims.width !== null && (typeof dims.width !== 'number' || dims.width <= 0)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Width must be a positive number',
-        path: ['dimensions', 'width']
-      });
-    }
-    
-    if (dims.height !== null && (typeof dims.height !== 'number' || dims.height <= 0)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Height must be a positive number',
-        path: ['dimensions', 'height']
-      });
-    }
-  }
+  // The editDimensionSchema already handles dimension validation properly
+  // No additional manual validation needed - the schema enforces all or nothing
 });
 
 // Add detailed passthrough mode for the editor

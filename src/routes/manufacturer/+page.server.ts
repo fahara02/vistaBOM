@@ -1,6 +1,6 @@
 // src/routes/manufacturer/+page.server.ts
 import type { PageServerLoad, Actions } from './$types';
-import client from '$lib/server/db/index';
+import sql from '$lib/server/db/index';
 import { listManufacturers, createManufacturer } from '$lib/server/manufacturer';
 import { manufacturerSchema } from '$lib/server/db/schema';
 import { superValidate } from 'sveltekit-superforms';
@@ -17,7 +17,8 @@ const createManufacturerSchema = manufacturerSchema.pick({
 
 export const load: PageServerLoad = async (event) => {
   const user = event.locals.user;
-  const manufacturers = await listManufacturers(client);
+  // Call listManufacturers without the client parameter
+  const manufacturers = await listManufacturers();
   const form = await superValidate(event, zod(createManufacturerSchema), { id: 'create-manufacturer' });
   return { user, manufacturers, form };
 };
@@ -30,7 +31,8 @@ export const actions: Actions = {
     if (!form.valid) return fail(400, { form });
     if (!user) return fail(401, { form, message: 'Unauthorized' });
     try {
-      await createManufacturer(client, {
+      // Call createManufacturer without the client parameter
+      await createManufacturer({
         name: form.data.name,
         description: form.data.description ?? undefined,
         websiteUrl: form.data.website_url ?? undefined,
