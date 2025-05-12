@@ -178,10 +178,10 @@ export function parseContactInfo(
  * valid JSON objects are returned for database storage
  * 
  * @param input The JSON field content to parse (can be string, object, null, etc)
- * @param fieldName The name of the field for logging purposes (can be null for anonymous fields)
+ * @param fieldName The name of the field for logging purposes
  * @returns A properly formatted object for database storage
  */
-export function parsePartJsonField(input: any, fieldName: string | null = null): Record<string, any> {
+export function parsePartJsonField(input: any, fieldName: string): Record<string, any> {
   // Return empty object for null/undefined/empty inputs
   if (input === null || input === undefined || input === '') {
     return {};

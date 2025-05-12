@@ -11,59 +11,11 @@ import { zod } from 'sveltekit-superforms/adapters';
 import { createPartSchema, manufacturerSchema, categorySchema } from '$lib/server/db/schema';
 import { createPart, getPartWithCurrentVersion } from '$lib/server/parts';
 import type { CreatePartInput } from '$lib/server/parts';
-
-// Extended input type that includes category and manufacturer relationships 
-type ExtendedPartInput = CreatePartInput & {
-	categoryIds?: string[];
-	manufacturerParts?: Array<{manufacturerId: string; partNumber: string}>;
-};
 import { createManufacturer } from '$lib/server/manufacturer';
 import { createSupplier } from '$lib/server/supplier';
 import { createCategory, getCategoryTree } from '$lib/server/category';
 import { z } from 'zod';
 import { parsePartJsonField } from '$lib/utils/util';
-
-// Extended part schema that includes relationship fields
-const extendedPartSchema = z.object({
-	// Part form fields (from createPartSchema)
-	name: z.string().min(1, 'Name is required'),
-	version: z.string().default('0.1.0'),
-	status: z.nativeEnum(LifecycleStatusEnum).default(LifecycleStatusEnum.DRAFT),
-	part_status: z.nativeEnum(PartStatusEnum).default(PartStatusEnum.ACTIVE),
-	short_description: z.string().optional(),
-	functional_description: z.string().optional(),
-	long_description: z.string().optional(),
-	technical_specifications: z.string().optional(),
-	properties: z.string().optional(),
-	electrical_properties: z.string().optional(),
-	mechanical_properties: z.string().optional(),
-	thermal_properties: z.string().optional(),
-	weight: z.coerce.number().optional(),
-	weight_unit: z.nativeEnum(WeightUnitEnum).optional(),
-	dimensions: z.any().optional(),
-	dimensions_unit: z.nativeEnum(DimensionUnitEnum).optional(),
-	material_composition: z.string().optional(),
-	environmental_data: z.string().optional(),
-	revision_notes: z.string().optional(),
-	package_type: z.nativeEnum(PackageTypeEnum).optional(),
-	pin_count: z.coerce.number().optional(),
-	operating_temperature_min: z.coerce.number().optional(),
-	operating_temperature_max: z.coerce.number().optional(),
-	storage_temperature_min: z.coerce.number().optional(),
-	storage_temperature_max: z.coerce.number().optional(),
-	temperature_unit: z.nativeEnum(TemperatureUnitEnum).optional(),
-	voltage_rating_min: z.coerce.number().optional(),
-	voltage_rating_max: z.coerce.number().optional(),
-	current_rating_min: z.coerce.number().optional(),
-	current_rating_max: z.coerce.number().optional(),
-	power_rating_max: z.coerce.number().optional(),
-	tolerance: z.coerce.number().optional(),
-	tolerance_unit: z.string().optional(),
-	
-	// Relationship fields
-	category_ids: z.string().optional(),
-	manufacturer_parts: z.string().optional()
-});
 
 // Define supplier schema for the form
 const supplierSchema = z.object({
@@ -116,8 +68,9 @@ export const load: PageServerLoad = async (event) => {
 	// 3. Initialize Supplier form data
 	const supplierForm = await superValidate(zod(supplierSchema));
 	
-	// 4 Initialize Part form data with extended schema that includes relationship fields
-	const partForm = await superValidate(zod(extendedPartSchema));
+	// 4 Initialize Part form data
+
+	const partForm = await superValidate(zod(createPartSchema));
 	// Initialize dimensions to prevent null reference errors
 	if (!partForm.data.dimensions) {
 		partForm.data.dimensions = { length: 0, width: 0, height: 0 };
@@ -376,8 +329,8 @@ export const actions: Actions = {
 		const partId = formData.get('partId');
 		const isEditMode = partId && typeof partId === 'string' && partId.trim() !== '';
 		
-		// First validate the form data with zod schema including relationship fields
-		const form = await superValidate(formData, zod(extendedPartSchema));
+		// First validate the form data with zod schema
+		const form = await superValidate(formData, zod(createPartSchema));
 		
 		// If we're in edit mode and the form is valid, fetch the full part data for context
 		if (isEditMode && form.valid) {
@@ -456,21 +409,20 @@ export const actions: Actions = {
 		try {
 			// Get statuses from form
 			const selectedLifecycleStatus = form.data.status;
-			const selectedPartStatus = form.data.part_status || PartStatusEnum.ACTIVE;
+			const selectedPartStatus = form.data.partStatus || PartStatusEnum.CONCEPT;
 			
 			// Cast to proper enum type for the lifecycle status
 			const lifecycleStatusToUse = String(selectedLifecycleStatus) as LifecycleStatusEnum;
-			const partStatusToUse = String(selectedPartStatus) as PartStatusEnum;
 			
 			console.log('SELECTED LIFECYCLE STATUS:', lifecycleStatusToUse);
-			console.log('SELECTED PART STATUS:', partStatusToUse);
+			console.log('SELECTED PART STATUS:', selectedPartStatus);
 			
 			// Prepare part data with all fields from the form
-			const partData: ExtendedPartInput = {
+			const partData: CreatePartInput = {
 				name: form.data.name,
 				version: form.data.version || '0.1.0',
 				status: lifecycleStatusToUse,
-				partStatus: partStatusToUse,
+				partStatus: selectedPartStatus,
 				shortDescription: form.data.short_description || '',
 				functionalDescription: form.data.functional_description || '',
 				longDescription: form.data.long_description,
@@ -505,25 +457,6 @@ export const actions: Actions = {
 				toleranceUnit: form.data.tolerance_unit,
 			};
 			
-			// Handle category relationships if provided
-			if (form.data.category_ids) {
-				// Store original data for logging
-				const categoryIds = form.data.category_ids;
-				console.log('Processing category relationships:', categoryIds);
-				partData.categoryIds = categoryIds.split(',').filter(id => id.trim() !== '');
-			}
-
-			// Handle manufacturer relationships if provided
-			if (form.data.manufacturer_parts) {
-				try {
-					const manufacturerPartsData = JSON.parse(form.data.manufacturer_parts);
-					console.log('Processing manufacturer relationships:', manufacturerPartsData);
-					partData.manufacturerParts = manufacturerPartsData;
-				} catch (error) {
-					console.error('Error parsing manufacturer parts data:', error);
-				}
-			}
-
 			// Create the part with all the form data
 			const result = await createPart(partData, user.id);
 			console.log('Part created successfully:', result);

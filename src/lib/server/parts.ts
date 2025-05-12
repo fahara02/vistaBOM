@@ -350,6 +350,9 @@ export interface CreatePartInput {
     partStatus?: PartStatusEnum;
     shortDescription?: string | null;
     functionalDescription?: string | null;
+    // Extended relationship fields
+    categoryIds?: string[];
+    manufacturerParts?: Array<{manufacturerId: string; partNumber: string}>;
     // Allow more flexible property types to match form data
     [key: string]: any;
 }
@@ -480,6 +483,52 @@ export async function createPart(
             WHERE id = ${partId}
             `;
             console.log('[createPart] Update completed for Part', partId);
+            
+            // Process category relationships if categoryIds are provided
+            if (input.categoryIds && Array.isArray(input.categoryIds) && input.categoryIds.length > 0) {
+                console.log(`[createPart] Adding ${input.categoryIds.length} categories to part version ${versionId}`);
+                
+                for (const categoryId of input.categoryIds) {
+                    if (categoryId) {
+                        await transaction`
+                        INSERT INTO "PartVersionCategory" (
+                            id, part_version_id, category_id, created_by, created_at
+                        ) VALUES (
+                            ${randomUUID()}, ${versionId}, ${categoryId}, ${userId}, NOW()
+                        )
+                        `;
+                        console.log(`[createPart] Added category ${categoryId} to part version ${versionId}`);
+                    }
+                }
+            }
+            
+            // Process manufacturer parts if provided
+            if (input.manufacturerParts && Array.isArray(input.manufacturerParts) && input.manufacturerParts.length > 0) {
+                console.log(`[createPart] Adding ${input.manufacturerParts.length} manufacturer parts to part version ${versionId}`);
+                
+                for (const mfrPart of input.manufacturerParts) {
+                    if (mfrPart && mfrPart.manufacturerId && mfrPart.partNumber) {
+                        await transaction`
+                        INSERT INTO "ManufacturerPart" (
+                            id, 
+                            manufacturer_id, 
+                            part_version_id, 
+                            part_number, 
+                            created_by, 
+                            created_at
+                        ) VALUES (
+                            ${randomUUID()}, 
+                            ${mfrPart.manufacturerId}, 
+                            ${versionId}, 
+                            ${mfrPart.partNumber}, 
+                            ${userId}, 
+                            NOW()
+                        )
+                        `;
+                        console.log(`[createPart] Added manufacturer part ${mfrPart.partNumber} from manufacturer ${mfrPart.manufacturerId} to part version ${versionId}`);
+                    }
+                }
+            }
             
             // Return value will be the transaction's return and will be committed automatically
             return { partId, versionId };
