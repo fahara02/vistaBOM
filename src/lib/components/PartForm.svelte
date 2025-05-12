@@ -15,6 +15,8 @@
   export let packageTypes: string[] = [];
   export let weightUnits: string[] = [];
   export let dimensionUnits: string[] = [];
+  // Control whether to show the form action buttons (useful when embedded in other components)
+  export let showFormActions: boolean = true;
   
   // No longer needed - using enum values directly in the component
 
@@ -600,12 +602,14 @@
     </div>
   </div>
 
-  <div class="form-actions">
-    <button type="submit" class="btn-primary">{buttonText}</button>
-    {#if isEditMode}
-      <button type="button" class="btn-secondary" on:click={() => history.back()}>Cancel</button>
-    {/if}
-  </div>
+  {#if showFormActions}
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">{buttonText}</button>
+      {#if isEditMode}
+        <button type="button" class="btn-secondary" on:click={() => history.back()}>Cancel</button>
+      {/if}
+    </div>
+  {/if}
 </form>
 
 <style>

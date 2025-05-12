@@ -36,7 +36,7 @@
 		return formatted.trim();
 	}
 	
-	// Process contact info for dashboard display
+	// // Process contact info for dashboard display
 	function processContactInfo(info: any): { email?: string; phone?: string; address?: string; text?: string } {
 		const result: { email?: string; phone?: string; address?: string; text?: string } = {};
 		
@@ -102,6 +102,7 @@
 	// Function to toggle part form visibility
 	function togglePartForm(): void {
 		showPartForm = !showPartForm;
+		console.log("part form is " + (showPartForm ? "showing" : "hidden"));
 	}
 	
 	// All categories data for ComboBox in both create and edit forms
@@ -369,16 +370,17 @@
 						<div class="embedded-form">
 							<form method="POST" action="?/part" use:partEnhance>
 								<PartForm 
-									form={$partForm} 
-									errors={$partErrors} 
+									form={partForm} 
+									errors={partErrors} 
 									statuses={data.statuses}
 									packageTypes={data.packageTypes}
 									weightUnits={data.weightUnits}
 									dimensionUnits={data.dimensionUnits}
 									enhance={partEnhance}
+									showFormActions={false}
 								/>
 								
-								<div class="form-button-group">
+								<div class="form-actions">
 									<button type="submit" class="primary-btn" disabled={$partSubmitting}>
 										{$partSubmitting ? 'Creating...' : 'Create Part'}
 									</button>

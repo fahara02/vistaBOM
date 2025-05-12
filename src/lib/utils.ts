@@ -3,6 +3,43 @@ import { twMerge } from "tailwind-merge";
 import { cubicOut } from "svelte/easing";
 import type { TransitionConfig } from "svelte/transition";
 
+/**
+ * Format a date string or Date object into a readable format
+ * @param date - Date to format (Date object, ISO string, or timestamp)
+ * @param options - Intl.DateTimeFormatOptions for customizing format
+ * @returns Formatted date string
+ */
+export function formatDate(date: Date | string | number | null | undefined, options: Intl.DateTimeFormatOptions = {}): string {
+  if (!date) return 'Not available';
+  
+  try {
+    const dateObj = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+    
+    // Check if the date is valid
+    if (isNaN(dateObj.getTime())) {
+      console.error('Invalid date:', date);
+      return 'Invalid date';
+    }
+    
+    // Default options for a standard date display
+    const defaultOptions: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    };
+    
+    // Merge default options with provided options
+    const mergedOptions = { ...defaultOptions, ...options };
+    
+    return new Intl.DateTimeFormat('en-US', mergedOptions).format(dateObj);
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Error formatting date';
+  }
+}
+
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }

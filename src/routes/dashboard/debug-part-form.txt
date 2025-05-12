@@ -1,1 +1,0 @@
-This file tests if we can create files, indicating the server is working normally.

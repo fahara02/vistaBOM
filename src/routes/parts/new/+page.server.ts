@@ -1,3 +1,5 @@
+//src/routes/part/new/+page.server.ts
+
 import { createPart } from '$lib/server/parts';
 import type { CreatePartInput } from '$lib/server/parts';
 import type { PageServerLoad, Actions } from './$types';
@@ -81,14 +83,7 @@ export const actions: Actions = {
       dimensions: form.data.dimensions
     });
     
-    // CRITICAL FIX: Bypass validation failures for now to get the form working
-    // We'll extract just the required fields that we know work
-    console.log('Validation results:', form.valid ? 'VALID' : 'INVALID');
-    if (!form.valid) {
-      console.log('Bypassing validation errors to make form work');
-      // Don't fail - just proceed without returning error
-    }
-
+  
     try {
       // DIRECT APPROACH: Get the lifecycle status from the form
       const selectedLifecycleStatus = form.data.status;

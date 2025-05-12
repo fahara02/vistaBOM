@@ -1,13 +1,15 @@
 //src/routes/dashboard/+page.server.ts
 import sql from '$lib/server/db/index';
-import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum, type Project, type User } from '$lib/server/db/types';
+import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum, TemperatureUnitEnum } from '$lib/types';
+import type { Project } from '$lib/server/db/types';
+import type { User } from '$lib/server/db/types';
 import { fail, redirect } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import type { Actions, PageServerLoad } from './$types';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import { createPartSchema, manufacturerSchema, categorySchema } from '$lib/server/db/schema';
-import { createPart } from '$lib/server/parts';
+import { createPart, getPartWithCurrentVersion } from '$lib/server/parts';
 import type { CreatePartInput } from '$lib/server/parts';
 import { createManufacturer } from '$lib/server/manufacturer';
 import { createSupplier } from '$lib/server/supplier';
@@ -327,8 +329,37 @@ export const actions: Actions = {
 		const partId = formData.get('partId');
 		const isEditMode = partId && typeof partId === 'string' && partId.trim() !== '';
 		
-		// Validate form data with zod schema
+		// First validate the form data with zod schema
 		const form = await superValidate(formData, zod(createPartSchema));
+		
+		// If we're in edit mode and the form is valid, fetch the full part data for context
+		if (isEditMode && form.valid) {
+			console.log('Dashboard edit mode - Loading full part data for partId:', partId);
+			try {
+				const { part, currentVersion } = await getPartWithCurrentVersion(partId as string);
+				if (!part) {
+					return message(form, 'Part not found', { status: 404 });
+				}
+				
+				// Check if the user is authorized to edit this part
+				if (part.creatorId !== user.id) {
+					return message(form, 'You are not authorized to edit this part', { status: 403 });
+				}
+				
+				// Log that we're in edit mode for this part with full data context
+				console.log('Editing existing part with ID:', part.id);
+				console.log('Part current version data available:', {
+					id: currentVersion.id,
+					name: currentVersion.name,
+					version: currentVersion.version,
+					shortDescription: currentVersion.shortDescription,
+					dimensions: currentVersion.dimensions
+				});
+			} catch (error) {
+				console.error('Error loading part data for edit:', error);
+				return message(form, 'Error loading part data: ' + (error as Error).message, { status: 500 });
+			}
+		}
 		
 		if (!form.valid) {
 			// Use the message helper to return validation errors
@@ -366,6 +397,15 @@ export const actions: Actions = {
 			console.log(`Processed ${field} using parsePartJsonField utility`);
 		});
 
+		// Log critical values for debugging
+		console.log('Dashboard part form - Critical values:', {
+			name: form.data.name,
+			version: form.data.version,
+			status: form.data.status,
+			dimensions: form.data.dimensions,
+			isEditMode: isEditMode
+		});
+
 		try {
 			// Get statuses from form
 			const selectedLifecycleStatus = form.data.status;
@@ -373,6 +413,9 @@ export const actions: Actions = {
 			
 			// Cast to proper enum type for the lifecycle status
 			const lifecycleStatusToUse = String(selectedLifecycleStatus) as LifecycleStatusEnum;
+			
+			console.log('SELECTED LIFECYCLE STATUS:', lifecycleStatusToUse);
+			console.log('SELECTED PART STATUS:', selectedPartStatus);
 			
 			// Prepare part data with all fields from the form
 			const partData: CreatePartInput = {
@@ -415,14 +458,35 @@ export const actions: Actions = {
 			};
 			
 			// Create the part with all the form data
-			await createPart(partData, user.id);
+			const result = await createPart(partData, user.id);
+			console.log('Part created successfully:', result);
 			
-			// Return success with a message
+			// For dashboard mode, we want to show a message and not redirect
+			// because we're already in the dashboard and want to stay there
 			return message(form, 'Part created successfully');
 		} catch (err) {
 			console.error('Create part error:', err);
-			// Return form with error message for superForm to display
-			return message(form, 'Failed to create part: ' + (err instanceof Error ? err.message : 'Unknown error'));
+			
+			// Provide more detailed error message based on error type
+			let errorMessage = 'Failed to create part';
+			
+			if (err instanceof Error) {
+				errorMessage += ': ' + err.message;
+				
+				// Check for specific error types we can handle more gracefully
+				if (err.message.includes('duplicate')) {
+					errorMessage = 'A part with this name and version already exists';
+				} else if (err.message.includes('not found')) {
+					errorMessage = 'Referenced entity not found';
+				} else if (err.message.includes('validation')) {
+					errorMessage = 'Validation error: Please check all form fields';
+				}
+			} else {
+				errorMessage += ': Unknown error';
+			}
+			
+			// Return form with better error message for superForm to display
+			return message(form, errorMessage, { status: 500 });
 		}
 	},
 	

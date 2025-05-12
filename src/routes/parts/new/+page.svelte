@@ -6,7 +6,7 @@
   
 	export let data: PageData;
 	const { form, errors, enhance } = superForm(data.form, {
-		dataType: 'json' // This is needed to handle complex types like JSON objects
+		dataType: 'json'
 	});
 </script>
   

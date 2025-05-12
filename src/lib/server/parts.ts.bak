@@ -146,10 +146,9 @@ export async function getPartWithCurrentVersion(
 
 		console.log(`[getPartWithCurrentVersion] Retrieving part with ID: ${partId}`);
 		
-		// Use SQL template literals for porsager/postgres with comprehensive field selection
+		// Use SQL template literals for porsager/postgres
 		const result = await sql`
 		SELECT 
-			-- Part table fields
 			p.id::TEXT AS id,
 			p.creator_id::TEXT AS creator_id,
 			p.global_part_number::TEXT AS global_part_number,
@@ -160,49 +159,11 @@ export async function getPartWithCurrentVersion(
 			p.updated_by::TEXT AS part_updated_by,
 			p.updated_at::TEXT AS part_updated_at,
 			p.current_version_id::TEXT AS current_version_id,
-			
-			-- PartVersion table fields - ALL fields for complete data retrieval
 			pv.id::TEXT AS version_id,
 			pv.part_id::TEXT AS version_part_id,
 			pv.version::TEXT AS version,
 			pv.name::TEXT AS name,
 			pv.short_description::TEXT AS short_description,
-			pv.functional_description::TEXT AS functional_description,
-			pv.long_description AS long_description,
-			pv.technical_specifications AS technical_specifications,
-			pv.properties AS properties,
-			pv.electrical_properties AS electrical_properties,
-			pv.mechanical_properties AS mechanical_properties,
-			pv.thermal_properties AS thermal_properties,
-			pv.material_composition AS material_composition,
-			pv.environmental_data AS environmental_data,
-			pv.revision_notes::TEXT AS revision_notes,
-			
-			-- Physical properties
-			pv.dimensions AS dimensions,
-			pv.dimensions_unit::TEXT AS dimensions_unit,
-			pv.weight AS weight,
-			pv.weight_unit::TEXT AS weight_unit,
-			pv.package_type::TEXT AS package_type,
-			pv.pin_count AS pin_count,
-			pv.tolerance AS tolerance,
-			pv.tolerance_unit::TEXT AS tolerance_unit,
-			
-			-- Temperature properties
-			pv.operating_temperature_min AS operating_temperature_min,
-			pv.operating_temperature_max AS operating_temperature_max,
-			pv.storage_temperature_min AS storage_temperature_min,
-			pv.storage_temperature_max AS storage_temperature_max,
-			pv.temperature_unit::TEXT AS temperature_unit,
-			
-			-- Electrical properties
-			pv.voltage_rating_min AS voltage_rating_min,
-			pv.voltage_rating_max AS voltage_rating_max,
-			pv.current_rating_min AS current_rating_min,
-			pv.current_rating_max AS current_rating_max,
-			pv.power_rating_max AS power_rating_max,
-			
-			-- Status and metadata fields
 			pv.status::TEXT AS version_status,
 			pv.created_by::TEXT AS version_created_by,
 			pv.created_at::TEXT AS version_created_at,
@@ -266,60 +227,38 @@ export async function getPartWithCurrentVersion(
 		}
 		console.log(`[VERSION DEBUG] Final version string: '${versionString}'`);
 		
-		// Now map all the database fields to our currentVersion object
 		const currentVersion: PartVersion = {
 			id: row.version_id?.toString(),
 			partId: row.version_part_id?.toString(),
 			version: versionString,
 			name: row.name?.toString(),
-			
-			// Text descriptions (with proper null handling)
 			shortDescription: row.short_description?.toString() || undefined,
-			functionalDescription: row.functional_description?.toString() || undefined,
-			longDescription: row.long_description || undefined,
-			revisionNotes: row.revision_notes?.toString() || undefined,
-			
-			// JSONB fields (need special handling)
-			technicalSpecifications: row.technical_specifications || undefined,
-			properties: row.properties || undefined,
-			electricalProperties: row.electrical_properties || undefined,
-			mechanicalProperties: row.mechanical_properties || undefined,
-			thermalProperties: row.thermal_properties || undefined,
-			materialComposition: row.material_composition || undefined,
-			environmentalData: row.environmental_data || undefined,
-			dimensions: row.dimensions || undefined,
-			
-			// Physical properties 
-			weight: typeof row.weight === 'string' ? parseFloat(row.weight) : row.weight,
-			weightUnit: row.weight_unit?.toString() || undefined,
-			dimensionsUnit: row.dimensions_unit?.toString() || undefined,
-			tolerance: typeof row.tolerance === 'string' ? parseFloat(row.tolerance) : row.tolerance,
-			toleranceUnit: row.tolerance_unit?.toString() || undefined,
-			packageType: row.package_type?.toString() || undefined,
-			pinCount: typeof row.pin_count === 'string' ? parseInt(row.pin_count, 10) : row.pin_count,
-			
-			// Temperature properties (with type conversions)
-			operatingTemperatureMin: typeof row.operating_temperature_min === 'string' ? 
-				parseFloat(row.operating_temperature_min) : row.operating_temperature_min,
-			operatingTemperatureMax: typeof row.operating_temperature_max === 'string' ? 
-				parseFloat(row.operating_temperature_max) : row.operating_temperature_max,
-			storageTemperatureMin: typeof row.storage_temperature_min === 'string' ? 
-				parseFloat(row.storage_temperature_min) : row.storage_temperature_min,
-			storageTemperatureMax: typeof row.storage_temperature_max === 'string' ? 
-				parseFloat(row.storage_temperature_max) : row.storage_temperature_max,
-			temperatureUnit: row.temperature_unit?.toString() || undefined,
-			
-			// Electrical ratings
-			voltageRatingMin: typeof row.voltage_rating_min === 'string' ? 
-				parseFloat(row.voltage_rating_min) : row.voltage_rating_min,
-			voltageRatingMax: typeof row.voltage_rating_max === 'string' ? 
-				parseFloat(row.voltage_rating_max) : row.voltage_rating_max,
-			currentRatingMin: typeof row.current_rating_min === 'string' ? 
-				parseFloat(row.current_rating_min) : row.current_rating_min,
-			currentRatingMax: typeof row.current_rating_max === 'string' ? 
-				parseFloat(row.current_rating_max) : row.current_rating_max,
-			powerRatingMax: typeof row.power_rating_max === 'string' ? 
-				parseFloat(row.power_rating_max) : row.power_rating_max,
+			// Add all other fields with defaults to ensure they're not lost during edits
+			functionalDescription: undefined,  // These aren't in the SQL result, but needed for editing
+			longDescription: undefined,
+			technicalSpecifications: undefined,
+			properties: undefined,
+			electricalProperties: undefined,
+			mechanicalProperties: undefined,
+			thermalProperties: undefined,
+			materialComposition: undefined,
+			environmentalData: undefined,
+			revisionNotes: undefined,
+			// Physical properties
+			weight: undefined,
+			weightUnit: undefined,
+			dimensions: undefined,
+			dimensionsUnit: undefined,
+			tolerance: undefined,
+			toleranceUnit: undefined,
+			packageType: undefined,
+			pinCount: undefined,
+			// Temperature properties
+			operatingTemperatureMin: undefined,
+			operatingTemperatureMax: undefined,
+			storageTemperatureMin: undefined,
+			storageTemperatureMax: undefined,
+			temperatureUnit: undefined,
 			// Status and metadata
 			status: row.version_status && row.version_status in LifecycleStatusEnum ? 
 				row.version_status as LifecycleStatusEnum : 
@@ -418,19 +357,10 @@ export async function createPart(
             
             console.log('[createPart] Now inserting PartVersion');
             
-            // Insert the part version record with ALL fields from the form
+            // Insert the part version record
             await transaction`
             INSERT INTO "PartVersion" (
-                id, part_id, version, name, status, created_by, updated_by,
-                short_description, functional_description, long_description,
-                technical_specifications, properties, electrical_properties,
-                mechanical_properties, thermal_properties, material_composition,
-                environmental_data, revision_notes,
-                dimensions, dimensions_unit, weight, weight_unit, package_type, pin_count,
-                operating_temperature_min, operating_temperature_max,
-                storage_temperature_min, storage_temperature_max, temperature_unit,
-                voltage_rating_min, voltage_rating_max, current_rating_min, current_rating_max,
-                power_rating_max, tolerance, tolerance_unit
+                id, part_id, version, name, status, created_by, updated_by
             ) VALUES (
                 ${versionId}, 
                 ${partId}, 
@@ -438,36 +368,7 @@ export async function createPart(
                 ${input.name}, 
                 ${String(input.status).toLowerCase()}::lifecycle_status_enum, 
                 ${userId}, 
-                NULL,
-                ${input.shortDescription || null}, 
-                ${input.functionalDescription || null},
-                ${input.longDescription || null},
-                ${input.technicalSpecifications ? sql.json(input.technicalSpecifications) : null},
-                ${input.properties ? sql.json(input.properties) : null},
-                ${input.electricalProperties ? sql.json(input.electricalProperties) : null},
-                ${input.mechanicalProperties ? sql.json(input.mechanicalProperties) : null},
-                ${input.thermalProperties ? sql.json(input.thermalProperties) : null},
-                ${input.materialComposition ? sql.json(input.materialComposition) : null},
-                ${input.environmentalData ? sql.json(input.environmentalData) : null},
-                ${input.revisionNotes || null},
-                ${input.dimensions ? sql.json(input.dimensions) : null},
-                ${input.dimensionsUnit || null},
-                ${input.weight || null},
-                ${input.weightUnit || null},
-                ${input.packageType || null},
-                ${input.pinCount || null},
-                ${input.operatingTemperatureMin || null},
-                ${input.operatingTemperatureMax || null},
-                ${input.storageTemperatureMin || null},
-                ${input.storageTemperatureMax || null},
-                ${input.temperatureUnit || null},
-                ${input.voltageRatingMin || null},
-                ${input.voltageRatingMax || null},
-                ${input.currentRatingMin || null},
-                ${input.currentRatingMax || null},
-                ${input.powerRatingMax || null},
-                ${input.tolerance || null},
-                ${input.toleranceUnit || null}
+                NULL
             )
             `;
             
@@ -736,6 +637,110 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
             console.error('[createPartVersion] ❌ MISSING FIELD DETAILS:', errorDetails);
         }
                 
+        // Create the insert query as text
+        const insertQuery = `
+            INSERT INTO "PartVersion" (
+                id, part_id, version, name, status, created_by, created_at,
+                short_description, functional_description, long_description,
+                voltage_rating_min, voltage_rating_max, current_rating_min, current_rating_max,
+                power_rating_max, tolerance, tolerance_unit, electrical_properties,
+                dimensions, dimensions_unit, weight, weight_unit, package_type, pin_count,
+                mechanical_properties, material_composition,
+                operating_temperature_min, operating_temperature_max,
+                storage_temperature_min, storage_temperature_max, temperature_unit, thermal_properties,
+                technical_specifications, properties, environmental_data, revision_notes
+            ) VALUES (
+                $1, $2, $3, $4, $5::TEXT::lifecycle_status_enum, $6, NOW(),
+                $7, $8, $9::JSONB, 
+                $10::NUMERIC, $11::NUMERIC, $12::NUMERIC, $13::NUMERIC,
+                $14::NUMERIC, $15::NUMERIC, 
+                $16, $17::JSONB, 
+                $18::JSONB, $19, $20::NUMERIC, $21, $22, $23::INTEGER,
+                $24::JSONB, $25::JSONB,
+                $26::NUMERIC, $27::NUMERIC, $28::NUMERIC, $29::NUMERIC, 
+                $30, $31::JSONB,
+                $32::JSONB, $33::JSONB, $34::JSONB, $35
+            ) RETURNING *
+        `;
+        
+        // Make sure all JSON objects are properly stringified
+        const longDescription = partVersion.longDescription 
+            ? JSON.stringify(partVersion.longDescription) 
+            : null;
+            
+        const electricalProperties = partVersion.electricalProperties 
+            ? JSON.stringify(partVersion.electricalProperties) 
+            : null;
+            
+        const dimensions = partVersion.dimensions 
+            ? JSON.stringify(partVersion.dimensions) 
+            : null;
+            
+        const mechanicalProperties = partVersion.mechanicalProperties 
+            ? JSON.stringify(partVersion.mechanicalProperties) 
+            : null;
+            
+        const materialComposition = partVersion.materialComposition 
+            ? JSON.stringify(partVersion.materialComposition) 
+            : null;
+            
+        const thermalProperties = partVersion.thermalProperties 
+            ? JSON.stringify(partVersion.thermalProperties) 
+            : null;
+            
+        const technicalSpecifications = partVersion.technicalSpecifications 
+            ? JSON.stringify(partVersion.technicalSpecifications) 
+            : null;
+            
+        const properties = partVersion.properties 
+            ? JSON.stringify(partVersion.properties) 
+            : null;
+            
+        const environmentalData = partVersion.environmentalData 
+            ? JSON.stringify(partVersion.environmentalData) 
+            : null;
+        
+        // Prepare params array
+        const params = [
+            partVersion.id,
+            partVersion.partId,
+            partVersion.version,
+            partVersion.name,
+            partVersion.status,
+            partVersion.createdBy,
+            partVersion.shortDescription,
+            partVersion.functionalDescription,
+            longDescription,  // Properly stringified
+            partVersion.voltageRatingMin === null ? null : String(partVersion.voltageRatingMin),
+            partVersion.voltageRatingMax === null ? null : String(partVersion.voltageRatingMax),
+            partVersion.currentRatingMin === null ? null : String(partVersion.currentRatingMin),
+            partVersion.currentRatingMax === null ? null : String(partVersion.currentRatingMax),
+            partVersion.powerRatingMax === null ? null : String(partVersion.powerRatingMax),
+            partVersion.tolerance === null ? null : String(partVersion.tolerance),
+            partVersion.toleranceUnit,
+            electricalProperties,  // Properly stringified
+            dimensions,  // Properly stringified
+            partVersion.dimensionsUnit,
+            partVersion.weight === null ? null : String(partVersion.weight),
+            partVersion.weightUnit,
+            partVersion.packageType,
+            partVersion.pinCount === null ? null : String(partVersion.pinCount),
+            mechanicalProperties,  // Properly stringified
+            materialComposition,  // Properly stringified
+            partVersion.operatingTemperatureMin === null ? null : String(partVersion.operatingTemperatureMin),
+            partVersion.operatingTemperatureMax === null ? null : String(partVersion.operatingTemperatureMax),
+            partVersion.storageTemperatureMin === null ? null : String(partVersion.storageTemperatureMin),
+            partVersion.storageTemperatureMax === null ? null : String(partVersion.storageTemperatureMax),
+            partVersion.temperatureUnit,
+            thermalProperties,  // Properly stringified
+            technicalSpecifications,  // Properly stringified
+            properties,  // Properly stringified
+            environmentalData,  // Properly stringified
+            partVersion.revisionNotes
+        ];
+        
+        console.log('[createPartVersion] 💥 COMPLETE RAW PARAMETERS:', JSON.stringify(params, null, 2));
+        
         // With porsager/postgres, use sql.begin for proper transaction handling to prevent concurrent update issues
         const insertResult = await sql.begin(async (transaction) => {
             // First, lock the parent part to prevent concurrent modifications
@@ -750,58 +755,9 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
             
             console.log('[createPartVersion] Part row locked for update');
             
-            // Use SQL template literals with proper sql.json() for JSONB fields
-            // This ensures PostgreSQL treats them as proper JSONB data
-            const result = await transaction`
-                INSERT INTO "PartVersion" (
-                    id, part_id, version, name, status, created_by, created_at,
-                    short_description, functional_description, long_description,
-                    voltage_rating_min, voltage_rating_max, current_rating_min, current_rating_max,
-                    power_rating_max, tolerance, tolerance_unit, electrical_properties,
-                    dimensions, dimensions_unit, weight, weight_unit, package_type, pin_count,
-                    mechanical_properties, material_composition,
-                    operating_temperature_min, operating_temperature_max,
-                    storage_temperature_min, storage_temperature_max, temperature_unit, thermal_properties,
-                    technical_specifications, properties, environmental_data, revision_notes
-                ) VALUES (
-                    ${partVersion.id},
-                    ${partVersion.partId},
-                    ${partVersion.version},
-                    ${partVersion.name},
-                    ${String(partVersion.status)}::lifecycle_status_enum,
-                    ${partVersion.createdBy},
-                    NOW(),
-                    ${partVersion.shortDescription || null},
-                    ${partVersion.functionalDescription || null},
-                    ${partVersion.longDescription ? sql.json(partVersion.longDescription) : null},
-                    ${partVersion.voltageRatingMin || null},
-                    ${partVersion.voltageRatingMax || null},
-                    ${partVersion.currentRatingMin || null},
-                    ${partVersion.currentRatingMax || null},
-                    ${partVersion.powerRatingMax || null},
-                    ${partVersion.tolerance || null},
-                    ${partVersion.toleranceUnit || null},
-                    ${partVersion.electricalProperties ? sql.json(partVersion.electricalProperties) : null},
-                    ${partVersion.dimensions ? sql.json(partVersion.dimensions) : null},
-                    ${partVersion.dimensionsUnit || null},
-                    ${partVersion.weight || null},
-                    ${partVersion.weightUnit || null},
-                    ${partVersion.packageType || null},
-                    ${partVersion.pinCount || null},
-                    ${partVersion.mechanicalProperties ? sql.json(partVersion.mechanicalProperties) : null},
-                    ${partVersion.materialComposition ? sql.json(partVersion.materialComposition) : null},
-                    ${partVersion.operatingTemperatureMin || null},
-                    ${partVersion.operatingTemperatureMax || null},
-                    ${partVersion.storageTemperatureMin || null},
-                    ${partVersion.storageTemperatureMax || null},
-                    ${partVersion.temperatureUnit || null},
-                    ${partVersion.thermalProperties ? sql.json(partVersion.thermalProperties) : null},
-                    ${partVersion.technicalSpecifications ? sql.json(partVersion.technicalSpecifications) : null},
-                    ${partVersion.properties ? sql.json(partVersion.properties) : null},
-                    ${partVersion.environmentalData ? sql.json(partVersion.environmentalData) : null},
-                    ${partVersion.revisionNotes || null}
-                ) RETURNING *
-            `;
+            // Use the unsafe method for dynamic queries, but within the transaction
+            // This gives us both dynamic SQL capability and transaction safety
+            const result = await transaction.unsafe(insertQuery, params.filter(p => p !== undefined));
             
             // Check if we have a result
             if (!result || result.length === 0) {
