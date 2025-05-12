@@ -80,8 +80,8 @@
             setTimeout(() => success = null, 3000);
             editMode = false;
         } catch (e:unknown) {
-            if (e.name !== 'AbortError') {
-                error = e instanceof Error ? e.message : 'An unknown error occurred while updating';
+            if (e instanceof Error && e.name !== 'AbortError') {
+                error = e.message;
             }
         }
     };
@@ -105,8 +105,8 @@
             const event = new CustomEvent('deleted', { detail: manufacturer.id });
             dispatchEvent(event);
         } catch (e:unknown) {
-            if (e.name !== 'AbortError') {
-                error = e instanceof Error ? e.message : 'An unknown error occurred while deleting';
+            if (e instanceof Error && e.name !== 'AbortError') {
+                error = e.message;
             }
         }
     };

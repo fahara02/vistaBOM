@@ -6,11 +6,12 @@ import { randomUUID } from 'crypto';
 import type { Actions, PageServerLoad } from './$types';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
-import { createPartSchema, manufacturerSchema } from '$lib/server/db/schema';
+import { createPartSchema, manufacturerSchema, categorySchema } from '$lib/server/db/schema';
 import { createPart } from '$lib/server/parts';
 import type { CreatePartInput } from '$lib/server/parts';
 import { createManufacturer } from '$lib/server/manufacturer';
 import { createSupplier } from '$lib/server/supplier';
+import { createCategory, getCategoryTree } from '$lib/server/category';
 import { z } from 'zod';
 
 // Define supplier schema for the form
@@ -72,6 +73,18 @@ export const load: PageServerLoad = async (event) => {
 	
 	// 4. Initialize Supplier form data
 	const supplierForm = await superValidate(zod(supplierSchema));
+	
+	// 5. Initialize Category form data
+	const createCategorySchema = categorySchema.pick({
+		name: true,
+		parent_id: true,
+		description: true,
+		is_public: true
+	});
+	const categoryForm = await superValidate(zod(createCategorySchema));
+	
+	// 6. Get category tree for parent selection
+	const categories = await getCategoryTree();
 	
 	// 4. Fetch user-created parts with manufacturer data
 	let userParts: any[] = [];
@@ -175,12 +188,14 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		user,
 		projects,
-		partForm,
-		manufacturerForm,
-		supplierForm,
 		userParts,
 		userManufacturers,
 		userSuppliers,
+		categories,
+		partForm,
+		manufacturerForm,
+		supplierForm,
+		categoryForm,
 		userCategories,
 		allCategories,
 		// Part form data
@@ -192,6 +207,26 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
+	// Default action handler to route based on intent parameter
+	default: async (event) => {
+		const intent = event.url.searchParams.get('intent');
+		
+		// Route to the appropriate action based on intent
+		switch (intent) {
+			case 'category':
+				return actions.category(event);
+			case 'manufacturer':
+				return actions.manufacturer(event);
+			case 'supplier':
+				return actions.supplier(event);
+			case 'part':
+				return actions.part(event);
+			case 'project':
+				return actions.project(event);
+			default:
+				return fail(400, { message: 'Invalid or missing intent parameter' });
+		}
+	},
 	// Project creation - unchanged
 	project: async (event) => {
 		const user = event.locals.user as User | null;
@@ -368,5 +403,42 @@ export const actions: Actions = {
 		}
 	},
 	
-
+	// Category creation action
+	category: async (event) => {
+		const user = event.locals.user as User | null;
+		if (!user) throw redirect(302, '/');
+		
+		// Create schema for validation
+		const createCategorySchema = categorySchema.pick({
+			name: true,
+			parent_id: true,
+			description: true,
+			is_public: true
+		});
+		
+		// Validate the form
+		const form = await superValidate(event.request, zod(createCategorySchema));
+		
+		if (!form.valid) {
+			return message(form, 'Invalid form data. Please check the fields.');
+		}
+		
+		try {
+			// Call createCategory with the form data
+			await createCategory({
+				name: form.data.name,
+				parentId: form.data.parent_id ?? undefined,
+				description: form.data.description ?? undefined,
+				isPublic: form.data.is_public,
+				createdBy: user.id
+			});
+			
+			// Return success message
+			return message(form, 'Category created successfully');
+		} catch (err) {
+			console.error('Create category error:', err);
+			// Return form with error message
+			return message(form, 'Failed to create category: ' + (err instanceof Error ? err.message : 'Unknown error'));
+		}
+	}
 };

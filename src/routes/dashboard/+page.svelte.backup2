@@ -641,84 +641,17 @@
 				<h2>Your Categories</h2>
 				{#if userCategories.length > 0}
 					<div class="user-items-grid">
-						{#each userCategories as category}
-							<div class="entity-card">
-								<h3>{category.name}</h3>
-								{#if category.description}
-									<p>{category.description}</p>
-								{/if}
-								<p class="entity-meta">Public: {category.is_public ? 'Yes' : 'No'}</p>
-								<div class="entity-actions">
-									<a href={`/catagory?id=${category.id}`} class="icon-btn view-btn" title="View Category Details">👁️</a>
-									<a href={`/catagory?id=${category.id}&edit=true`} class="icon-btn edit-btn" title="Edit Category">✏️</a>
-								</div>
-							</div>
-						{/each}
+						<!-- Categories listing will go here -->
+						<p>User categories list coming soon</p>
 					</div>
 				{:else}
 					<p class="no-items">You haven't created any categories yet.</p>
 				{/if}
-				
+
 				<div class="action-buttons">
-					<button type="button" class="primary-btn" on:click={() => showCategoryForm = !showCategoryForm}>
-						{showCategoryForm ? 'Cancel' : 'Add New Category'}
-					</button>
+					<a href="/catagory" class="primary-btn">Add New Category</a>
 					<a href="/catagory" class="secondary-btn">View All Categories</a>
 				</div>
-				
-				{#if showCategoryForm}
-					<div class="form-container">
-						<h2>Create New Category</h2>
-						
-						{#if $categoryMessage}
-							<div class="form-message {$categoryMessage.includes('Failed') ? 'error' : 'success'}">
-								{$categoryMessage}
-							</div>
-						{/if}
-						
-						<div class="embedded-form">
-							<form method="POST" use:categoryEnhance>
-								<div class="form-group">
-									<label for="name">Name*</label>
-									<input id="name" name="name" bind:value={$categoryForm.name} required />
-									{#if $categoryErrors.name}<span class="error">{$categoryErrors.name}</span>{/if}
-								</div>
-								
-								<div class="form-group">
-									<label for="parent_id">Parent Category</label>
-									<CategoryComboBox 
-										categories={categories} 
-										bind:value={$categoryForm.parent_id} 
-										name="parent_id" 
-										placeholder="Select parent category..." 
-									/>
-									{#if $categoryErrors.parent_id}<span class="error">{$categoryErrors.parent_id}</span>{/if}
-								</div>
-								
-								<div class="form-group">
-									<label for="description">Description</label>
-									<textarea id="description" name="description" bind:value={$categoryForm.description}></textarea>
-									{#if $categoryErrors.description}<span class="error">{$categoryErrors.description}</span>{/if}
-								</div>
-								
-								<div class="form-group checkbox-group">
-									<label>
-										<input type="checkbox" name="is_public" bind:checked={$categoryForm.is_public} /> 
-										Public
-									</label>
-									{#if $categoryErrors.is_public}<span class="error">{$categoryErrors.is_public}</span>{/if}
-								</div>
-								
-								<div class="form-button-group">
-									<button type="submit" class="primary-btn" disabled={$categorySubmitting}>
-										{$categorySubmitting ? 'Creating...' : 'Create Category'}
-									</button>
-									<button type="button" class="secondary-btn" on:click={() => showCategoryForm = false}>Cancel</button>
-								</div>
-							</form>
-						</div>
-					</div>
-				{/if}
 			</div>
 		{/if}
 	</section>

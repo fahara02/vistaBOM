@@ -1,7 +1,8 @@
 <!-- src/lib/components/supplier.svelte -->
 <script lang="ts">
     import type { Supplier } from '$lib/types';
-    import type { ContactInfo } from '$lib/utils/util';
+    import type { ContactInfo } from '$lib/types/contact';
+    import { parseContactInfo } from '$lib/types/contact';
     import { onDestroy } from 'svelte';
     
     // Format field names from camelCase to Title Case with spaces

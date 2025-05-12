@@ -1,22 +1,35 @@
 import { error, redirect } from '@sveltejs/kit';
 import { zfd } from 'zod-form-data';
 import { z } from 'zod';
-import { superValidate } from 'sveltekit-superforms/server';
+import { superValidate, message } from 'sveltekit-superforms/server';
+import { zod } from 'sveltekit-superforms/adapters';
 import type { PageServerLoad, Actions } from './$types';
-import { sql } from '$lib/server/db';
+import sql from '$lib/server/db';
 import type { Category } from '$lib/server/db/types';
 
 // Define schema for category validation
+const rawSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  description: z.string().optional(),
+  parent_id: z.string().optional(),
+  is_public: z.boolean(),
+  // Make these optional to avoid validation errors
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  path: z.string().optional(),
+  // Add field for custom fields
+  customFieldsJson: z.string().optional()
+});
+
+// Convert to form data schema for proper form handling
 const schema = zfd.formData({
   name: zfd.text(z.string().min(1, 'Name is required')),
   description: zfd.text(z.string().optional()),
   parent_id: zfd.text(z.string().optional()),
   is_public: zfd.checkbox(),
-  // Make these optional to avoid validation errors
   created_at: zfd.text(z.string().optional()),
   updated_at: zfd.text(z.string().optional()),
   path: zfd.text(z.string().optional()),
-  // Add field for custom fields
   customFieldsJson: zfd.text(z.string().optional())
 });
 
@@ -75,8 +88,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       ORDER BY name
     `;
 
-    // Create form with existing data
-    const form = await superValidate({
+    // Create form with schema first, then update its data
+    const form = await superValidate(zod(rawSchema));
+    
+    // Set the form data
+    form.data = {
       name: category.name,
       description: category.description || '',
       parent_id: category.parentId || '',
@@ -87,7 +103,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       customFieldsJson: Object.keys(customFieldsMap).length > 0 
         ? JSON.stringify(customFieldsMap, null, 2) 
         : ''
-    }, schema);
+    };
 
     return { 
       form, 
@@ -113,7 +129,7 @@ export const actions: Actions = {
       throw error(401, 'You must be logged in to edit a category');
     }
 
-    const form = await superValidate(request, schema);
+    const form = await superValidate(request, zod(rawSchema));
 
     if (!form.valid) {
       return { form };
@@ -146,19 +162,19 @@ export const actions: Actions = {
       await sql`
         UPDATE category 
         SET 
-          name = ${name},
-          description = ${description || null},
-          parent_id = ${parent_id || null},
-          is_public = ${is_public},
-          updated_by = ${user.id},
-          updated_at = NOW()
-        WHERE id = ${params.id}
+          name = ${name as string},
+          description = ${description ? String(description) : null},
+          parent_id = ${parent_id ? String(parent_id) : null},
+          is_public = ${Boolean(is_public)},
+          updated_at = NOW(),
+          updated_by = ${String(user.id)}
+        WHERE id = ${String(params.id)}
       `;
 
       // Process custom fields if provided
-      if (customFieldsJson && customFieldsJson.trim()) {
+      if (customFieldsJson && typeof customFieldsJson === 'string' && customFieldsJson.trim()) {
         try {
-          const customFields = JSON.parse(customFieldsJson);
+          const customFields = JSON.parse(customFieldsJson as string);
           
           // Delete existing custom fields
           await sql`

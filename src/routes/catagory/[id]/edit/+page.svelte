@@ -159,7 +159,7 @@
           {/if}
           <div class="json-examples">
             <p>Examples:</p>
-            <code>{"certification": "ISO 9001", "yearEstablished": 1995, "isVerified": true}</code>
+            <code>{{"certification": "ISO 9001", "yearEstablished": 1995, "isVerified": true}}</code>
           </div>
         </div>
       </div>
