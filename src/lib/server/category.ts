@@ -177,38 +177,48 @@ export async function updateCategory(
 
 	// Build dynamic SET clause with porsager/postgres approach
 	const setParts = [];
-	const updateValues: any = {};
+	const paramValues = [];
+	let paramIndex = 1;
 
+	// Dynamically add update fields with incrementing parameter indices
 	if (updates.name !== undefined) {
-		setParts.push('name = ${name}');
-		updateValues.name = updates.name;
+		setParts.push(`name = $${paramIndex}`);
+		paramValues.push(updates.name);
+		paramIndex++;
 	}
 
 	if (updates.description !== undefined) {
-		setParts.push('description = ${description}');
-		updateValues.description = updates.description;
+		setParts.push(`description = $${paramIndex}`);
+		paramValues.push(updates.description);
+		paramIndex++;
 	}
 
 	if (updates.isPublic !== undefined) {
-		setParts.push('is_public = ${isPublic}');
-		updateValues.isPublic = updates.isPublic;
+		setParts.push(`is_public = $${paramIndex}`);
+		paramValues.push(updates.isPublic);
+		paramIndex++;
 	}
 
 	// Always add updated_by and updated_at
-	setParts.push('updated_by = ${userId}');
-	updateValues.userId = userId;
+	setParts.push(`updated_by = $${paramIndex}`);
+	paramValues.push(userId);
+	paramIndex++;
 	setParts.push('updated_at = NOW()');
 
-	// Add ID for WHERE clause
-	updateValues.id = id;
-
-	// Use sql.unsafe for dynamic queries
-	const result = await sql.unsafe(`
+	// Use sql.unsafe for dynamic queries with proper parameter handling
+	// Construct the query with proper parameter placeholders
+	const query = `
 		UPDATE Category
 		SET ${setParts.join(', ')}
-		WHERE id = \${id}
+		WHERE id = $${paramValues.length + 1}
 		RETURNING *
-	`, updateValues);
+	`;
+	
+	// Add ID as the last parameter
+	paramValues.push(id);
+	
+	// Execute with parameters in correct order
+	const result = await sql.unsafe(query, paramValues);
 
 	if (result.length === 0) throw new Error('Category update failed');
 	return normalizeCategory(result[0]);

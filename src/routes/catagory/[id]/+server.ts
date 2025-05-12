@@ -1,12 +1,24 @@
+
+//src/routes/catagory/[id]/+server.ts
 import type { RequestHandler } from '@sveltejs/kit';
-import client from '$lib/server/db/index';
+import sql from '$lib/server/db/index';
 import { updateCategory, deleteCategory } from '$lib/server/category';
 
 export const PUT: RequestHandler = async ({ params, request }) => {
-  const { id } = params;
+  const id = params.id;
+  
+  // Validate that ID exists and is a string
+  if (!id) {
+    return new Response(JSON.stringify({ message: 'Missing category ID' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
   const { name, userId } = await request.json();
   try {
-    const updated = await updateCategory(client, id, { name }, userId);
+    // Using the new porsager/postgres API - no client parameter needed
+    const updated = await updateCategory(id, { name }, userId);
     return new Response(JSON.stringify(updated), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -20,10 +32,20 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 };
 
 export const DELETE: RequestHandler = async ({ params, request }) => {
-  const { id } = params;
+  const id = params.id;
+  
+  // Validate that ID exists and is a string
+  if (!id) {
+    return new Response(JSON.stringify({ message: 'Missing category ID' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
   const { userId } = await request.json();
   try {
-    await deleteCategory(client, id, userId);
+    // Using the new porsager/postgres API - no client parameter needed
+    await deleteCategory(id, userId);
     return new Response(null, { status: 204 });
   } catch (err) {
     return new Response(JSON.stringify({ message: (err as Error).message }), {

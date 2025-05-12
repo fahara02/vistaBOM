@@ -1,7 +1,7 @@
 // src/routes/api/suppliers/[id]/+server.ts
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
-import { getClient } from '$lib/server/db';
+import sql from '$lib/server/db/index';
 import { updateSupplier, deleteSupplier } from '$lib/server/supplier';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
@@ -16,11 +16,10 @@ export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!userId) {
         throw error(401, 'Unauthorized');
     }
-    const client = await getClient();
     try {
         const data = await request.json();
+        // Using the new porsager/postgres API - no client parameter needed
         const updated = await updateSupplier(
-            client,
             id,
             {
                 name: data.name,
@@ -49,9 +48,9 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
     if (!userId) {
         throw error(401, 'Unauthorized');
     }
-    const client = await getClient();
     try {
-        await deleteSupplier(client, id);
+        // Using the new porsager/postgres API - no client parameter needed
+        await deleteSupplier(id);
         return new Response(null, { status: 204 });
     } catch (e: any) {
         throw error(500, e.message);
