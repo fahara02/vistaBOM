@@ -12,6 +12,26 @@
     let success: string | null = null;
     let contactInfoString = '';
     let abortController = new AbortController();
+    
+    // Function to safely parse contact info - ensures we always have an object
+    function parseContactInfo(info: any): Record<string, string> {
+        if (!info) return {};
+        
+        // If it's already an object, return it
+        if (typeof info === 'object' && info !== null) return info;
+        
+        // If it's a string, try to parse it
+        if (typeof info === 'string') {
+            try {
+                return JSON.parse(info);
+            } catch (e: unknown) {
+                console.error('Failed to parse contact info:', e instanceof Error ? e.message : e);
+                return {};
+            }
+        }
+        
+        return {};
+    }
 
     onDestroy(() => {
         abortController.abort();
@@ -19,7 +39,10 @@
 
     const startEdit = () => {
         edits = { ...supplier };
-        contactInfoString = supplier.contactInfo ? JSON.stringify(supplier.contactInfo, null, 2) : '';
+        // Parse contact info if needed and stringify with formatting for editing
+        const parsedContactInfo = parseContactInfo(supplier.contactInfo);
+        contactInfoString = Object.keys(parsedContactInfo).length > 0 ? 
+            JSON.stringify(parsedContactInfo, null, 2) : '';
         editMode = true;
     };
 
@@ -71,9 +94,13 @@
             success = 'Supplier updated successfully';
             setTimeout(() => success = null, 3000);
             editMode = false;
-        } catch (e) {
-            if (e.name !== 'AbortError') {
-                error = e instanceof Error ? e.message : 'An unknown error occurred while updating';
+        } catch (e: unknown) {
+            if (e instanceof Error && e.name !== 'AbortError') {
+                error = e.message;
+            } else if (e && typeof e === 'object' && 'name' in e && e.name !== 'AbortError') {
+                error = String(e);
+            } else if (e !== 'AbortError') {
+                error = 'An unknown error occurred while updating';
             }
         }
     };
@@ -99,9 +126,13 @@
             success = 'Supplier deleted successfully';
             setTimeout(() => success = null, 3000);
             // Emit event or handle removal in parent component
-        } catch (e) {
-            if (e.name !== 'AbortError') {
-                error = e instanceof Error ? e.message : 'An unknown error occurred while deleting';
+        } catch (e: unknown) {
+            if (e instanceof Error && e.name !== 'AbortError') {
+                error = e.message;
+            } else if (e && typeof e === 'object' && 'name' in e && e.name !== 'AbortError') {
+                error = String(e);
+            } else if (e !== 'AbortError') {
+                error = 'An unknown error occurred while deleting';
             }
         }
     };
@@ -137,10 +168,42 @@
                 {/if}
                 
                 {#if supplier.contactInfo}
-                    <div class="contact-info">
-                        <h3>Contact Information</h3>
-                        <pre>{JSON.stringify(supplier.contactInfo, null, 2)}</pre>
-                    </div>
+                    {@const contactInfo = parseContactInfo(supplier.contactInfo)}
+                    {#if Object.keys(contactInfo).length > 0}
+                        <div class="contact-info">
+                            <h3>Contact Information</h3>
+                            <div class="contact-details">
+                                {#if contactInfo.email}
+                                    <div class="contact-item">
+                                        <span class="contact-icon">📧</span>
+                                        <span class="contact-label">Email:</span>
+                                        <a href="mailto:{contactInfo.email}" class="contact-value">{contactInfo.email}</a>
+                                    </div>
+                                {/if}
+                                {#if contactInfo.phone}
+                                    <div class="contact-item">
+                                        <span class="contact-icon">📞</span>
+                                        <span class="contact-label">Phone:</span>
+                                        <a href="tel:{contactInfo.phone}" class="contact-value">{contactInfo.phone}</a>
+                                    </div>
+                                {/if}
+                                {#if contactInfo.address}
+                                    <div class="contact-item">
+                                        <span class="contact-icon">🏢</span>
+                                        <span class="contact-label">Address:</span>
+                                        <span class="contact-value">{contactInfo.address}</span>
+                                    </div>
+                                {/if}
+                                {#each Object.entries(contactInfo).filter(([key]) => !['email', 'phone', 'address'].includes(key)) as [key, value]}
+                                    <div class="contact-item">
+                                        <span class="contact-icon">ℹ️</span>
+                                        <span class="contact-label">{key}:</span>
+                                        <span class="contact-value">{value}</span>
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
                 {/if}
                 
                 <div class="meta">
@@ -172,10 +235,8 @@
                 
                 <label>
                     Description
-                    <textarea>   bind:value={edits.description}
-                        rows="3"</textarea>
-                      
-                   
+                    <textarea bind:value={edits.description}
+                        rows="3"></textarea>
                 </label>
                 
                 <label>
@@ -197,12 +258,14 @@
                 </label>
                 
                 <label>
-                    Contact Information (JSON)
-                    <textarea>bind:value={contactInfoString}
+                    Contact Information
+                    <textarea bind:value={contactInfoString}
                         rows="6"
-                        placeholder={`Example:\n{\n  "email": "contact@example.com",\n  "phone": "+1 234 567 890",\n  "address": "123 Main St"\n}`} </textarea>
-                        
-                 
+                        placeholder={`Example JSON format:\n{\n  "email": "contact@example.com",\n  "phone": "+1 234 567 890",\n  "address": "123 Main St"\n}`} ></textarea>
+                    <div class="contact-info-help">
+                        <p>Enter contact information as JSON with fields like email, phone, and address. 
+                        Each field will be displayed with appropriate formatting.</p>
+                    </div>
                 </label>
                 
                 <div class="form-actions">
@@ -265,17 +328,56 @@
     }
 
     .contact-info {
-        margin: 1.5rem 0;
-        padding: 1rem;
-        background: #f8f9fa;
-        border-radius: 4px;
+        margin-top: 15px;
+        padding: 12px;
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        border-left: 4px solid #4285f4;
     }
-
-    .contact-info pre {
-        white-space: pre-wrap;
-        font-family: monospace;
-        margin: 0;
-        font-size: 0.9em;
+    
+    .contact-info h3 {
+        margin-top: 0;
+        margin-bottom: 12px;
+        color: #333;
+        font-size: 1.1em;
+    }
+    
+    .contact-details {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .contact-item {
+        display: flex;
+        align-items: baseline;
+    }
+    
+    .contact-icon {
+        margin-right: 8px;
+        font-size: 1.1em;
+        min-width: 24px;
+    }
+    
+    .contact-label {
+        font-weight: 600;
+        color: #555;
+        margin-right: 8px;
+        min-width: 70px;
+    }
+    
+    .contact-value {
+        color: #333;
+    }
+    
+    /* Links within contact values */
+    :global(.contact-value a) {
+        color: #4285f4;
+        text-decoration: none;
+    }
+    
+    :global(.contact-value a:hover) {
+        text-decoration: underline;
     }
 
     .meta {
@@ -325,11 +427,26 @@
         margin-bottom: 0.5rem;
     }
 
-    input, textarea {
+    textarea {
         width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #ddd;
+        padding: 8px;
+        border: 1px solid #ccc;
         border-radius: 4px;
+        resize: vertical;
+        min-height: 100px;
+    }
+    
+    .contact-info-help {
+        margin-top: 5px;
+        font-size: 0.85em;
+        color: #555;
+        background-color: #f8f9fa;
+        padding: 8px;
+        border-radius: 4px;
+        border-left: 3px solid #ccc;
+    }
+
+    input, textarea {
         font-family: inherit;
         font-size: 0.9em;
     }
