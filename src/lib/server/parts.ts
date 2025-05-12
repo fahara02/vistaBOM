@@ -1,5 +1,5 @@
 // src/lib/server/parts.ts
-import { getClient } from './db/index';
+import sql from './db/index';
 import { randomUUID } from 'crypto';
 import { rowToPartVersionCategory,rowToPartAttachment,rowToPartCompliance,rowToPartCustomField,rowToPartVersionTag, rowToPartStructure, rowToPartRepresentation, rowToPartRevision, rowToPartValidation} from '../parts/partUtils';
 import type {
@@ -33,7 +33,7 @@ function sanitizeSqlString(str: string): string {
 	return str.replace(/'/g, "''");
 }
 
-const client = getClient();
+// SQL client is imported directly at the top of the file
 
 /**
  * List all parts with their current version
@@ -42,8 +42,7 @@ export async function listParts(): Promise<Array<{ part: Part; currentVersion: P
 	try {
 		console.log('[listParts] Retrieving all parts');
 		
-		// Get SQL client correctly for porsager/postgres
-		const sql = getClient();
+		// Using imported sql client directly
 		
 		// Use SQL template literal syntax for porsager/postgres
 		const result = await sql`
@@ -148,7 +147,7 @@ export async function getPartWithCurrentVersion(
 		console.log(`[getPartWithCurrentVersion] Retrieving part with ID: ${partId}`);
 		
 		// Use SQL template literals for porsager/postgres
-		const result = await client`
+		const result = await sql`
 		SELECT 
 			p.id::TEXT AS id,
 			p.creator_id::TEXT AS creator_id,
@@ -333,71 +332,65 @@ export async function createPart(
     console.log('[createPart] Using status value:', statusLower);
     
     try {
-        // Start transaction
-        await client`BEGIN`;
-        
         // Use the partStatus field if provided, otherwise default to CONCEPT
         const partStatusToUse = input.partStatus || PartStatusEnum.CONCEPT;
         console.log('[createPart] Using Part status:', partStatusToUse);
         
-        const partSql = `
-        INSERT INTO "Part" (
-            id, creator_id, global_part_number, status, lifecycle_status
-        ) VALUES (
-            '${partId}', 
-            '${userId}', 
-            '${input.name.replace(/'/g, "''")}', 
-            '${String(partStatusToUse).toLowerCase()}'::part_status_enum, 
-            '${statusLower}'::lifecycle_status_enum
-        )`;
+        // Proper transaction handling with porsager/postgres using sql.begin
+        console.log('[createPart] Starting transaction');
         
-        console.log('[createPart] Inserting part');
-        await client`
-        INSERT INTO "Part" (
-            id, creator_id, global_part_number, status, lifecycle_status
-        ) VALUES (
-            ${input.id},
-            ${input.userId || input.creatorId}, 
-            ${input.globalPartNumber || null}, 
-            ${partStatusToUse}, 
-            ${input.status}::lifecycle_status_enum
-        )
-        `;
-        console.log('[createPart] Part inserted successfully');
+        // Begin a transaction using the correct porsager/postgres approach
+        const result = await sql.begin(async (transaction) => {
+            console.log('[createPart] Inserting part');
+            
+            // Insert the part record
+            await transaction`
+            INSERT INTO "Part" (
+                id, creator_id, global_part_number, status, lifecycle_status
+            ) VALUES (
+                ${partId},
+                ${userId}, 
+                ${input.name}, 
+                ${String(partStatusToUse).toLowerCase()}::part_status_enum, 
+                ${String(input.status).toLowerCase()}::lifecycle_status_enum
+            )
+            `;
+            console.log('[createPart] Part inserted successfully');
+            
+            console.log('[createPart] Now inserting PartVersion');
+            
+            // Insert the part version record
+            await transaction`
+            INSERT INTO "PartVersion" (
+                id, part_id, version, name, status, created_by, updated_by
+            ) VALUES (
+                ${versionId}, 
+                ${partId}, 
+                ${input.version}, 
+                ${input.name}, 
+                ${String(input.status).toLowerCase()}::lifecycle_status_enum, 
+                ${userId}, 
+                NULL
+            )
+            `;
+            
+            console.log('[createPart] PartVersion inserted, now updating Part current_version_id');
+            
+            // Update the part to reference the new version
+            await transaction`
+            UPDATE "Part" 
+            SET current_version_id = ${versionId} 
+            WHERE id = ${partId}
+            `;
+            console.log('[createPart] Update completed for Part', partId);
+            
+            // Return value will be the transaction's return and will be committed automatically
+            return { partId, versionId };
+        });
         
-        console.log('[createPart] Part inserted, now Inserting PartVersion');
-        
-        // Use SQL template literals for better parameterization and security
-        console.log('[createPart] Inserting part version');
-        await client`
-        INSERT INTO "PartVersion" (
-            id, part_id, version, name, status, created_by, updated_by
-        ) VALUES (
-            ${versionId}, 
-            ${partId}, 
-            ${input.version}, 
-            ${input.name}, 
-            ${input.status}::lifecycle_status_enum, 
-            ${userId}, 
-            NULL
-        )
-        `;
-        
-        console.log('[createPart] PartVersion inserted, now updating Part current_version_id');
-        
-        // Update the part to reference the new version
-        await client`
-        UPDATE "Part" 
-        SET current_version_id = ${versionId} 
-        WHERE id = ${partId}
-        `;
-        console.log('[createPart] Update completed for Part', partId);
-
-        // Commit only if all operations were successful
-        await client`COMMIT`;
-        console.log('[createPart] Transaction committed successfully');
+        console.log('[createPart] Transaction committed successfully:', result);
     } catch (error: any) {
-        await client`ROLLBACK`;
+        // With sql.begin(), rollback happens automatically on error
         console.error('Database Error in createPart:', error.message, error.stack);
         throw error;
     }
@@ -411,30 +404,41 @@ export async function createPart(
 export async function updatePartVersion(
 	data: Partial<PartVersion> & { id: string }
 ): Promise<void> {
-	const fields: string[] = [];
-	const values: any[] = [];
-	let idx = 1;
-	if (data.name !== undefined) {
-		fields.push(`name = $${idx}`);
-		values.push(data.name);
-		idx++;
+	try {
+		// More modern approach with porsager/postgres - build update dynamically
+		// Only include fields that are defined in the input data
+		let updateFields = [];
+		
+		if (data.name !== undefined) {
+			updateFields.push(`name = ${data.name}`);
+		}
+		if (data.version !== undefined) {
+			updateFields.push(`version = ${data.version}`);
+		}
+		if (data.status !== undefined) {
+			updateFields.push(`status = ${data.status}::text::lifecycle_status_enum`);
+		}
+		
+		// If no fields to update, return early
+		if (updateFields.length === 0) {
+			console.log('[updatePartVersion] No fields to update');
+			return;
+		}
+		
+		// Use sql.unsafe for dynamic SQL with template literals for parameterization
+		// This avoids SQL injection while allowing dynamic field updates
+		const result = await sql.unsafe(`
+			UPDATE "PartVersion" 
+			SET ${updateFields.join(', ')} 
+			WHERE id = '${data.id}'
+			RETURNING id
+		`);
+		
+		console.log(`[updatePartVersion] Updated part version ${data.id}`);
+	} catch (error) {
+		console.error('[updatePartVersion] Error updating part version:', error);
+		throw error;
 	}
-	if (data.version !== undefined) {
-		fields.push(`version = $${idx}`);
-		values.push(data.version);
-		idx++;
-	}
-	if (data.status !== undefined) {
-		fields.push(`status = $${idx}::text::lifecycle_status_enum`);
-		values.push(data.status);
-		idx++;
-	}
-	if (!fields.length) return;
-	
-	// With porsager/postgres, use a raw SQL string with the ${} template syntax
-	// This allows for dynamic column updates while still providing parameterization
-	const sql = `UPDATE "PartVersion" SET ${fields.join(', ')} WHERE id = $${idx}`;
-	await client.unsafe(sql, values);
 }
 
 /**
@@ -442,46 +446,40 @@ export async function updatePartVersion(
  */
 export async function deletePart(partId: string): Promise<void> {
 	try {
-		// Validate partId parameter to avoid database errors
-		if (!partId) {
-			throw new Error(`Invalid part ID: ${partId} is undefined or empty`);
-		}
-
 		console.log(`[deletePart] Deleting part with ID: ${partId}`);
 		
-		// Start a transaction for consistent deletion
-		await client`BEGIN`;
+		// Use porsager/postgres transaction handling with sql.begin
+		// This handles BEGIN/COMMIT/ROLLBACK automatically
+		await sql.begin(async (transaction) => {
+			// First lock the part row to prevent concurrent modifications
+			// This helps prevent the "tuple concurrently updated" error
+			const lockResult = await transaction`
+				SELECT id FROM "Part" WHERE id = ${partId} FOR UPDATE
+			`;
+			
+			if (lockResult.length === 0) {
+				throw new Error(`Part not found with ID: ${partId}`);
+			}
+			
+			console.log(`[deletePart] Part ${partId} found and locked for deletion`);
+			
+			// Delete the part (relies on CASCADE for versions)
+			const deleteResult = await transaction`
+				DELETE FROM "Part" WHERE id = ${partId} RETURNING id
+			`;
+			
+			if (deleteResult.length === 0) {
+				throw new Error(`Failed to delete part with ID: ${partId}`);
+			}
+			
+			console.log(`[deletePart] Part ${partId} successfully deleted within transaction`);
+			// Transaction automatically commits if no errors
+		});
 		
-		// First check if the part exists
-		const checkResult = await client`
-			SELECT id FROM "Part" WHERE id = ${partId}
-		`;
-		
-		if (checkResult.length === 0) {
-			await client`ROLLBACK`;
-			throw new Error(`Part not found with ID: ${partId}`);
-		}
-		
-		// Delete the part (will cascade to part versions due to database constraints)
-		const deleteResult = await client`
-			DELETE FROM "Part" WHERE id = ${partId} RETURNING id
-		`;
-		
-		if (deleteResult.length === 0) {
-			await client`ROLLBACK`;
-			throw new Error(`Failed to delete part with ID: ${partId}`);
-		}
-		
-		await client`COMMIT`;
 		console.log(`[deletePart] Successfully deleted part with ID: ${partId}`);
 	} catch (error) {
 		console.error(`[deletePart] Error deleting part ${partId}:`, error);
-		// Try to rollback if possible
-		try {
-			await client`ROLLBACK`;
-		} catch (rollbackError) {
-			console.error('[deletePart] Error during rollback:', rollbackError);
-		}
+		// With sql.begin(), rollback happens automatically on error
 		throw error;
 	}
 }
@@ -490,35 +488,58 @@ export async function deletePart(partId: string): Promise<void> {
 // Part Version Category
 // ======================
 export async function addCategoryToPartVersion(partVersionId: string, categoryId: string): Promise<PartVersionCategory> {
-    // Use porsager/postgres template literals for SQL queries
-    const result = await client`
-        INSERT INTO "PartVersionCategory" (part_version_id, category_id)
-        VALUES (${partVersionId}, ${categoryId}) 
-        RETURNING *
-    `;
-    
-    // With porsager/postgres, results are direct objects
-    const row = result[0];
-    return rowToPartVersionCategory(row);
+    try {
+        // Use porsager/postgres template literals for SQL queries
+        const result = await sql`
+            INSERT INTO "PartVersionCategory" (part_version_id, category_id)
+            VALUES (${partVersionId}, ${categoryId}) 
+            RETURNING *
+        `;
+        
+        if (result.length === 0) {
+            throw new Error(`Failed to add category ${categoryId} to part version ${partVersionId}`);
+        }
+        
+        // With porsager/postgres, results are direct objects
+        const row = result[0];
+        return rowToPartVersionCategory(row);
+    } catch (error) {
+        console.error('[addCategoryToPartVersion] Error:', error);
+        throw error;
+    }
 }
 
 export async function removeCategoryFromPartVersion(partVersionId: string, categoryId: string): Promise<void> {
-    // Use template literals for DELETE operation
-    await client`
-        DELETE FROM "PartVersionCategory" 
-        WHERE part_version_id = ${partVersionId} AND category_id = ${categoryId}
-    `;
+    try {
+        // Use template literals for DELETE operation with proper error handling
+        await sql`
+            DELETE FROM "PartVersionCategory" 
+            WHERE part_version_id = ${partVersionId} AND category_id = ${categoryId}
+        `;
+        
+        console.log(`[removeCategoryFromPartVersion] Removed category ${categoryId} from part version ${partVersionId}`);
+    } catch (error) {
+        console.error('[removeCategoryFromPartVersion] Error:', error);
+        throw error;
+    }
 }
 
 export async function getCategoriesForPartVersion(partVersionId: string): Promise<PartVersionCategory[]> {
-    // Use template literals for SELECT operation
-    const result = await client`
-        SELECT * FROM "PartVersionCategory" 
-        WHERE part_version_id = ${partVersionId}
-    `;
-    
-    // Map results using array methods directly on the result
-    return result.map(rowToPartVersionCategory);
+    try {
+        // Use template literals for SELECT operation with proper error handling
+        const result = await sql`
+            SELECT * FROM "PartVersionCategory" 
+            WHERE part_version_id = ${partVersionId}
+        `;
+        
+        console.log(`[getCategoriesForPartVersion] Found ${result.length} categories for part version ${partVersionId}`);
+        
+        // Map results using array methods directly on the result
+        return result.map(rowToPartVersionCategory);
+    } catch (error) {
+        console.error('[getCategoriesForPartVersion] Error:', error);
+        throw error;
+    }
 }
 
 /**
@@ -533,11 +554,11 @@ export async function updatePartWithStatus(
   console.log(`[updatePartWithStatus] Updating part ${partId} with new version ${newVersionId} and status ${newStatus}`);
   
   // Get SQL client
-  const sql = getClient();
+  // Using the sql client imported at the top of the file
   
   try {
     // Begin transaction - with porsager/postgres, transactions are handled with sql.begin()
-    await sql.begin(async (txSql) => {
+    await sql.begin(async (txSql: typeof sql) => {
       console.log('[updatePartWithStatus] Transaction started');
       
       // First, lock the part row to prevent concurrent modifications
@@ -605,7 +626,7 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
         console.log('[createPartVersion] 100% COMPLETE INCOMING DATA:', JSON.stringify(partVersion, null, 2));
         
         // Get the database client
-        const client = getClient(); 
+        // Using the sql client imported at the top of the file
         
         // Extra validation to catch common failures
         if (!partVersion.name || !partVersion.version || !partVersion.status) {
@@ -722,14 +743,33 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
         
         console.log('[createPartVersion] 💥 COMPLETE RAW PARAMETERS:', JSON.stringify(params, null, 2));
         
-        // Use template literals with SQL for proper parameter handling
-        // For complex dynamic queries we use the unsafe method with proper parameter handling
-        const insertResult = await client.unsafe(insertQuery, params.filter(p => p !== undefined));
+        // With porsager/postgres, use sql.begin for proper transaction handling to prevent concurrent update issues
+        const insertResult = await sql.begin(async (transaction) => {
+            // First, lock the parent part to prevent concurrent modifications
+            // This helps prevent the "tuple concurrently updated" error
+            const lockResult = await transaction`
+                SELECT id FROM "Part" WHERE id = ${partVersion.partId} FOR UPDATE
+            `;
+            
+            if (lockResult.length === 0) {
+                throw new Error(`Part with ID ${partVersion.partId} not found or could not be locked`);
+            }
+            
+            console.log('[createPartVersion] Part row locked for update');
+            
+            // Use the unsafe method for dynamic queries, but within the transaction
+            // This gives us both dynamic SQL capability and transaction safety
+            const result = await transaction.unsafe(insertQuery, params.filter(p => p !== undefined));
+            
+            // Check if we have a result
+            if (!result || result.length === 0) {
+                throw new Error('Failed to create part version');
+            }
+            
+            return result;
+        });
         
-        // Check if we have a result
-        if (!insertResult || insertResult.length === 0) {
-            throw new Error('Failed to create part version');
-        }
+        console.log('[createPartVersion] Transaction completed successfully');
         
         // Get the row from the result
         // Standardize on porsager/postgres array-style result format
