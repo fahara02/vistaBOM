@@ -22,23 +22,23 @@
 			<li class="nav-item" aria-current={page.url.pathname === '/about' ? 'page' : undefined}>
 				<a href="/about">About</a>
 			</li>
-			<li class="nav-item" aria-current={page.url.pathname === '/dashboard' ? 'page' : undefined}>
-				<a href="/dashboard" class="dashboard-link">Dashboard</a>
-			</li>
 			<li
-				class="nav-item view-only"
+				class="nav-item"
 				aria-current={page.url.pathname.startsWith('/catagory') ? 'page' : undefined}
 			>
-				<a href="/catagory">View Categories</a>
+				<a href="/catagory">Catagory</a>
 			</li>
-			<li class="nav-item view-only" aria-current={page.url.pathname === '/parts' ? 'page' : undefined}>
-				<a href="/parts">View Parts</a>
+			<li class="nav-item" aria-current={page.url.pathname === '/parts/new' ? 'page' : undefined}>
+				<a href="/parts/new">Add Part</a>
 			</li>
-			<li class="nav-item view-only" aria-current={page.url.pathname.startsWith('/manufacturer') ? 'page' : undefined}>
-				<a href="/manufacturer">View Manufacturers</a>
+			<li class="nav-item" aria-current={page.url.pathname === '/parts' ? 'page' : undefined}>
+				<a href="/parts">Parts</a>
 			</li>
-			<li class="nav-item view-only" aria-current={page.url.pathname.startsWith('/supplier') ? 'page' : undefined}>
-				<a href="/supplier">View Suppliers</a>
+			<li class="nav-item" aria-current={page.url.pathname.startsWith('/manufacturer') ? 'page' : undefined}>
+				<a href="/manufacturer">Manufacturers</a>
+			</li>
+			<li class="nav-item" aria-current={page.url.pathname.startsWith('/supplier') ? 'page' : undefined}>
+				<a href="/supplier">Suppliers</a>
 			</li>
 		</ul>
 		<svg viewBox="0 0 2 3" aria-hidden="true">
@@ -125,23 +125,6 @@
 
 	.nav-item a:hover {
 		color: #4285f4;
-	}
-
-	.nav-item.view-only a {
-		display: flex;
-		align-items: center;
-		color: #555;
-	}
-
-	.nav-item.view-only a:before {
-		content: '👁️';
-		margin-right: 4px;
-		font-size: 0.9rem;
-	}
-
-	.dashboard-link {
-		color: #4285f4 !important;
-		font-weight: 700 !important;
 	}
 
 	li[aria-current='page']::before {

@@ -6,10 +6,9 @@ import { randomUUID } from 'crypto';
 import type { Actions, PageServerLoad } from './$types';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
-import { createPartSchema, manufacturerSchema } from '$lib/server/db/schema';
+import { createPartSchema } from '$lib/server/db/schema';
 import { createPart } from '$lib/server/parts';
 import type { CreatePartInput } from '$lib/server/parts';
-import { createManufacturer } from '$lib/server/manufacturer';
 
 export const load: PageServerLoad = async (event) => {
 	const user = event.locals.user as User | null;
@@ -56,59 +55,34 @@ export const load: PageServerLoad = async (event) => {
 		partForm.data.status = LifecycleStatusEnum.DRAFT;
 	}
 	
-	// 3. Initialize Manufacturer form data
-	const manufacturerForm = await superValidate(zod(manufacturerSchema));
-	
-	// 4. Fetch user-created parts with manufacturer data
+	// 3. Fetch user-created parts
+	// Explicitly type as any[] to address TypeScript errors
 	let userParts: any[] = [];
 	try {
-		// First check what tables exist in the database
-		const tables = await sql`
-			SELECT tablename FROM pg_tables 
-			WHERE schemaname = 'public';
+		// Simplified query that doesn't rely on is_latest column
+		userParts = await sql`
+			SELECT 
+				p.id,
+				p.name,
+				p.status,
+				p.created_by,
+				p.created_at,
+				p.updated_at
+			FROM "Part" p 
+			WHERE p.created_by = ${user.id} 
+			ORDER BY p.updated_at DESC
 		`;
-		
-		console.log('Available tables:', tables.map(t => t.tablename));
-		
-		// Examine the Part table structure first to understand what columns exist
-		try {
-			const partColumns = await sql`
-				SELECT column_name, data_type 
-				FROM information_schema.columns 
-				WHERE table_name = 'Part'
-			`;
-			console.log('Part table columns:', partColumns.map(c => c.column_name));
-			
-			// Check if the relevant columns exist before querying
-			const hasCreatedBy = partColumns.some(c => c.column_name === 'created_by');
-			const creatorColumn = hasCreatedBy ? 'created_by' : 'created_at';
-			
-			// Safely query based on available columns
-			userParts = await sql`
-				SELECT * FROM "Part"
-				LIMIT 5
-			`;
-			
-			// Manual filtering if needed
-			if (hasCreatedBy) {
-				userParts = userParts.filter(p => p.created_by === user.id);
-			}
-		} catch (error) {
-			console.log('Error examining Part table:', error);
-			// Last resort - just return empty array
-			userParts = [];
-		}
 	} catch (error) {
 		console.error('Error fetching user parts:', error);
 		// userParts is already initialized to an empty array
 	}
 	
-	// 5. Fetch user-created manufacturers
+	// 4. Fetch user-created manufacturers
 	let userManufacturers: any[] = [];
 	try {
 		userManufacturers = await sql`
 			SELECT *
-			FROM "manufacturer"
+			FROM "Manufacturer"
 			WHERE created_by = ${user.id}
 			ORDER BY name ASC
 		`;
@@ -117,12 +91,12 @@ export const load: PageServerLoad = async (event) => {
 		// userManufacturers is already initialized to an empty array
 	}
 	
-	// 6. Fetch user-created suppliers
+	// 5. Fetch user-created suppliers
 	let userSuppliers: any[] = [];
 	try {
 		userSuppliers = await sql`
 			SELECT *
-			FROM "supplier"
+			FROM "Supplier"
 			WHERE created_by = ${user.id}
 			ORDER BY name ASC
 		`;
@@ -131,12 +105,12 @@ export const load: PageServerLoad = async (event) => {
 		// userSuppliers is already initialized to an empty array
 	}
 	
-	// 7. Fetch user-created categories
+	// 6. Fetch user-created categories
 	let userCategories: any[] = [];
 	try {
 		userCategories = await sql`
 			SELECT *
-			FROM "category"
+			FROM "Category"
 			WHERE created_by = ${user.id}
 			ORDER BY name ASC
 		`;
@@ -145,12 +119,12 @@ export const load: PageServerLoad = async (event) => {
 		// userCategories is already initialized to an empty array
 	}
 	
-	// 8. Fetch all categories for parent selection in category form
+	// 7. Fetch all categories for parent selection in category form
 	let allCategories: any[] = [];
 	try {
 		allCategories = await sql`
 			SELECT *
-			FROM "category"
+			FROM "Category"
 			ORDER BY name ASC
 		`;
 	} catch (error) {
@@ -167,7 +141,6 @@ export const load: PageServerLoad = async (event) => {
 		allCategories,
 		// Part form data
 		partForm,
-		manufacturerForm,
 		statuses: Object.values(LifecycleStatusEnum),
 		packageTypes: Object.values(PackageTypeEnum),
 		weightUnits: Object.values(WeightUnitEnum),
@@ -199,48 +172,6 @@ export const actions: Actions = {
 			throw error;
 		}
 		return { success: true };
-	},
-
-	// Manufacturer creation
-	manufacturer: async (event) => {
-		const { request, locals } = event;
-		const user = locals.user as User | null;
-		if (!user) return fail(401, { message: 'Unauthorized' });
-		
-		// Use the same schema as the manufacturer page
-		const createManufacturerSchema = manufacturerSchema.pick({
-			name: true,
-			description: true,
-			website_url: true,
-			logo_url: true
-		});
-		
-		// Validate form data using superForm
-		const form = await superValidate(request, zod(createManufacturerSchema));
-		console.log('Manufacturer form data:', JSON.stringify(form.data, null, 2));
-		
-		if (!form.valid) {
-			console.error('Manufacturer validation failed:', form.errors);
-			return message(form, 'Validation failed');
-		}
-
-		try {
-			// Use the existing createManufacturer function
-			await createManufacturer({
-				name: form.data.name,
-				description: form.data.description ?? undefined,
-				websiteUrl: form.data.website_url ?? undefined,
-				logoUrl: form.data.logo_url ?? undefined,
-				createdBy: user.id
-			});
-			
-			// Return success message for superForm to display
-			return message(form, 'Manufacturer created successfully!');
-		} catch (err) {
-			console.error('Create manufacturer error:', err);
-			// Return error message for superForm to display
-			return message(form, 'Failed to create manufacturer: ' + (err instanceof Error ? err.message : 'Unknown error'), { status: 500 });
-		}
 	},
 	
 	// Part creation
@@ -305,5 +236,8 @@ export const actions: Actions = {
 		}
 	},
 	
-
+	// Default action redirects to project action for backward compatibility
+	default: async (event) => {
+		return await actions.project(event);
+	}
 };

@@ -1,12 +1,69 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
+	import { PartForm } from '$lib/components';
+	import { superForm } from 'sveltekit-superforms/client';
+
 	export let data: PageData;
 	const user = data.user!;
 	const projects = data.projects;
+
 	// Ensure fullName is a string for rendering
 	const fullName = user.fullName ?? '';
 	const initial = fullName.charAt(0) || '';
+
+	// Tab management
+	type TabType = 'projects' | 'parts' | 'manufacturers' | 'suppliers' | 'categories';
+	let activeTab: TabType = 'projects';
+
+	// Function to handle tab changes
+	function setActiveTab(tab: TabType): void {
+		activeTab = tab;
+	}
+
+	// Toggle forms visibility
+	let showPartForm = false;
+	let showManufacturerForm = false;
+	let showSupplierForm = false;
+	let showCategoryForm = false;
+
+	// Initialize part form with superForm
+	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.partForm, {
+		dataType: 'json',
+		onSubmit: ({ cancel, action }) => {
+			// Set the form action to the part action
+			action.searchParams.append('intent', 'part');
+		},
+		onResult: ({ result }) => {
+			// Handle successful submission
+			if (result.type === 'success') {
+				showPartForm = false;
+				// Reload the page to get updated parts list
+				window.location.reload();
+			}
+			// Don't reset the form on error to preserve user input
+		}
+	});
+
+	// Initialize manufacturer form with superForm
+	const { form: manufacturerForm, errors: manufacturerErrors, enhance: manufacturerEnhance, submitting: manufacturerSubmitting, message: manufacturerMessage } = superForm(data.manufacturerForm, {
+		dataType: 'json',
+		onResult: ({ result }) => {
+			// Handle successful submission
+			if (result.type === 'success') {
+				showManufacturerForm = false;
+				// Reload the page to get updated manufacturers list
+				window.location.reload();
+			}
+			// Don't reset the form on error to preserve user input
+		}
+	});
+
+	// User entities from server
+	const userParts = data.userParts || [];
+	const userManufacturers = data.userManufacturers || [];
+	const userSuppliers = data.userSuppliers || [];
+	const userCategories = data.userCategories || [];
 </script>
 
 <div class="dashboard-container">
@@ -24,25 +81,317 @@
 		</div>
 	</header>
 
-	<section class="projects-section">
-		<h2>Your Projects</h2>
-		{#if projects.length > 0}
-			<ul class="projects-grid">
-				{#each projects as project (project.id)}
-					<li class="project-card">
-						<a class="project-link" href={`/dashboard/${project.id}`}>{project.name}</a>
-					</li>
-				{/each}
-			</ul>
-		{:else}
-			<p class="no-projects">You have no projects yet.</p>
+	<div class="dashboard-tabs">
+		<button 
+			class="tab-button {activeTab === 'projects' ? 'active' : ''}" 
+			on:click={() => setActiveTab('projects')}
+		>
+			Projects
+		</button>
+		<button 
+			class="tab-button {activeTab === 'parts' ? 'active' : ''}" 
+			on:click={() => setActiveTab('parts')}
+		>
+			Parts
+		</button>
+		<button 
+			class="tab-button {activeTab === 'manufacturers' ? 'active' : ''}" 
+			on:click={() => setActiveTab('manufacturers')}
+		>
+			Manufacturers
+		</button>
+		<button 
+			class="tab-button {activeTab === 'suppliers' ? 'active' : ''}" 
+			on:click={() => setActiveTab('suppliers')}
+		>
+			Suppliers
+		</button>
+		<button 
+			class="tab-button {activeTab === 'categories' ? 'active' : ''}" 
+			on:click={() => setActiveTab('categories')}
+		>
+			Categories
+		</button>
+	</div>
+
+	<section class="dashboard-content">
+		<!-- Projects Tab -->
+		{#if activeTab === 'projects'}
+			<div class="tab-content">
+				<h2>Your Projects</h2>
+				{#if projects.length > 0}
+					<ul class="projects-grid">
+						{#each projects as project (project.id)}
+							<li class="project-card">
+								<a class="project-link" href={`/dashboard/${project.id}`}>{project.name}</a>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="no-items">You have no projects yet.</p>
+				{/if}
+
+				<h2>Add New Project</h2>
+				<form class="project-form" method="POST" action="?/project">
+					<input class="project-input" type="text" name="name" placeholder="Project Name" required />
+					<button class="primary-btn" type="submit">Add Project</button>
+				</form>
+			</div>
 		{/if}
 
-		<h2>Add New Project</h2>
-		<form class="project-form" method="POST">
-			<input class="project-input" type="text" name="name" placeholder="Project Name" required />
-			<button class="primary-btn" type="submit">Add Project</button>
-		</form>
+		<!-- Parts Tab -->
+		{#if activeTab === 'parts'}
+			<div class="tab-content">
+				<h2>Your Parts</h2>
+				{#if userParts.length > 0}
+					<div class="user-items-grid">
+						{#each userParts as part (part.id)}
+							<div class="entity-card">
+								<h3>{part.name}</h3>
+								<p class="entity-meta">Version: {part.version || '1.0.0'}</p>
+								<p class="entity-meta">Status: {part.status || 'Draft'}</p>
+								<div class="entity-actions">
+									<a href={`/parts/${part.id}`} class="icon-btn view-btn" title="View Part Details">👁️</a>
+									<a href={`/parts/${part.id}/edit`} class="icon-btn edit-btn" title="Edit Part">✏️</a>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="no-items">You haven't created any parts yet.</p>
+				{/if}
+
+				<div class="action-buttons">
+					<button type="button" class="primary-btn" on:click={() => showPartForm = !showPartForm}>
+						{showPartForm ? 'Cancel' : 'Add New Part'}
+					</button>
+					<a href="/parts" class="secondary-btn">View All Parts</a>
+				</div>
+
+				{#if showPartForm}
+					<div class="form-container">
+						<h2>Create New Part</h2>
+						
+						{#if $partMessage}
+							<div class="form-message {$partMessage.includes('Failed') ? 'error' : 'success'}">
+								{$partMessage}
+							</div>
+						{/if}
+						
+						<div class="embedded-form">
+							<form method="POST" use:partEnhance>
+								<PartForm 
+									form={$partForm} 
+									errors={$partErrors} 
+									statuses={data.statuses}
+									packageTypes={data.packageTypes}
+									weightUnits={data.weightUnits}
+									dimensionUnits={data.dimensionUnits}
+									enhance={partEnhance}
+								/>
+								
+								<div class="form-button-group">
+									<button type="submit" class="primary-btn" disabled={$partSubmitting}>
+										{$partSubmitting ? 'Creating...' : 'Create Part'}
+									</button>
+									<button type="button" class="secondary-btn" on:click={() => showPartForm = false}>Cancel</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Manufacturers Tab -->
+		{#if activeTab === 'manufacturers'}
+			<div class="tab-content">
+				<h2>Your Manufacturers</h2>
+				{#if userManufacturers.length > 0}
+					<div class="user-items-grid">
+						{#each userManufacturers as manufacturer (manufacturer.id)}
+							<div class="entity-card manufacturer-card">
+								<div class="card-header">
+									{#if manufacturer.logo_url}
+										<div class="logo-container">
+											<img src={manufacturer.logo_url} alt={`${manufacturer.name} logo`} class="manufacturer-logo" />
+										</div>
+									{:else}
+										<div class="logo-placeholder">
+											<span>{manufacturer.name.substring(0, 2).toUpperCase()}</span>
+										</div>
+									{/if}
+									<h3 class="manufacturer-name">{manufacturer.name}</h3>
+								</div>
+								
+								<div class="card-content">
+									{#if manufacturer.description}
+										<p class="entity-description">
+											{manufacturer.description.length > 100 ? 
+												`${manufacturer.description.substring(0, 100)}...` : 
+												manufacturer.description}
+										</p>
+									{:else}
+										<p class="entity-no-description">No description provided</p>
+									{/if}
+									
+									{#if manufacturer.website_url}
+										<p class="entity-meta website-link">
+											<span class="meta-label">Website:</span> 
+											<a href={manufacturer.website_url} target="_blank" rel="noopener noreferrer" class="website-url">
+												{new URL(manufacturer.website_url).hostname}
+											</a>
+										</p>
+									{/if}
+									
+									<p class="entity-meta">
+										<span class="meta-label">Created:</span> 
+										<span class="date-value">
+											{new Date(manufacturer.created_at).toLocaleDateString()}
+										</span>
+									</p>
+								</div>
+								
+								<div class="entity-actions">
+									<a href={`/manufacturer/${manufacturer.id}/edit`} class="icon-btn edit-btn" title="Edit Manufacturer">✏️</a>
+									<a href="/manufacturer" class="icon-btn view-btn" title="View All Manufacturers">👁️</a>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="no-items">You haven't created any manufacturers yet.</p>
+				{/if}
+
+				<div class="action-buttons">
+					<button type="button" class="primary-btn" on:click={() => showManufacturerForm = !showManufacturerForm}>
+						{showManufacturerForm ? 'Cancel' : 'Add New Manufacturer'}
+					</button>
+					<a href="/manufacturer" class="secondary-btn">View All Manufacturers</a>
+				</div>
+
+				{#if showManufacturerForm}
+					<div class="form-container">
+						<h2>Create New Manufacturer</h2>
+						
+						{#if $manufacturerMessage}
+							<div class="form-message {$manufacturerMessage.includes('Failed') ? 'error' : 'success'}">
+								{$manufacturerMessage}
+							</div>
+						{/if}
+						
+						<form method="POST" action="?/manufacturer" use:manufacturerEnhance class="form-grid">
+							<div class="form-group">
+								<label for="mfr-name">Name <span class="required">*</span></label>
+								<input 
+									id="mfr-name" 
+									name="name" 
+									bind:value={$manufacturerForm.name} 
+									class="form-input"
+									placeholder="Enter manufacturer name"
+									required 
+								/>
+								{#if $manufacturerErrors.name}
+									<span class="field-error">{$manufacturerErrors.name}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="mfr-description">Description</label>
+								<textarea 
+									id="mfr-description" 
+									name="description" 
+									bind:value={$manufacturerForm.description}
+									class="form-textarea"
+									rows="3"
+									placeholder="Enter a description of the manufacturer"
+								></textarea>
+								{#if $manufacturerErrors.description}
+									<span class="field-error">{$manufacturerErrors.description}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="mfr-website">Website URL</label>
+								<input 
+									id="mfr-website" 
+									name="website_url" 
+									type="url" 
+									class="form-input"
+									bind:value={$manufacturerForm.website_url} 
+									placeholder="https://example.com"
+								/>
+								{#if $manufacturerErrors.website_url}
+									<span class="field-error">{$manufacturerErrors.website_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="mfr-logo">Logo URL</label>
+								<input 
+									id="mfr-logo" 
+									name="logo_url" 
+									type="url" 
+									class="form-input"
+									bind:value={$manufacturerForm.logo_url}
+									placeholder="https://example.com/logo.png"
+								/>
+								{#if $manufacturerErrors.logo_url}
+									<span class="field-error">{$manufacturerErrors.logo_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-actions">
+								<button type="submit" class="primary-btn" disabled={$manufacturerSubmitting}>
+									{$manufacturerSubmitting ? 'Creating...' : 'Create Manufacturer'}
+								</button>
+								<button type="button" class="secondary-btn" on:click={() => showManufacturerForm = false}>Cancel</button>
+							</div>
+						</form>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Suppliers Tab -->
+		{#if activeTab === 'suppliers'}
+			<div class="tab-content">
+				<h2>Your Suppliers</h2>
+				{#if userSuppliers.length > 0}
+					<div class="user-items-grid">
+						<!-- Suppliers listing will go here -->
+						<p>User suppliers list coming soon</p>
+					</div>
+				{:else}
+					<p class="no-items">You haven't created any suppliers yet.</p>
+				{/if}
+
+				<div class="action-buttons">
+					<a href="/supplier" class="primary-btn">Add New Supplier</a>
+					<a href="/supplier" class="secondary-btn">View All Suppliers</a>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Categories Tab -->
+		{#if activeTab === 'categories'}
+			<div class="tab-content">
+				<h2>Your Categories</h2>
+				{#if userCategories.length > 0}
+					<div class="user-items-grid">
+						<!-- Categories listing will go here -->
+						<p>User categories list coming soon</p>
+					</div>
+				{:else}
+					<p class="no-items">You haven't created any categories yet.</p>
+				{/if}
+
+				<div class="action-buttons">
+					<a href="/catagory" class="primary-btn">Add New Category</a>
+					<a href="/catagory" class="secondary-btn">View All Categories</a>
+				</div>
+			</div>
+		{/if}
 	</section>
 </div>
 
@@ -113,35 +462,85 @@
 		background: #f0f0f0;
 	}
 
-	.projects-section {
+	/* Dashboard Tabs Styling */
+	.dashboard-tabs {
+		display: flex;
+		justify-content: space-between;
+		background: #f3f4f6;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.tab-button {
+		flex: 1;
+		padding: 1rem 0.5rem;
+		background: transparent;
+		border: none;
+		border-bottom: 2px solid transparent;
+		cursor: pointer;
+		font-weight: 600;
+		transition: all 0.2s ease;
+		color: #6b7280;
+	}
+
+	.tab-button:hover {
+		background: #e5e7eb;
+		color: #2575fc;
+	}
+
+	.tab-button.active {
+		border-bottom: 2px solid #2575fc;
+		color: #2575fc;
+	}
+
+	/* Dashboard Content Styling */
+	.dashboard-content {
 		background: white;
 		padding: 2rem;
 		border-radius: 0 0 8px 8px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 	}
 
-	.projects-section h2 {
+	.tab-content {
+		animation: fadeIn 0.3s ease;
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	.tab-content h2 {
 		margin-top: 0;
 		color: #333;
+		margin-bottom: 1.5rem;
 	}
 
 	.projects-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 		gap: 1rem;
-		margin: 1rem 0;
+		margin: 1rem 0 2rem 0;
+	}
+
+	.user-items-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: 1.5rem;
+		margin: 1rem 0 2rem 0;
 	}
 
 	.project-card {
 		background: #f9f9f9;
 		padding: 1rem;
-		border-radius: 4px;
+		border-radius: 8px;
 		text-align: center;
 		transition: box-shadow 0.3s;
+		border: 1px solid #e5e7eb;
 	}
 
 	.project-card:hover {
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+		border-color: #2575fc;
 	}
 
 	.project-link {
@@ -154,9 +553,205 @@
 		text-decoration: underline;
 	}
 
-	.no-projects {
+	.no-items {
 		color: #777;
 		font-style: italic;
+		padding: 1rem;
+		background: #f9f9f9;
+		border-radius: 8px;
+		text-align: center;
+		margin-bottom: 2rem;
+	}
+
+	.form-container {
+		margin-top: 2rem;
+		padding: 2rem;
+		background: #f9f9f9;
+		border-radius: 12px;
+		border: 1px solid #e0e0e0;
+		box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+	}
+
+	.form-container h2 {
+		margin-top: 0;
+		margin-bottom: 1rem;
+		color: #333;
+		border-bottom: 1px solid #e0e0e0;
+		padding-bottom: 0.5rem;
+	}
+
+	.embedded-form {
+		margin-top: 1rem;
+	}
+
+	.form-message {
+		padding: 0.75rem 1rem;
+		border-radius: 6px;
+		margin-bottom: 1rem;
+	}
+
+	.form-message.success {
+		background: #d1fae5;
+		border: 1px solid #34d399;
+		color: #065f46;
+	}
+
+	.form-message.error {
+		background: #fee2e2;
+		border: 1px solid #f87171;
+		color: #b91c1c;
+	}
+
+	.entity-card {
+		background: white;
+		border: 1px solid #e5e7eb;
+		border-radius: 8px;
+		padding: 1rem;
+		transition: all 0.2s ease;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+	}
+	
+	.manufacturer-card {
+		padding: 1.25rem;
+		box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+	}
+	
+	.manufacturer-card .card-header {
+		display: flex;
+		align-items: center;
+		margin-bottom: 1rem;
+		gap: 1rem;
+	}
+	
+	.manufacturer-card .logo-container {
+		width: 50px;
+		height: 50px;
+		border-radius: 8px;
+		overflow: hidden;
+		border: 1px solid #eaeaea;
+		flex-shrink: 0;
+	}
+	
+	.manufacturer-card .manufacturer-logo {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+	}
+	
+	.manufacturer-card .logo-placeholder {
+		width: 50px;
+		height: 50px;
+		border-radius: 8px;
+		background: linear-gradient(135deg, #6a11cb, #2575fc);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		font-weight: bold;
+		flex-shrink: 0;
+	}
+	
+	.manufacturer-card .manufacturer-name {
+		margin: 0;
+		font-size: 1.2rem;
+		color: #333;
+		font-weight: 600;
+	}
+	
+	.manufacturer-card .card-content {
+		margin-bottom: 1.25rem;
+	}
+
+	.entity-card:hover {
+		border-color: #2575fc;
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+	}
+	
+	.manufacturer-card:hover {
+		box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+		transform: translateY(-2px);
+		border-color: #d0d0d0;
+	}
+
+	.entity-card h3 {
+		margin-top: 0;
+		margin-bottom: 0.5rem;
+		font-size: 1.1rem;
+		color: #111827;
+	}
+
+	.entity-meta {
+		margin: 0.25rem 0;
+		font-size: 0.875rem;
+		color: #6b7280;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.meta-label {
+		font-weight: 600;
+		color: #444;
+	}
+	
+	.entity-description {
+		font-size: 0.95rem;
+		line-height: 1.5;
+		color: #444;
+		margin-bottom: 1rem;
+	}
+	
+	.entity-no-description {
+		font-size: 0.95rem;
+		color: #888;
+		font-style: italic;
+		margin-bottom: 1rem;
+	}
+	
+	.website-link {
+		display: flex;
+		align-items: center;
+	}
+	
+	.website-url {
+		color: #2575fc;
+		text-decoration: none;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 180px;
+		display: inline-block;
+	}
+	
+	.website-url:hover {
+		text-decoration: underline;
+	}
+	
+	.date-value {
+		color: #666;
+	}
+
+	.entity-actions {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+		justify-content: flex-end;
+	}
+
+	.icon-btn {
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		font-size: 1rem;
+		transition: all 0.2s ease;
+		text-decoration: none;
+	}
+
+	.view-btn:hover {
+		background: #f3f4f6;
+	}
+
+	.edit-btn:hover {
+		background: #eef2ff;
 	}
 
 	.project-form {
@@ -167,9 +762,67 @@
 
 	.project-input {
 		flex: 1;
-		padding: 0.5rem;
+		padding: 0.75rem;
 		border: 1px solid #ccc;
+		border-radius: 6px;
+		font-size: 1rem;
+	}
+
+	.action-buttons {
+		display: flex;
+		gap: 1rem;
+		margin-top: 1.5rem;
+	}
+
+	.form-grid {
+		display: grid;
+		gap: 1.5rem;
+	}
+
+	.form-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.form-input, .form-textarea {
+		padding: 0.75rem;
+		border: 2px solid #e5e7eb;
+		border-radius: 6px;
+		font-size: 1rem;
+		transition: all 0.2s ease;
+		width: 100%;
+	}
+
+	.form-input:focus, .form-textarea:focus {
+		outline: none;
+		border-color: #2575fc;
+		box-shadow: 0 0 0 3px rgba(37, 117, 252, 0.1);
+	}
+
+	.form-textarea {
+		resize: vertical;
+		min-height: 100px;
+	}
+
+	.form-actions {
+		margin-top: 1.5rem;
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.75rem;
+	}
+
+	.field-error {
+		color: #dc2626;
+		font-size: 0.875rem;
+		padding: 0.25rem 0.5rem;
+		background: #fef2f2;
 		border-radius: 4px;
+		border: 1px solid #fecaca;
+	}
+
+	.required {
+		color: #dc2626;
 	}
 
 	.primary-btn {
@@ -177,13 +830,55 @@
 		color: white;
 		border: none;
 		padding: 0.75rem 1.5rem;
-		border-radius: 4px;
+		border-radius: 6px;
 		cursor: pointer;
-		transition: background 0.3s;
+		transition: all 0.2s ease;
+		font-weight: 600;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.primary-btn:hover {
-		background: #6a11cb;
+		background: #1c60d6;
+		transform: translateY(-1px);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+	}
+
+	.secondary-btn {
+		background: white;
+		color: #2575fc;
+		border: 1px solid #2575fc;
+		padding: 0.75rem 1.5rem;
+		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		font-weight: 600;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.secondary-btn:hover {
+		background: #f0f7ff;
+		transform: translateY(-1px);
+	}
+
+	@media (max-width: 768px) {
+		.dashboard-tabs {
+			flex-wrap: wrap;
+		}
+
+		.tab-button {
+			flex: 1 0 33.333%;
+			padding: 0.75rem 0.5rem;
+		}
+
+		.action-buttons {
+			flex-direction: column;
+		}
 	}
 
 	@media (max-width: 600px) {
@@ -192,7 +887,17 @@
 			gap: 1rem;
 		}
 
-		.projects-grid {
+		.tab-button {
+			flex: 1 0 50%;
+			font-size: 0.9rem;
+		}
+
+		.dashboard-content {
+			padding: 1.25rem;
+		}
+
+		.projects-grid,
+		.user-items-grid {
 			grid-template-columns: 1fr;
 		}
 	}

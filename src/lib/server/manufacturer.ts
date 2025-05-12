@@ -61,17 +61,17 @@ export async function createManufacturer(
 }
 
 export async function getManufacturer(id: string): Promise<Manufacturer | null> {
-    // Use template literals for the complex query
+    // Use template literals for the complex query - with lowercase table names to match actual DB
     const result = await sql`
         SELECT 
             m.*,
             COALESCE(
                 (SELECT json_object_agg(cf.field_name, mcf.value)
-                 FROM ManufacturerCustomField mcf
-                 JOIN CustomField cf ON mcf.field_id = cf.id
+                 FROM manufacturercustomfield mcf
+                 JOIN customfield cf ON mcf.field_id = cf.id
                  WHERE mcf.manufacturer_id = m.id
                 ), '{}'::json) AS custom_fields
-         FROM Manufacturer m
+         FROM manufacturer m
          WHERE m.id = ${id}
     `;
     
