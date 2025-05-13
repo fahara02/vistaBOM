@@ -834,8 +834,8 @@
 				</div>
 				
 				{#if showCategoryForm}
-					<div class="form-container">
-						<h2>{editCategoryMode ? 'Edit' : 'Create New'} Category</h2>
+					<div class="form-container enhanced-form">
+						<h2 class="form-title">{editCategoryMode ? 'Edit' : 'Create New'} Category</h2>
 						
 						{#if $categoryMessage}
 							<div class="form-message {$categoryMessage.includes('Failed') ? 'error' : 'success'}">
@@ -844,46 +844,71 @@
 						{/if}
 						
 						<div class="embedded-form">
-							<form method="POST" action="?/category" use:categoryEnhance enctype="application/x-www-form-urlencoded">
+							<form method="POST" action="?/category" use:categoryEnhance enctype="application/x-www-form-urlencoded" class="form-grid">
 								{#if editCategoryMode}
 									<input type="hidden" name="categoryId" value={currentCategoryId} />
 								{/if}
 								<div class="form-group">
-									<label for="name">Name*</label>
-									<input id="name" name="name" bind:value={$categoryForm.name} required />
-									{#if $categoryErrors.name}<span class="error">{$categoryErrors.name}</span>{/if}
+									<label for="name" class="form-label">Name <span class="required">*</span></label>
+									<input 
+										id="name" 
+										name="name" 
+										bind:value={$categoryForm.name} 
+										class="form-input" 
+										required 
+									/>
+									{#if $categoryErrors.name}<span class="field-error">{$categoryErrors.name}</span>{/if}
 								</div>
 								
 								<div class="form-group">
-									<label for="parent_id">Parent Category</label>
+									<label for="parent_id" class="form-label">Parent Category</label>
 									<CategoryComboBox 
 										categories={categories} 
 										bind:value={$categoryForm.parent_id} 
 										name="parent_id" 
 										placeholder="Select parent category..." 
 									/>
-									{#if $categoryErrors.parent_id}<span class="error">{$categoryErrors.parent_id}</span>{/if}
+									{#if $categoryErrors.parent_id}<span class="field-error">{$categoryErrors.parent_id}</span>{/if}
 								</div>
 								
 								<div class="form-group">
-									<label for="description">Description</label>
-									<textarea id="description" name="description" bind:value={$categoryForm.description}></textarea>
-									{#if $categoryErrors.description}<span class="error">{$categoryErrors.description}</span>{/if}
+									<label for="description" class="form-label">Description</label>
+									<textarea 
+										id="description" 
+										name="description" 
+										bind:value={$categoryForm.description}
+										class="form-textarea"
+										rows="4"
+									></textarea>
+									{#if $categoryErrors.description}<span class="field-error">{$categoryErrors.description}</span>{/if}
 								</div>
 								
 								<div class="form-group checkbox-group">
-									<label>
-										<input type="checkbox" name="is_public" bind:checked={$categoryForm.is_public} /> 
-										Public
+									<label class="checkbox-label">
+										<input 
+											type="checkbox" 
+											name="is_public" 
+											bind:checked={$categoryForm.is_public}
+											class="form-checkbox" 
+										/> 
+										<span>Public</span>
 									</label>
-									{#if $categoryErrors.is_public}<span class="error">{$categoryErrors.is_public}</span>{/if}
+									{#if $categoryErrors.is_public}<span class="field-error">{$categoryErrors.is_public}</span>{/if}
 								</div>
 								
-								<div class="form-button-group">
-									<button type="submit" class="primary-btn" disabled={$categorySubmitting}>
+								<div class="form-actions">
+									<button type="submit" class="enhanced-btn submit-btn" disabled={$categorySubmitting}>
+										<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<path d="M20 6L9 17l-5-5"></path>
+										</svg>
 										{$categorySubmitting ? (editCategoryMode ? 'Saving...' : 'Creating...') : (editCategoryMode ? 'Save Changes' : 'Create Category')}
 									</button>
-									<button type="button" class="secondary-btn" on:click={cancelCategoryEdit}>Cancel</button>
+									<button type="button" class="enhanced-btn cancel-btn" on:click={cancelCategoryEdit}>
+										<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<path d="M18 6L6 18M6 6l12 12"></path>
+										</svg>
+										Cancel
+									</button>
 								</div>
 							</form>
 						</div>

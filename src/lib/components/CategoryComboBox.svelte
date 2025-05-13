@@ -101,23 +101,31 @@
 <style>
   /* Dropdown styling */
   :global(.dropdown-content) {
-    background-color: white !important;
-    border: 1px solid #d1d5db !important;
+    background-color: hsl(var(--background)) !important;
+    border: 1px solid hsl(var(--border)) !important;
     border-radius: 0.375rem !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 10px 25px -5px hsl(var(--muted) / 0.2), 0 10px 10px -5px hsl(var(--muted) / 0.1) !important;
     z-index: 50 !important;
     max-width: calc(100vw - 20px);
     width: var(--radix-popover-trigger-width);
     max-height: 300px;
     overflow-y: auto;
+    transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s !important;
+  }
+  
+  /* Dark mode specific dropdown styling */
+  :global(.dark .dropdown-content) {
+    box-shadow: 0 10px 25px -5px hsl(var(--muted) / 0.4), 0 10px 10px -5px hsl(var(--muted) / 0.3) !important;
   }
   
   /* Command input styling */
   :global(.dropdown-content .cmdk-input) {
-    border-bottom: 1px solid #e2e8f0 !important;
+    border-bottom: 1px solid hsl(var(--border)) !important;
     padding: 0.75rem 1rem !important;
     font-size: 0.875rem !important;
-    background-color: white !important;
+    background-color: hsl(var(--input)) !important;
+    color: hsl(var(--input-foreground)) !important;
+    transition: background-color 0.3s, border-color 0.3s, color 0.3s !important;
   }
   
   /* Command item styling */
@@ -127,22 +135,31 @@
     cursor: pointer !important;
     border-radius: 0 !important;
     font-size: 0.875rem !important;
-    color: #1f2937 !important;
-    background-color: white !important;
+    color: hsl(var(--foreground)) !important;
+    background-color: hsl(var(--background)) !important;
+    transition: background-color 0.3s, color 0.3s !important;
   }
   
   :global(.dropdown-content .cmdk-item:hover) {
-    background-color: #f3f4f6 !important;
+    background-color: hsl(var(--accent) / 0.1) !important;
+  }
+  
+  :global(.dark .dropdown-content .cmdk-item:hover) {
+    background-color: hsl(var(--accent) / 0.2) !important;
   }
   
   :global(.dropdown-content .cmdk-item[data-selected=true]) {
-    background-color: #e5e7eb !important;
+    background-color: hsl(var(--accent) / 0.15) !important;
+  }
+  
+  :global(.dark .dropdown-content .cmdk-item[data-selected=true]) {
+    background-color: hsl(var(--accent) / 0.3) !important;
   }
   
   /* Button styling */
   :global(.combobox-trigger) {
-    border: 1px solid #d1d5db !important;
-    background-color: white !important;
+    border: 1px solid hsl(var(--input-border)) !important;
+    background-color: hsl(var(--input)) !important;
     padding: 0.5rem 0.75rem !important;
     border-radius: 0.375rem !important;
     width: 100% !important;
@@ -150,17 +167,26 @@
     justify-content: space-between !important;
     align-items: center !important;
     font-size: 0.875rem !important;
-    color: #374151 !important;
-    transition: all 0.2s !important;
+    color: hsl(var(--input-foreground)) !important;
+    transition: all 0.3s !important;
   }
   
   :global(.combobox-trigger:hover) {
-    border-color: #9ca3af !important;
+    border-color: hsl(var(--ring) / 0.5) !important;
   }
   
   :global(.combobox-trigger:focus) {
     outline: none !important;
-    border-color: #2563eb !important;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+    border-color: hsl(var(--ring)) !important;
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2) !important;
+  }
+  
+  /* Dark mode hover states */
+  :global(.dark .combobox-trigger:hover) {
+    border-color: hsl(var(--ring) / 0.7) !important;
+  }
+  
+  :global(.dark .combobox-trigger:focus) {
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.3) !important;
   }
 </style>

@@ -332,9 +332,10 @@ export const actions: Actions = {
 				// First verify this user is allowed to edit this manufacturer
 				// Use explicit query to avoid TypeScript errors with template literals
 				// Use proper type casting for PostgreSQL
+				const manufacturerId = form.data.id || '';
 				const existingManufacturer = await sql`
 					SELECT id, created_by FROM manufacturer 
-					WHERE id = ${form.data.id}::text
+					WHERE id = ${manufacturerId}::text
 				`;
 
 				if (existingManufacturer.length === 0) {
@@ -346,11 +347,14 @@ export const actions: Actions = {
 				}
 
 				// Update the manufacturer - use separate variables to avoid template literal type issues
-				const name = form.data.name;
-				const description = form.data.description || null;
-				const website_url = form.data.website_url || null;
-				const logo_url = form.data.logo_url || null;
-				const id = form.data.id;
+				// Convert all potentially undefined values to empty strings to satisfy PostgreSQL.js type system
+				const name = form.data.name || '';
+				// Handle null and undefined for optional fields by providing empty string as fallback
+				const description = form.data.description || '';
+				const website_url = form.data.website_url || '';
+				const logo_url = form.data.logo_url || '';
+				const id = form.data.id || '';
+				const userId = user.id || '';
 				
 				await sql`
 					UPDATE manufacturer 
@@ -359,7 +363,7 @@ export const actions: Actions = {
 						description = ${description}::text,
 						website_url = ${website_url}::text,
 						logo_url = ${logo_url}::text,
-						updated_by = ${user.id}::text,
+						updated_by = ${userId}::text,
 						updated_at = NOW()
 					WHERE id = ${id}::text
 				`;
@@ -373,7 +377,8 @@ export const actions: Actions = {
 				};
 
 				// Delete existing custom fields for this manufacturer
-				await sql`DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${form.data.id}::text`;
+				const mfrId = form.data.id || '';
+				await sql`DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${mfrId}::text`;
 			} else {
 				// Create a new manufacturer
 				manufacturer = await createManufacturer({
@@ -405,18 +410,28 @@ export const actions: Actions = {
 						fieldId = existingField[0].id;
 					} else {
 						// Create a new custom field
+						const customFieldId = randomUUID();
+						const fieldNameStr = fieldName || '';
+						const dataTypeStr = dataType || 'text';
 						const newField = await sql`
 							INSERT INTO customfield (id, field_name, data_type, applies_to)
-							VALUES (${randomUUID()}, ${fieldName}, ${dataType}, 'manufacturer')
+							VALUES (${customFieldId}, ${fieldNameStr}, ${dataTypeStr}, 'manufacturer')
 							RETURNING id
 						`;
 						fieldId = newField[0].id;
 					}
 
 					// Associate this custom field with the manufacturer
+					const newCustomFieldId = randomUUID();
+					const manufacturerId = manufacturer.id || '';
+					const fieldNameStr = fieldName || '';
+					const fieldValueStr = String(fieldValue || '');
+					const dataTypeStr = dataType || 'text';
+					const userId = user.id || '';
+					
 					await sql`
 						INSERT INTO manufacturercustomfield (id, manufacturer_id, field_name, field_value, data_type, created_by, created_at)
-						VALUES (${randomUUID()}, ${manufacturer.id}::text, ${fieldName}::text, ${String(fieldValue)}::text, ${dataType}::text, ${user.id}::text, NOW())
+						VALUES (${newCustomFieldId}, ${manufacturerId}::text, ${fieldNameStr}::text, ${fieldValueStr}::text, ${dataTypeStr}::text, ${userId}::text, NOW())
 					`;
 				}
 			}
