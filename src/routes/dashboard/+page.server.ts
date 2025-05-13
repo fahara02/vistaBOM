@@ -172,14 +172,22 @@ export const load: PageServerLoad = async (event) => {
 		userParts = [];
 	}
 	
-	// 5. Fetch user-created manufacturers
+	// 5. Fetch user-created manufacturers with custom fields
 	let userManufacturers: any[] = [];
 	try {
+		// Use the same query structure as in getManufacturer to include custom fields
 		userManufacturers = await sql`
-			SELECT *
-			FROM "manufacturer"
-			WHERE created_by = ${user.id}
-			ORDER BY name ASC
+			SELECT 
+				m.*,
+				COALESCE(
+					(SELECT json_object_agg(cf.field_name, mcf.value)
+					 FROM manufacturercustomfield mcf
+					 JOIN customfield cf ON mcf.field_id = cf.id
+					 WHERE mcf.manufacturer_id = m.id
+					), '{}'::json) AS custom_fields
+			FROM manufacturer m
+			WHERE m.created_by = ${user.id}
+			ORDER BY m.name ASC
 		`;
 	} catch (error) {
 		console.error('Error fetching manufacturers:', error);
@@ -283,12 +291,13 @@ export const actions: Actions = {
 		const user = locals.user as User | null;
 		if (!user) return fail(401, { message: 'Unauthorized' });
 		
-		// Use the same schema as the manufacturer page
-		const createManufacturerSchema = manufacturerSchema.pick({
-			name: true,
-			description: true,
-			website_url: true,
-			logo_url: true
+		// Use the same schema as the manufacturer page but add custom_fields_json
+		const createManufacturerSchema = z.object({
+			name: z.string().min(1, 'Name is required'),
+			description: z.string().optional().nullable(),
+			website_url: z.string().url('Invalid URL format').optional().nullable(),
+			logo_url: z.string().url('Invalid URL format').optional().nullable(),
+			custom_fields_json: z.string().optional().nullable() // Add support for custom fields
 		});
 		
 		// Validate form data using superForm
@@ -301,14 +310,62 @@ export const actions: Actions = {
 		}
 
 		try {
-			// Use the existing createManufacturer function
-			await createManufacturer({
+			// Process custom fields JSON if provided
+			let customFields = {};
+			if (form.data.custom_fields_json && form.data.custom_fields_json.trim() !== '') {
+				try {
+					customFields = JSON.parse(form.data.custom_fields_json);
+					console.log('Parsed custom fields:', customFields);
+				} catch (jsonError) {
+					console.error('Failed to parse custom fields JSON:', jsonError);
+					return message(form, 'Invalid JSON format for custom fields', { status: 400 });
+				}
+			}
+
+			// Create the manufacturer first
+			const manufacturer = await createManufacturer({
 				name: form.data.name,
 				description: form.data.description ?? undefined,
 				websiteUrl: form.data.website_url ?? undefined,
 				logoUrl: form.data.logo_url ?? undefined,
 				createdBy: user.id
 			});
+
+			// If we have custom fields, insert them into the manufacturercustomfield table
+			if (Object.keys(customFields).length > 0) {
+				for (const [fieldName, fieldValue] of Object.entries(customFields)) {
+					// Determine the data type
+					let dataType = 'text';
+					if (typeof fieldValue === 'number') dataType = 'number';
+					else if (typeof fieldValue === 'boolean') dataType = 'boolean';
+					else if (fieldValue instanceof Date) dataType = 'date';
+
+					// Check if this field already exists in the customfield table
+					const existingField = await sql`
+						SELECT id FROM customfield 
+						WHERE field_name = ${fieldName} AND applies_to = 'manufacturer'
+					`;
+
+					let fieldId;
+					if (existingField.length > 0) {
+						fieldId = existingField[0].id;
+					} else {
+						// Create a new custom field
+						const newField = await sql`
+							INSERT INTO customfield (id, field_name, data_type, applies_to)
+							VALUES (${randomUUID()}, ${fieldName}, ${dataType}, 'manufacturer')
+							RETURNING id
+						`;
+						fieldId = newField[0].id;
+					}
+
+					// Associate this custom field with the manufacturer
+					await sql`
+						INSERT INTO manufacturercustomfield (manufacturer_id, field_id, value)
+						VALUES (${manufacturer.id}, ${fieldId}, ${String(fieldValue)})
+					`;
+				}
+			}
 			
 			// Return success message for superForm to display
 			return message(form, 'Manufacturer created successfully!');

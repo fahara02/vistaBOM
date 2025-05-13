@@ -3,7 +3,7 @@
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
   import { goto } from '$app/navigation';
-  import { slide } from 'svelte/transition';
+  import ManufacturerForm from '$lib/components/ManufacturerForm.svelte';
   
   export let data: PageData;
   
@@ -11,6 +11,9 @@
   const { manufacturer } = data;
   
   // Initialize the form with SuperForms - moved to top level to avoid store subscription issues
+  // Direct debug of the form data from server
+  console.log('Raw form data from server:', data.form);
+  
   const { form, errors, enhance, submitting, delayed, message } = superForm(data.form, {
     dataType: 'json',
     multipleSubmits: 'prevent',
@@ -60,7 +63,6 @@
   }
   
   let showConfirmDelete = false;
-  let showCustomFieldsHelp = false;
 </script>
 
 <svelte:head>
@@ -100,151 +102,23 @@
           {/if}
         </div>
         
-        <div class="form-fields">
-          <div class="form-group">
-            <label for="name">Name <span class="required">*</span></label>
-            <input 
-              id="name" 
-              name="name" 
-              type="text" 
-              bind:value={$form.name}
-              class="form-control" 
-              required
-            />
-            {#if $errors.name}
-              <span class="error-message">{$errors.name}</span>
-            {/if}
-          </div>
+        {#if $form}
+          <!-- Debug what we have before passing to component -->
+          <pre style="display: none;">Form type: {typeof form}, Has subscribe: {'subscribe' in form ? 'yes' : 'no'}</pre>
+          <pre style="display: none;">Form data: {JSON.stringify($form, null, 2)}</pre>
           
-          <div class="form-group">
-            <label for="description">Description</label>
-            <textarea 
-              id="description" 
-              name="description" 
-              bind:value={$form.description}
-              class="form-control"
-              rows="4"
-            ></textarea>
-            {#if $errors.description}
-              <span class="error-message">{$errors.description}</span>
-            {/if}
-          </div>
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label for="website_url">Website URL</label>
-              <input 
-                id="website_url" 
-                name="website_url" 
-                type="url" 
-                bind:value={$form.website_url}
-                class="form-control"
-                placeholder="https://example.com"
-              />
-              {#if $errors.website_url}
-                <span class="error-message">{$errors.website_url}</span>
-              {/if}
-            </div>
-            
-            <div class="form-group">
-              <label for="logo_url">Logo URL</label>
-              <input 
-                id="logo_url" 
-                name="logo_url" 
-                type="url" 
-                bind:value={$form.logo_url}
-                class="form-control"
-                placeholder="https://example.com/logo.png"
-              />
-              {#if $errors.logo_url}
-                <span class="error-message">{$errors.logo_url}</span>
-              {/if}
-            </div>
-          </div>
-          
-          <div class="form-group custom-fields-container">
-            <div class="custom-fields-header">
-              <label for="custom_fields_json">
-                <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M7 8h10M7 12h10M7 16h10" />
-                </svg>
-                Custom Fields (JSON)
-              </label>
-              <div class="json-status">
-                {#if $form.custom_fields_json}
-                  {#if validateJSON($form.custom_fields_json)}
-                    <span class="valid-json">✓ Valid JSON</span>
-                  {:else}
-                    <span class="invalid-json">✗ Invalid JSON</span>
-                  {/if}
-                {/if}
-              </div>
-            </div>
-            
-            <div class="code-editor-container">
-              <div class="code-editor-tools">
-                <span class="field-hint">Enter a valid JSON object with your custom fields</span>
-                <button type="button" class="format-button" on:click={() => {
-                  if ($form.custom_fields_json && validateJSON($form.custom_fields_json)) {
-                    $form.custom_fields_json = JSON.stringify(JSON.parse($form.custom_fields_json), null, 2);
-                  }
-                }}>
-                  Format JSON
-                </button>
-              </div>
-              
-              <textarea 
-                id="custom_fields_json" 
-                name="custom_fields_json" 
-                bind:value={$form.custom_fields_json}
-                class="form-control code-input"
-                rows="8"
-                placeholder="Enter your custom fields in JSON format"
-              ></textarea>
-              
-              {#if $form.custom_fields_json && !validateJSON($form.custom_fields_json)}
-                <span class="error-message">JSON format is invalid. Please check for missing commas, quotes, or braces.</span>
-              {/if}
-            </div>
-            
-            <div class="helper-toggle">
-              <button type="button" class="toggle-button" on:click={() => showCustomFieldsHelp = !showCustomFieldsHelp}>
-                <span class="toggle-icon">{showCustomFieldsHelp ? '−' : '+'}</span>
-                <span class="toggle-text">{showCustomFieldsHelp ? 'Hide Help' : 'Show Help & Examples'}</span>
-              </button>
-            </div>
-            
-            {#if showCustomFieldsHelp}
-              <div class="custom-fields-help" transition:slide={{ duration: 300 }}>
-                <p>Custom fields let you store additional information about the manufacturer that doesn't fit in the standard fields.</p>
-                <ul>
-                  <li><strong>Text values</strong>: Use quotes ("value")</li>
-                  <li><strong>Numbers</strong>: Enter without quotes (1234)</li>
-                  <li><strong>Booleans</strong>: Use true or false</li>
-                </ul>
-                <div class="example-json">
-                  <p><strong>Example:</strong></p>
-                  <pre>{`{
-  "foundedYear": 1985,
-  "headquarters": "Tokyo, Japan",
-  "employees": 5000,
-  "hasDistributors": true
-}`}</pre>
-                </div>
-              </div>
-            {/if}
-          </div>
-        </div>
+          <!-- Pass the SuperForm object, not just the form data -->
+          <ManufacturerForm
+            form={form}
+            errors={$errors}
+            submitting={$submitting}
+            delayed={$delayed}
+            isEditMode={true}
+            onCancel={goBack}
+          />
+        {/if}
         
-        <div class="form-actions">
-          <button 
-            type="submit" 
-            class="primary-button"
-            disabled={$submitting || $delayed || (typeof $form.custom_fields_json === 'string' && !validateJSON($form.custom_fields_json))}
-          >
-            {$submitting ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button type="button" class="secondary-button" on:click={goBack}>Cancel</button>
+        <div class="form-actions delete-action">
           <button type="button" class="danger-button" on:click={() => showConfirmDelete = true}>
             Delete Manufacturer
           </button>

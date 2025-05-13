@@ -30,42 +30,64 @@ export const load: PageServerLoad = async ({ params, locals }) => {
   }
 
   const manufacturerId = params.id;
+  console.log('Loading manufacturer with ID:', manufacturerId);
   
   try {
     // Fetch the manufacturer by ID
     const manufacturer = await getManufacturer(manufacturerId);
     
     if (!manufacturer) {
+      console.log('Manufacturer not found, redirecting');
       throw redirect(302, '/manufacturer');
     }
     
     // Check if the user is allowed to edit this manufacturer
     // Only the creator or admin should be able to edit
     if (manufacturer.createdBy !== user.id && user.role !== 'admin') {
+      console.log('User not authorized to edit this manufacturer');
       throw redirect(302, '/manufacturer');
     }
     
     // Debug logs to see what's coming from the database
-    console.log('Raw manufacturer from DB:', manufacturer);
+    console.log('Raw manufacturer from DB:', JSON.stringify(manufacturer, null, 2));
+    console.log('Manufacturer properties:', Object.keys(manufacturer));
     console.log('Custom fields:', manufacturer.customFields);
     
     // Format initial data with custom fields as a JSON string
     // Map camelCase TypeScript properties to snake_case form fields
     const initialData = {
+      // Core fields
       id: manufacturer.id,
       name: manufacturer.name,
-      description: manufacturer.description,
+      description: manufacturer.description || '',
       website_url: manufacturer.websiteUrl || '', // Convert camelCase to snake_case
       logo_url: manufacturer.logoUrl || '', // Convert camelCase to snake_case
+      
+      // Custom fields as JSON string
       custom_fields_json: manufacturer.customFields && Object.keys(manufacturer.customFields).length > 0
         ? JSON.stringify(manufacturer.customFields, null, 2) 
-        : ''
+        : '',
+      
+      // Metadata fields
+      created_by: manufacturer.createdBy || null,
+      created_at: manufacturer.createdAt || new Date(),
+      updated_by: manufacturer.updatedBy || null,
+      updated_at: manufacturer.updatedAt || new Date()
     };
+    
+    console.log('Complete initialData for form:', initialData);
     
     console.log('Initial form data:', initialData);
     
     // Initialize the form with manufacturer data
-    const form = await superValidate(initialData, zod(updateManufacturerSchema));
+    // Force detailed schema validation to ensure all properties are correctly set
+    const form = await superValidate(initialData, zod(updateManufacturerSchema), {
+      errors: false, // Don't validate on initial load to avoid false errors
+      id: 'manufacturer-edit-form' // Unique ID to ensure form state is maintained correctly
+    });
+    
+    console.log('Form data after superValidate:', form);
+    console.log('Form data stringified:', JSON.stringify(form.data, null, 2));
     
     return { 
       manufacturer, 

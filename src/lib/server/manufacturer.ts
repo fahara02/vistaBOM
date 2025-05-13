@@ -4,19 +4,40 @@ import type { Manufacturer } from '$lib/server/db/types';
 
 // Helper to normalize manufacturer data from postgres result
 function normalizeManufacturer(row: any): Manufacturer {
-    return {
+    // Debug what's coming from the database
+    console.log('normalizeManufacturer input raw data:', JSON.stringify(row, null, 2));
+    
+    // Parse custom_fields if it's a string
+    let customFields = {};
+    try {
+        if (typeof row.custom_fields === 'string') {
+            customFields = JSON.parse(row.custom_fields);
+        } else if (row.custom_fields && typeof row.custom_fields === 'object') {
+            customFields = row.custom_fields;
+        }
+    } catch (e) {
+        console.error('Error parsing custom fields:', e);
+    }
+    
+    // Create normalized object
+    const normalized = {
         id: row.id,
         name: row.name,
-        description: row.description || undefined,
-        websiteUrl: row.website_url || undefined,
-        contactInfo: row.contact_info || undefined,
-        logoUrl: row.logo_url || undefined,
-        createdBy: row.created_by || undefined,
+        description: row.description || null,
+        websiteUrl: row.website_url || null,
+        // contact_info field doesn't exist in the actual database table
+        // but keeping it in the type for UI purposes
+        contactInfo: null,
+        logoUrl: row.logo_url || null,
+        createdBy: row.created_by || null,
         createdAt: row.created_at,
-        updatedBy: row.updated_by || undefined,
+        updatedBy: row.updated_by || null,
         updatedAt: row.updated_at,
-        customFields: row.custom_fields || {} // Add customFields mapping
+        customFields: customFields
     };
+    
+    console.log('normalizeManufacturer output:', JSON.stringify(normalized, null, 2));
+    return normalized;
 }
 
 export async function createManufacturer(
@@ -24,7 +45,7 @@ export async function createManufacturer(
         name: string;
         description?: string;
         websiteUrl?: string;
-        contactInfo?: any;
+        // contactInfo removed from params since it's not in DB
         logoUrl?: string;
         createdBy: string;
     }
@@ -36,7 +57,6 @@ export async function createManufacturer(
                 name, 
                 description, 
                 website_url, 
-                contact_info,
                 logo_url, 
                 created_by
             )
@@ -44,7 +64,6 @@ export async function createManufacturer(
                 ${params.name},
                 ${params.description || null},
                 ${params.websiteUrl || null},
-                ${params.contactInfo ? sql.json(params.contactInfo) : null},
                 ${params.logoUrl || null},
                 ${params.createdBy}
             )
@@ -88,7 +107,7 @@ export async function updateManufacturer(
         name?: string;
         description?: string;
         websiteUrl?: string;
-        contactInfo?: any;
+        // contactInfo removed from updates since it's not in DB
         logoUrl?: string;
     },
     userId: string
@@ -128,11 +147,7 @@ export async function updateManufacturer(
             paramValues.push(updates.logoUrl);
             paramIndex++;
         }
-        if (updates.contactInfo !== undefined) {
-            setParts.push(`contact_info = $${paramIndex}`);
-            paramValues.push(updates.contactInfo ? JSON.stringify(updates.contactInfo) : null);
-            paramIndex++;
-        }
+        // contactInfo field removed as it doesn't exist in actual DB table
         
         // Always add updated_by and updated_at
         setParts.push(`updated_by = $${paramIndex}`);
