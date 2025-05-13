@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { parseContactInfo, formatContactInfoForDisplay } from '$lib/utils/util';
   import type { ContactInfo } from '$lib/server/db/types';
+  import { slide } from 'svelte/transition';
   
   export let data: PageData;
   
@@ -13,6 +14,10 @@
   
   // Track if we've already formatted the contact info to prevent loops
   let contactInfoFormatted = false;
+  
+  // Toggle state for collapsible sections
+  let showContactExamples = false;
+  let showCustomFieldsHelp = false;
   
   // Note: formatContactInfoForDisplay has been moved to the shared utils file
   
@@ -212,14 +217,23 @@
                 </div>
               {/if}
             </div>
-            <div class="field-examples">
-              <p>Examples:</p>
-              <ul>
-                <li><code>email: contact@example.com; phone: (123) 456-7890; address: 123 Main St</code></li>
-                <li><code>{`{"email":"contact@example.com","phone":"(123) 456-7890"}`}</code> (JSON format)</li>
-                <li><code>{`{"mobile":"0086-755-83210457","email":"sales@lcsc.com"}`}</code> (JSON with mobile)</li>
-              </ul>
+            <div class="helper-toggle">
+              <button type="button" class="toggle-button" on:click={() => showContactExamples = !showContactExamples}>
+                <span class="toggle-icon">{showContactExamples ? '−' : '+'}</span>
+                <span class="toggle-text">{showContactExamples ? 'Hide Examples' : 'Show Contact Examples'}</span>
+              </button>
             </div>
+            
+            {#if showContactExamples}
+              <div class="field-examples" transition:slide={{ duration: 300 }}>
+                <p>Examples:</p>
+                <ul>
+                  <li><code>email: contact@example.com; phone: (123) 456-7890; address: 123 Main St</code></li>
+                  <li><code>{`{"email":"contact@example.com","phone":"(123) 456-7890"}`}</code> (JSON format)</li>
+                  <li><code>{`{"mobile":"0086-755-83210457","email":"sales@lcsc.com"}`}</code> (JSON with mobile)</li>
+                </ul>
+              </div>
+            {/if}
           </div>
           
           <div class="form-group custom-fields-container">
@@ -267,23 +281,32 @@
               {/if}
             </div>
             
-            <div class="custom-fields-help">
-              <p>Custom fields let you store additional information about the supplier that doesn't fit in the standard fields.</p>
-              <ul>
-                <li><strong>Text values</strong>: Use quotes ("value")</li>
-                <li><strong>Numbers</strong>: Enter without quotes (1234)</li>
-                <li><strong>Booleans</strong>: Use true or false</li>
-              </ul>
-              <div class="example-json">
-                <p><strong>Example:</strong></p>
-                <pre>{`{
+            <div class="helper-toggle">
+              <button type="button" class="toggle-button" on:click={() => showCustomFieldsHelp = !showCustomFieldsHelp}>
+                <span class="toggle-icon">{showCustomFieldsHelp ? '−' : '+'}</span>
+                <span class="toggle-text">{showCustomFieldsHelp ? 'Hide Help' : 'Show Help & Examples'}</span>
+              </button>
+            </div>
+            
+            {#if showCustomFieldsHelp}
+              <div class="custom-fields-help" transition:slide={{ duration: 300 }}>
+                <p>Custom fields let you store additional information about the supplier that doesn't fit in the standard fields.</p>
+                <ul>
+                  <li><strong>Text values</strong>: Use quotes ("value")</li>
+                  <li><strong>Numbers</strong>: Enter without quotes (1234)</li>
+                  <li><strong>Booleans</strong>: Use true or false</li>
+                </ul>
+                <div class="example-json">
+                  <p><strong>Example:</strong></p>
+                  <pre>{`{
   "taxId": "123-45-6789",
   "employeeCount": 250,
   "isPreferredVendor": true,
   "paymentTerms": "Net 30" 
 }`}</pre>
+                </div>
               </div>
-            </div>
+            {/if}
           </div>
         </div>
         
@@ -352,6 +375,8 @@
     max-width: 1200px;
     margin: 0 auto;
     padding: 2rem 1rem;
+    color: hsl(var(--foreground));
+    transition: background-color 0.3s, color 0.3s, border-color 0.3s;
   }
   
   .page-header {
@@ -360,44 +385,46 @@
     align-items: center;
     margin-bottom: 2rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid hsl(var(--border));
   }
   
   .header-content h1 {
     margin: 0;
     font-size: 2rem;
-    color: #111827;
+    color: hsl(var(--foreground));
   }
   
   .bread-crumbs {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: hsl(var(--muted-foreground));
     margin-top: 0.5rem;
   }
   
   .bread-crumbs a {
-    color: #3b82f6;
+    color: hsl(var(--primary));
     text-decoration: none;
+    transition: color 0.3s;
   }
   
   .bread-crumbs a:hover {
     text-decoration: underline;
+    color: hsl(var(--primary-dark));
   }
   
   .back-button {
     padding: 0.5rem 1rem;
-    background-color: #f3f4f6;
-    border: 1px solid #d1d5db;
+    background-color: hsl(var(--secondary));
+    border: 1px solid hsl(var(--border));
     border-radius: 0.375rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: #374151;
+    color: hsl(var(--secondary-foreground));
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.3s, color 0.3s, border-color 0.3s;
   }
   
   .back-button:hover {
-    background-color: #e5e7eb;
+    background-color: hsl(var(--secondary) / 0.8);
   }
   
   .alert {
@@ -407,15 +434,15 @@
   }
   
   .success {
-    background-color: #d1fae5;
-    border: 1px solid #6ee7b7;
-    color: #065f46;
+    background-color: hsl(var(--success) / 0.2);
+    border: 1px solid hsl(var(--success));
+    color: hsl(var(--success));
   }
   
   .error {
-    background-color: #fee2e2;
-    border: 1px solid #fca5a5;
-    color: #b91c1c;
+    background-color: hsl(var(--destructive) / 0.2);
+    border: 1px solid hsl(var(--destructive));
+    color: hsl(var(--destructive));
   }
   
   .content-container {
@@ -425,10 +452,11 @@
   }
   
   .form-container {
-    background-color: white;
+    background-color: hsl(var(--card));
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
     padding: 1.5rem;
+    border: 1px solid hsl(var(--border));
   }
   
   .form-header {
@@ -441,7 +469,7 @@
   .form-header h2 {
     margin: 0;
     font-size: 1.5rem;
-    color: #111827;
+    color: hsl(var(--card-foreground));
   }
   
   .logo-preview {
@@ -449,9 +477,9 @@
     max-height: 100px;
     overflow: hidden;
     border-radius: 0.375rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid hsl(var(--border));
     padding: 0.5rem;
-    background: white;
+    background: hsl(var(--background));
   }
   
   .logo-preview img {
@@ -476,39 +504,32 @@
   .form-group {
     display: flex;
     flex-direction: column;
+    gap: 0.5rem;
   }
   
-  label {
-    font-size: 0.875rem;
+  .form-group label {
     font-weight: 500;
-    color: #374151;
-    margin-bottom: 0.5rem;
+    color: hsl(var(--foreground));
+    font-size: 0.875rem;
   }
   
-  .required {
-    color: #dc2626;
-  }
-  
-  .field-hint {
-    font-size: 0.75rem;
-    font-weight: normal;
-    color: #6b7280;
-    margin-left: 0.5rem;
-  }
-  
-  .form-control {
-    padding: 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
-    font-size: 1rem;
-    transition: border-color 0.2s;
+  .form-group input,
+  .form-group textarea {
     width: 100%;
+    padding: 0.625rem;
+    border: 1px solid hsl(var(--input-border));
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    color: hsl(var(--input-foreground));
+    background-color: hsl(var(--input));
+    transition: border-color 0.15s, background-color 0.3s, color 0.3s;
   }
   
-  .form-control:focus {
+  .form-group input:focus,
+  .form-group textarea:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
   }
   
   textarea.form-control {
@@ -516,129 +537,81 @@
     min-height: 80px;
   }
   
-  .code-input {
-    font-family: monospace;
-    font-size: 0.875rem;
-    white-space: pre;
-  }
-  
-  .error-message {
-    font-size: 0.875rem;
-    color: #dc2626;
-    margin-top: 0.25rem;
-  }
-  
   .form-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 1rem;
-    justify-content: flex-start;
-    align-items: center;
+    margin-top: 2rem;
     padding-top: 1.5rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid hsl(var(--border));
   }
   
-  .primary-button {
-    padding: 0.75rem 1.5rem;
-    background-color: #3b82f6;
-    color: white;
-    font-weight: 500;
-    border: none;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  
-  .primary-button:hover:not(:disabled) {
-    background-color: #2563eb;
-  }
-  
-  .primary-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  
-  .secondary-button {
-    padding: 0.75rem 1.5rem;
-    background-color: #f3f4f6;
-    color: #374151;
-    font-weight: 500;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  
-  .secondary-button:hover {
-    background-color: #e5e7eb;
-  }
+  /* Button styling is now directly applied to primary-button, secondary-button, and danger-button classes */
   
   .danger-button {
     margin-left: auto;
     padding: 0.75rem 1.5rem;
-    background-color: white;
-    color: #dc2626;
+    background-color: hsl(var(--destructive));
+    color: hsl(var(--destructive-foreground));
     font-weight: 500;
-    border: 1px solid #dc2626;
     border-radius: 0.375rem;
+    border: none;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background-color 0.3s;
   }
   
   .danger-button:hover {
-    background-color: #fee2e2;
+    background-color: hsl(var(--destructive-dark));
   }
   
   .info-sidebar {
-    align-self: start;
+    position: sticky;
+    top: 2rem;
   }
   
   .info-card {
-    background-color: #f9fafb;
+    background-color: hsl(var(--card));
     border-radius: 0.5rem;
-    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
     padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid hsl(var(--border));
   }
   
   .info-card h3 {
     margin-top: 0;
     margin-bottom: 1rem;
-    font-size: 1.25rem;
-    color: #111827;
+    color: hsl(var(--card-foreground));
+    font-size: 1.125rem;
+    font-weight: 600;
   }
   
   .info-item {
     display: flex;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
   }
   
   .info-label {
+    flex: 0 0 35%;
     font-weight: 500;
-    color: #374151;
-    min-width: 120px;
+    color: hsl(var(--muted-foreground));
+    padding-right: 1rem;
   }
   
   .info-value {
-    color: #6b7280;
+    flex: 0 0 65%;
+    color: hsl(var(--foreground));
   }
   
   .info-hint {
     margin-top: 1.5rem;
     padding-top: 1.5rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid hsl(var(--border));
     font-size: 0.875rem;
-    color: #4b5563;
+    color: hsl(var(--muted-foreground));
   }
   
-  /* Removed unused .info-hint pre selector */
-  
-  /* Custom Fields Styling */
-  .custom-fields-container {
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
-    padding: 1rem;
-    background-color: #f9fafb;
-    margin-top: 1rem;
-  }
+  /* Contact info styling is handled in the contact-info-preview class */
   
   .custom-fields-header {
     display: flex;
@@ -647,43 +620,7 @@
     margin-bottom: 0.75rem;
   }
   
-  .custom-fields-header label {
-    display: flex;
-    align-items: center;
-    font-weight: 600;
-    color: #4b5563;
-    margin-bottom: 0;
-  }
-  
-  .icon {
-    margin-right: 0.5rem;
-    stroke: #6b7280;
-  }
-  
-  .json-status {
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-  
-  .valid-json {
-    color: #059669;
-    background-color: #d1fae5;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-  
-  .invalid-json {
-    color: #dc2626;
-    background-color: #fee2e2;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-  
-  .code-editor-container {
-    margin-bottom: 1rem;
-  }
+  /* JSON helper styles are now part of the custom-fields-help class */
   
   .code-editor-tools {
     display: flex;
@@ -695,24 +632,54 @@
   .format-button {
     font-size: 0.75rem;
     padding: 0.25rem 0.5rem;
-    background-color: #e5e7eb;
-    border: 1px solid #d1d5db;
+    background-color: hsl(var(--input));
+    border: 1px solid hsl(var(--input-border));
     border-radius: 0.25rem;
     cursor: pointer;
     transition: all 0.2s;
   }
   
   .format-button:hover {
-    background-color: #d1d5db;
+    background-color: hsl(var(--input-dark));
+  }
+  
+  .helper-toggle {
+    margin-top: 0.5rem;
+    display: flex;
+    justify-content: flex-start;
+  }
+  
+  .toggle-button {
+    background: none;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    color: hsl(var(--primary));
+    cursor: pointer;
+    padding: 0.25rem 0;
+  }
+  
+  .toggle-icon {
+    font-size: 1rem;
+    width: 1rem;
+    text-align: center;
+    line-height: 1;
+  }
+  
+  .toggle-text {
+    font-weight: 500;
   }
   
   .custom-fields-help {
     margin-top: 1rem;
-    padding: 0.75rem;
-    background-color: #f3f4f6;
+    font-size: 0.875rem;
+    color: hsl(var(--foreground));
+    padding: 1rem;
+    background-color: hsl(var(--muted));
     border-radius: 0.375rem;
-    font-size: 0.8125rem;
-    color: #4b5563;
+    border: 1px dashed hsl(var(--border));
   }
   
   .custom-fields-help p {
@@ -727,37 +694,39 @@
   
   .custom-fields-help li {
     margin-bottom: 0.25rem;
+    color: hsl(var(--muted-foreground));
   }
   
   .example-json {
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px dashed #d1d5db;
+    border-top: 1px dashed hsl(var(--border));
   }
   
   .example-json pre {
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
+    background-color: hsl(var(--input));
+    border: 1px solid hsl(var(--input-border));
     border-radius: 0.375rem;
     padding: 0.75rem;
     margin: 0.5rem 0 0;
     font-size: 0.75rem;
     overflow: auto;
+    color: hsl(var(--foreground));
   }
   
   /* Contact Information Preview Styling */
   .contact-info-preview {
-    margin-top: 1rem;
+    margin-top: 0.75rem;
     padding: 0.75rem;
-    background-color: #f9fafb;
-    border: 1px solid #e5e7eb;
+    border: 1px solid hsl(var(--border));
     border-radius: 0.375rem;
+    background-color: hsl(var(--muted));
   }
   
   .preview-heading {
     font-size: 0.875rem;
     font-weight: 500;
-    color: #4b5563;
+    color: hsl(var(--foreground));
     margin-bottom: 0.5rem;
   }
   
@@ -770,11 +739,9 @@
   .contact-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    color: hsl(var(--muted-foreground));
+    padding: 0.25rem 0;
   }
   
   .contact-icon {
@@ -782,8 +749,8 @@
   }
   
   .contact-text {
-    font-size: 0.875rem;
-    color: #374151;
+    flex: 1;
+    color: hsl(var(--foreground));
   }
   
   .modal-overlay {

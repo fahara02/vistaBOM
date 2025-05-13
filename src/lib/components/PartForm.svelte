@@ -777,13 +777,15 @@
   .part-form {
     max-width: 1200px;
     margin: 0 auto;
+    color: hsl(var(--foreground));
   }
   
   .form-section {
     margin-bottom: 1.5rem;
-    border: 1px solid #e0e0e0;
-    border-radius: 5px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
     overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s;
   }
   
   .section-header {
@@ -791,24 +793,30 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background-color: #f8f9fa;
+    background-color: hsl(var(--surface-100));
     cursor: pointer;
+    transition: background-color 0.3s, color 0.3s;
+    color: hsl(var(--foreground));
   }
   
   .section-header h2 {
     margin: 0;
     font-size: 1.25rem;
+    color: hsl(var(--foreground));
   }
   
   .toggle-icon {
     font-size: 1.5rem;
     line-height: 1;
+    color: hsl(var(--primary));
   }
   
   .section-content {
     display: none;
     padding: 1rem;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid hsl(var(--border));
+    background-color: hsl(var(--card));
+    transition: background-color 0.3s, color 0.3s;
   }
   
   .visible {
@@ -840,60 +848,89 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
+    color: hsl(var(--foreground));
   }
   
   input, select, textarea {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ccc;
+    padding: 0.75rem;
+    border: 1px solid hsl(var(--input-border));
     border-radius: 4px;
     font-size: 1rem;
+    background-color: hsl(var(--input));
+    color: hsl(var(--input-foreground));
+    transition: border-color 0.15s, background-color 0.3s, color 0.3s, box-shadow 0.15s;
+  }
+  
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
   }
   
   textarea {
     resize: vertical;
+    min-height: 100px;
   }
   
   .hint {
     font-size: 0.8rem;
-    color: #6c757d;
+    color: hsl(var(--muted-foreground));
     margin-top: 0.25rem;
   }
   
   .error {
     display: block;
-    color: #dc3545;
+    color: hsl(var(--destructive));
     font-size: 0.8rem;
     margin-top: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: hsl(var(--destructive) / 0.1);
+    border-radius: 4px;
+    border: 1px solid hsl(var(--destructive) / 0.2);
   }
   
   .form-actions {
     margin-top: 1.5rem;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    justify-content: flex-end;
   }
   
   .btn-primary {
-    background-color: #4c6ef5;
-    color: white;
-    padding: 0.5rem 1rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 0.75rem 1.5rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.3s;
+  }
+  
+  .btn-primary:hover {
+    background: hsl(var(--primary-dark));
   }
   
   .btn-secondary {
-    background-color: #6c757d;
-    color: white;
-    padding: 0.5rem 1rem;
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+    padding: 0.75rem 1.5rem;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.3s;
+  }
+  
+  .btn-secondary:hover {
+    background: hsl(var(--secondary) / 0.8);
   }
   
   .active .section-header {
-    background-color: #e7f1ff;
+    background-color: hsl(var(--primary) / 0.1);
+    border-bottom: 1px solid hsl(var(--primary) / 0.2);
   }
 </style>

@@ -220,14 +220,12 @@
 
 <style>
     .category-card {
-        border: 1px solid hsl(var(--border));
+        border: 1px solid #e0e0e0;
         border-radius: 8px;
         padding: 1.5rem;
         margin: 1rem 0;
-        background: hsl(var(--card));
+        background: white;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        color: hsl(var(--card-foreground));
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
     }
 
     .alert {
@@ -235,19 +233,18 @@
         margin-bottom: 1rem;
         border-radius: 4px;
         font-size: 0.9em;
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
     }
 
     .error {
-        background-color: hsl(var(--destructive) / 0.2);
-        border: 1px solid hsl(var(--destructive));
-        color: hsl(var(--destructive));
+        background-color: #fee;
+        border: 1px solid #f99;
+        color: #c00;
     }
 
     .success {
-        background-color: hsl(var(--success) / 0.2);
-        border: 1px solid hsl(var(--success));
-        color: hsl(var(--success));
+        background-color: #efe;
+        border: 1px solid #9f9;
+        color: #090;
     }
 
     .details {
@@ -255,27 +252,26 @@
     }
 
     .description {
-        color: hsl(var(--card-foreground));
+        color: #444;
         line-height: 1.6;
     }
 
     .category-meta {
         margin: 1rem 0;
         padding: 0.75rem;
-        background: hsl(var(--surface-100));
+        background: #f8f9fa;
         border-radius: 6px;
-        border: 1px solid hsl(var(--border));
-        transition: background-color 0.3s, border-color 0.3s;
+        border: 1px solid #e5e7eb;
     }
 
     .parent, .public-status {
         margin: 0.25rem 0;
-        color: hsl(var(--foreground));
+        color: #4b5563;
     }
 
     .meta {
         margin-top: 1.5rem;
-        color: hsl(var(--muted-foreground));
+        color: #666;
         font-size: 0.85em;
         display: flex;
         gap: 1rem;
@@ -292,22 +288,21 @@
         border: none;
         border-radius: 4px;
         cursor: pointer;
-        background: hsl(var(--muted));
-        color: hsl(var(--muted-foreground));
-        transition: background-color 0.2s, color 0.2s;
+        background: #f0f0f0;
+        transition: background 0.2s;
     }
 
     button:hover {
-        background: hsl(var(--muted-foreground) / 0.2);
+        background: #e0e0e0;
     }
 
     .danger {
-        background: hsl(var(--destructive) / 0.2);
-        color: hsl(var(--destructive));
+        background: #ffe6e6;
+        color: #c00;
     }
 
     .danger:hover {
-        background: hsl(var(--destructive) / 0.3);
+        background: #ffcccc;
     }
 
     form {
@@ -319,19 +314,15 @@
         display: block;
         font-weight: 500;
         margin-bottom: 0.5rem;
-        color: hsl(var(--foreground));
     }
 
     input:not([type="checkbox"]), textarea {
         width: 100%;
         padding: 0.75rem;
-        border: 1px solid hsl(var(--input-border));
+        border: 1px solid #ddd;
         border-radius: 4px;
         font-family: inherit;
         font-size: 0.9em;
-        background-color: hsl(var(--input));
-        color: hsl(var(--input-foreground));
-        transition: border-color 0.15s, background-color 0.3s, color 0.3s;
     }
 
     textarea {
@@ -360,27 +351,5 @@
         gap: 0.75rem;
         justify-content: flex-end;
         margin-top: 1rem;
-    }
-
-    .form-actions button[type="submit"] {
-        background: hsl(var(--primary));
-        color: hsl(var(--primary-foreground));
-    }
-
-    .form-actions button[type="submit"]:hover {
-        background: hsl(var(--primary-dark));
-    }
-
-    .help-text {
-        display: block;
-        margin-top: 0.25rem;
-        color: hsl(var(--muted-foreground));
-        font-size: 0.8em;
-    }
-
-    input:not([type="checkbox"]):focus, textarea:focus {
-        outline: none;
-        border-color: hsl(var(--ring));
-        box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
     }
 </style>

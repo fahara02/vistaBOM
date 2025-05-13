@@ -1,18 +1,21 @@
 <script lang="ts">
 	import Header from './Header.svelte';
 	import '../app.css';
+	import { ModeWatcher } from "mode-watcher";
 </script>
 
-<div class="app">
-	<Header />
+<ModeWatcher />
 
+<div class="app bg-background text-foreground transition-colors duration-300">
+	
+	<Header />
 	<main>
 		<slot />
 	</main>
 
-	<footer>
+	<footer class="bg-background text-foreground transition-colors duration-300">
 		<p>
-			visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to learn about SvelteKit
+			visit <a href="https://svelte.dev/docs/kit" class="text-primary hover:underline">svelte.dev/docs/kit</a> to learn about SvelteKit
 		</p>
 	</footer>
 </div>

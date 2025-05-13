@@ -2,7 +2,7 @@ import defaultTheme from "tailwindcss/defaultTheme";
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-	darkMode: ["class", "[data-mode=dark]"],
+	darkMode: "class",
 	content: ["./src/**/*.{html,js,svelte,ts}"],
 	// Safelist not supported in Tailwind v4, using content patterns instead
 	// For dark mode classes, they'll be included automatically based on usage

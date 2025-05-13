@@ -327,6 +327,7 @@ export interface Manufacturer {
 	name: string;
 	description?: string;
 	websiteUrl?: string;
+	contactInfo?: JsonValue;
 	logoUrl?: string;
 	createdBy?: string;
 	createdAt: Date;

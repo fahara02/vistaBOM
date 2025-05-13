@@ -9,6 +9,7 @@ function normalizeManufacturer(row: any): Manufacturer {
         name: row.name,
         description: row.description || undefined,
         websiteUrl: row.website_url || undefined,
+        contactInfo: row.contact_info || undefined,
         logoUrl: row.logo_url || undefined,
         createdBy: row.created_by || undefined,
         createdAt: row.created_at,
@@ -23,6 +24,7 @@ export async function createManufacturer(
         name: string;
         description?: string;
         websiteUrl?: string;
+        contactInfo?: any;
         logoUrl?: string;
         createdBy: string;
     }
@@ -34,6 +36,7 @@ export async function createManufacturer(
                 name, 
                 description, 
                 website_url, 
+                contact_info,
                 logo_url, 
                 created_by
             )
@@ -41,6 +44,7 @@ export async function createManufacturer(
                 ${params.name},
                 ${params.description || null},
                 ${params.websiteUrl || null},
+                ${params.contactInfo ? sql.json(params.contactInfo) : null},
                 ${params.logoUrl || null},
                 ${params.createdBy}
             )
@@ -84,6 +88,7 @@ export async function updateManufacturer(
         name?: string;
         description?: string;
         websiteUrl?: string;
+        contactInfo?: any;
         logoUrl?: string;
     },
     userId: string
@@ -121,6 +126,11 @@ export async function updateManufacturer(
         if (updates.logoUrl !== undefined) {
             setParts.push(`logo_url = $${paramIndex}`);
             paramValues.push(updates.logoUrl);
+            paramIndex++;
+        }
+        if (updates.contactInfo !== undefined) {
+            setParts.push(`contact_info = $${paramIndex}`);
+            paramValues.push(updates.contactInfo ? JSON.stringify(updates.contactInfo) : null);
             paramIndex++;
         }
         

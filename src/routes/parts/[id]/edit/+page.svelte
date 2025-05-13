@@ -32,14 +32,17 @@
 		padding: 1rem;
 		max-width: 1200px;
 		margin: 0 auto;
+		color: hsl(var(--foreground));
+		transition: background-color 0.3s, color 0.3s, border-color 0.3s;
 	}
 	
 	h1 {
 		margin-bottom: 0.5rem;
+		color: hsl(var(--foreground));
 	}
 	
 	p {
 		margin-bottom: 1.5rem;
-		color: #666;
+		color: hsl(var(--muted-foreground));
 	}
 </style>

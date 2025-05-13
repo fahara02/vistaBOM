@@ -244,31 +244,34 @@
 
 <style>
     .manufacturer-card {
-        border: 1px solid #e0e0e0;
+        border: 1px solid hsl(var(--border));
         border-radius: 8px;
         padding: 1.5rem;
         margin: 1rem 0;
-        background: white;
+        background: hsl(var(--card));
+        color: hsl(var(--card-foreground));
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
     }
 
     .alert {
-        padding: 0.75rem;
+        padding: 0.75rem 1rem;
         margin-bottom: 1rem;
         border-radius: 4px;
         font-size: 0.9em;
+        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
     }
 
     .error {
-        background-color: #fee;
-        border: 1px solid #f99;
-        color: #c00;
+        background: hsl(var(--destructive) / 0.2);
+        border: 1px solid hsl(var(--destructive));
+        color: hsl(var(--destructive));
     }
 
     .success {
-        background-color: #efe;
-        border: 1px solid #9f9;
-        color: #090;
+        background: hsl(var(--success) / 0.2);
+        border: 1px solid hsl(var(--success));
+        color: hsl(var(--success));
     }
 
     .logo {
@@ -276,6 +279,7 @@
         max-height: 100px;
         margin: 1rem 0;
         border-radius: 4px;
+        border: 1px solid hsl(var(--border));
     }
 
     .details {
@@ -283,29 +287,35 @@
     }
 
     .description {
-        color: #444;
+        color: hsl(var(--foreground));
         line-height: 1.6;
     }
 
     .website a {
-        color: #06c;
+        color: hsl(var(--primary));
         text-decoration: none;
+        transition: color 0.3s;
+    }
+
+    .website a:hover {
+        text-decoration: underline;
     }
 
     .custom-fields {
         margin: 1.5rem 0;
         padding: 1.5rem;
-        background: #f8f9fa;
+        background: hsl(var(--surface-100));
         border-radius: 8px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid hsl(var(--border));
+        transition: background-color 0.3s, border-color 0.3s;
     }
     
     .custom-fields h3 {
         margin-top: 0;
         margin-bottom: 1rem;
-        color: #4b5563;
+        color: hsl(var(--foreground));
         font-size: 1.125rem;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid hsl(var(--border));
         padding-bottom: 0.5rem;
     }
     
@@ -319,21 +329,22 @@
         display: flex;
         flex-direction: column;
         padding: 0.75rem;
-        background: white;
+        background: hsl(var(--card));
         border-radius: 6px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid hsl(var(--border));
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
     }
     
     .field-name {
         font-weight: 600;
-        color: #4b5563;
+        color: hsl(var(--foreground));
         font-size: 0.875rem;
         margin-bottom: 0.5rem;
     }
     
     .field-value {
-        color: #1f2937;
+        color: hsl(var(--foreground));
         font-size: 1rem;
         word-break: break-word;
     }
@@ -347,24 +358,24 @@
     }
     
     .boolean-value.positive {
-        background-color: #d1fae5;
-        color: #065f46;
+        background: hsl(var(--success) / 0.2);
+        color: hsl(var(--success));
     }
     
     .boolean-value.negative {
-        background-color: #fee2e2;
-        color: #b91c1c;
+        background: hsl(var(--destructive) / 0.2);
+        color: hsl(var(--destructive));
     }
     
     .number-value {
         font-family: 'Courier New', monospace;
         font-weight: 600;
-        color: #1f2937;
+        color: hsl(var(--foreground));
     }
 
     .meta {
         margin-top: 1.5rem;
-        color: #666;
+        color: hsl(var(--muted-foreground));
         font-size: 0.85em;
         display: flex;
         gap: 1rem;
@@ -377,25 +388,27 @@
     }
 
     button {
-        padding: 0.5rem 1rem;
+        padding: 0.625rem 1.25rem;
         border: none;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
-        background: #f0f0f0;
-        transition: background 0.2s;
+        background: hsl(var(--secondary));
+        color: hsl(var(--secondary-foreground));
+        transition: background-color 0.3s, color 0.3s;
+        font-weight: 500;
     }
 
     button:hover {
-        background: #e0e0e0;
+        background: hsl(var(--secondary) / 0.8);
     }
 
     .danger {
-        background: #ffe6e6;
-        color: #c00;
+        background: hsl(var(--destructive) / 0.1);
+        color: hsl(var(--destructive));
     }
 
     .danger:hover {
-        background: #ffcccc;
+        background: hsl(var(--destructive) / 0.2);
     }
 
     form {
@@ -407,15 +420,25 @@
         display: block;
         font-weight: 500;
         margin-bottom: 0.5rem;
+        color: hsl(var(--foreground));
     }
 
     input, textarea {
         width: 100%;
         padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        border: 1px solid hsl(var(--input-border));
+        border-radius: 6px;
         font-family: inherit;
         font-size: 0.9em;
+        background-color: hsl(var(--input));
+        color: hsl(var(--input-foreground));
+        transition: border-color 0.15s, background-color 0.3s, color 0.3s, box-shadow 0.15s;
+    }
+    
+    input:focus, textarea:focus {
+        outline: none;
+        border-color: hsl(var(--ring));
+        box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
     }
 
     textarea {

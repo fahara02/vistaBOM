@@ -448,6 +448,7 @@ export const manufacturerSchema = z.object({
 	name: z.string().min(1), // TEXT NOT NULL UNIQUE CHECK (...)
 	description: z.string().optional().nullable(), // TEXT
 	website_url: z.string().url().optional().nullable(), // TEXT CHECK (...)
+	contact_info: jsonSchema.optional().nullable(), // JSONB
 	logo_url: z.string().url().optional().nullable(), // TEXT CHECK (...)
 	created_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(id)
 	created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL

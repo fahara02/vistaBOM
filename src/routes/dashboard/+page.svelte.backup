@@ -430,8 +430,8 @@
 									{#if manufacturer.website_url}
 										<p class="entity-meta website-link">
 											<span class="meta-label">Website:</span> 
-											<a href={manufacturer.website_url} target="_blank" rel="noopener noreferrer" class="website-url" title={manufacturer.website_url}>
-												{new URL(manufacturer.website_url).hostname.length > 20 ? new URL(manufacturer.website_url).hostname.substring(0, 20) + '...' : new URL(manufacturer.website_url).hostname}
+											<a href={manufacturer.website_url} target="_blank" rel="noopener noreferrer" class="website-url">
+												{new URL(manufacturer.website_url).hostname}
 											</a>
 										</p>
 									{/if}
@@ -537,25 +537,6 @@
 									<span class="field-error">{$manufacturerErrors.website_url}</span>
 								{/if}
 							</div>
-
-							<div class="form-group">
-								<label for="mfr-contact" class="form-label">Contact Information</label>
-								<div class="input-with-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-									</svg>
-									<input 
-										id="mfr-contact" 
-										name="contact_info" 
-										class="form-input enhanced-input with-icon"
-										bind:value={$manufacturerForm.contact_info} 
-										placeholder="Enter contact info (e.g., email or phone)"
-									/>
-								</div>
-								{#if $manufacturerErrors.contact_info}
-									<span class="field-error">{$manufacturerErrors.contact_info}</span>
-								{/if}
-							</div>
 							
 							<div class="form-group">
 								<label for="mfr-logo" class="form-label">Logo URL</label>
@@ -634,11 +615,11 @@
 									
 									{#if supplier.website_url}
 										<p class="entity-meta website-link">
-										<span class="meta-label">Website:</span> 
-										<a href={supplier.website_url} target="_blank" rel="noopener noreferrer" class="website-url" title={supplier.website_url}>
-											{new URL(supplier.website_url).hostname.length > 20 ? new URL(supplier.website_url).hostname.substring(0, 20) + '...' : new URL(supplier.website_url).hostname}
-										</a>
-									</p>
+											<span class="meta-label">Website:</span> 
+											<a href={supplier.website_url} target="_blank" rel="noopener noreferrer" class="website-url">
+												{new URL(supplier.website_url).hostname}
+											</a>
+										</p>
 									{/if}
 									
 									{#if supplier.contact_info}
@@ -646,11 +627,11 @@
 										<div class="entity-meta contact-info">
 											<span class="meta-label">Contact:</span>
 											{#if contact.email}
-												<a href="mailto:{contact.email}" class="contact-value" title={contact.email}>{contact.email.length > 18 ? contact.email.substring(0, 18) + '...' : contact.email}</a>
+												<a href="mailto:{contact.email}" class="contact-value">{contact.email}</a>
 											{:else if contact.phone}
-												<a href="tel:{contact.phone}" class="contact-value" title={contact.phone}>{contact.phone.length > 18 ? contact.phone.substring(0, 18) + '...' : contact.phone}</a>
+												<a href="tel:{contact.phone}" class="contact-value">{contact.phone}</a>
 											{:else if contact.text}
-												<span class="contact-value" title={contact.text}>{contact.text.length > 18 ? contact.text.substring(0, 18) + '...' : contact.text}</span>
+												<span class="contact-value">{contact.text.length > 30 ? contact.text.substring(0, 30) + '...' : contact.text}</span>
 											{:else}
 												<span class="contact-value">Available</span>
 											{/if}
@@ -684,8 +665,8 @@
 				</div>
 				
 				{#if showSupplierForm}
-					<div class="form-container enhanced-form">
-						<h2 class="form-title">Create New Supplier</h2>
+					<div class="form-container">
+						<h2>Create New Supplier</h2>
 						
 						{#if $supplierMessage}
 							<div class="form-message {$supplierMessage.includes('Failed') ? 'error' : 'success'}">
@@ -695,12 +676,12 @@
 						
 						<form method="POST" action="?/supplier" use:supplierEnhance class="form-grid">
 							<div class="form-group">
-								<label for="sup-name" class="form-label">Name <span class="required">*</span></label>
+								<label for="sup-name">Name <span class="required">*</span></label>
 								<input 
 									id="sup-name" 
 									name="name" 
 									bind:value={$supplierForm.name} 
-									class="form-input enhanced-input"
+									class="form-input"
 									placeholder="Enter supplier name"
 									required 
 								/>
@@ -710,12 +691,12 @@
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-description" class="form-label">Description</label>
+								<label for="sup-description">Description</label>
 								<textarea 
 									id="sup-description" 
 									name="description" 
 									bind:value={$supplierForm.description} 
-									class="form-textarea enhanced-input"
+									class="form-textarea"
 									placeholder="Enter supplier description"
 									rows="3"
 								></textarea>
@@ -725,82 +706,54 @@
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-website" class="form-label">Website URL</label>
-								<div class="input-with-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<circle cx="12" cy="12" r="10"></circle>
-										<line x1="2" y1="12" x2="22" y2="12"></line>
-										<path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-									</svg>
-									<input 
-										id="sup-website" 
-										name="website_url" 
-										type="url"
-										bind:value={$supplierForm.website_url} 
-										class="form-input enhanced-input with-icon"
-										placeholder="https://example.com"
-									/>
-								</div>
+								<label for="sup-website">Website URL</label>
+								<input 
+									id="sup-website" 
+									name="website_url" 
+									type="url"
+									bind:value={$supplierForm.website_url} 
+									class="form-input"
+									placeholder="https://example.com"
+								/>
 								{#if $supplierErrors.website_url}
 									<span class="field-error">{$supplierErrors.website_url}</span>
 								{/if}
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-contact" class="form-label">Contact Information</label>
-								<div class="input-with-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-									</svg>
-									<input
-										id="sup-contact" 
-										name="contact_info" 
-										bind:value={$supplierForm.contact_info} 
-										class="form-input enhanced-input with-icon"
-										placeholder="Enter contact info (e.g., email or phone)"
-									/>
-								</div>
+								<label for="sup-contact">Contact Information</label>
+								<input
+									id="sup-contact" 
+									name="contact_info" 
+									bind:value={$supplierForm.contact_info} 
+									class="form-input"
+									placeholder="Enter contact info (e.g., email or phone)"
+								/>
 								{#if $supplierErrors.contact_info}
 									<span class="field-error">{$supplierErrors.contact_info}</span>
 								{/if}
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-logo" class="form-label">Logo URL</label>
-								<div class="input-with-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-										<circle cx="8.5" cy="8.5" r="1.5"></circle>
-										<polyline points="21 15 16 10 5 21"></polyline>
-									</svg>
-									<input 
-										id="sup-logo" 
-										name="logo_url" 
-										type="url"
-										bind:value={$supplierForm.logo_url} 
-										class="form-input enhanced-input with-icon"
-										placeholder="https://example.com/logo.png"
-									/>
-								</div>
+								<label for="sup-logo">Logo URL</label>
+								<input 
+									id="sup-logo" 
+									name="logo_url" 
+									type="url"
+									bind:value={$supplierForm.logo_url} 
+									class="form-input"
+									placeholder="https://example.com/logo.png"
+								/>
 								{#if $supplierErrors.logo_url}
 									<span class="field-error">{$supplierErrors.logo_url}</span>
 								{/if}
 							</div>
 							
 							<div class="form-actions">
-								<button type="submit" class="enhanced-btn submit-btn" disabled={$supplierSubmitting}>
-									<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<path d="M20 6L9 17l-5-5"></path>
-									</svg>
-									<span>{$supplierSubmitting ? 'Creating...' : 'Create Supplier'}</span>
+								<button type="submit" class="primary-btn" disabled={$supplierSubmitting}>
+									{$supplierSubmitting ? 'Creating...' : 'Create Supplier'}
 								</button>
-								<button type="button" class="enhanced-btn cancel-btn" on:click={() => showSupplierForm = false}>
-									<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<line x1="18" y1="6" x2="6" y2="18"></line>
-										<line x1="6" y1="6" x2="18" y2="18"></line>
-									</svg>
-									<span>Cancel</span>
-								</button>
+								<button type="button" class="secondary-btn" on:click={() => showSupplierForm = false}>Cancel</button>
 							</div>
 						</form>
 					</div>
@@ -1039,7 +992,7 @@
 
 	.user-items-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 		gap: 1.5rem;
 		margin: 1rem 0 2rem 0;
 	}
@@ -1051,14 +1004,11 @@
 		text-align: center;
 		transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s;
 		border: 1px solid hsl(var(--border));
-		position: relative;
-		overflow: hidden;
 	}
 
 	.project-card:hover {
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-		transform: translateY(-2px);
-		border-color: hsl(var(--card-hover-border));
+		border-color: hsl(var(--primary));
 	}
 
 	.project-link {
@@ -1083,17 +1033,17 @@
 
 	.form-container {
 		margin-top: 2rem;
-		padding: 1.5rem;
-		background-color: hsl(var(--surface-100));
+		padding: 2rem;
+		background: hsl(var(--surface-100));
+		border-radius: 12px;
 		border: 1px solid hsl(var(--border));
-		border-radius: 8px;
 		box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-		transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+		transition: background-color 0.3s, border-color 0.3s;
 	}
 
 	.form-container h2 {
 		margin-top: 0;
-		margin-bottom: 1.5rem;
+		margin-bottom: 1rem;
 		color: hsl(var(--foreground));
 		border-bottom: 1px solid hsl(var(--border));
 		padding-bottom: 0.5rem;
@@ -1105,16 +1055,12 @@
 
 	.form-message {
 		padding: 0.75rem 1rem;
-		margin-bottom: 1.5rem;
 		border-radius: 6px;
-		font-size: 0.9rem;
+		margin-bottom: 1rem;
 		transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-	}
-
-	.form-message.error {
-		background: hsl(var(--destructive) / 0.2);
-		border: 1px solid hsl(var(--destructive));
-		color: hsl(var(--destructive));
+		background-color: hsl(var(--surface-100));
+		border: 1px solid hsl(var(--border));
+		color: hsl(var(--foreground));
 	}
 
 	.form-message.success {
@@ -1123,17 +1069,22 @@
 		color: hsl(var(--success));
 	}
 
+	.form-message.error {
+		background: hsl(var(--destructive) / 0.2);
+		border: 1px solid hsl(var(--destructive));
+		color: hsl(var(--destructive));
+	}
+
 	.entity-card {
 		background: hsl(var(--card));
 		border-radius: 8px;
 		padding: 1.25rem;
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 		display: flex;
-		flex-direction: column;
+		gap: 1rem;
 		transition: box-shadow 0.3s, transform 0.2s, background-color 0.3s, border-color 0.3s;
 		border: 1px solid hsl(var(--border));
 		position: relative;
-		overflow: hidden;
 	}
 
 	.entity-card:hover {
@@ -1153,10 +1104,6 @@
 		margin-bottom: 0.5rem;
 		color: hsl(var(--muted-foreground));
 		font-size: 0.875rem;
-		display: flex;
-		align-items: baseline;
-		flex-wrap: wrap;
-		gap: 0.25rem;
 	}
 
 	.entity-description {
@@ -1164,11 +1111,6 @@
 		line-height: 1.5;
 		color: hsl(var(--foreground));
 		margin-bottom: 1rem;
-		overflow: hidden;
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2; /* Standard property for compatibility */
 	}
 
 	.entity-no-description {
@@ -1187,11 +1129,7 @@
 		color: hsl(var(--primary));
 		text-decoration: none;
 		font-size: 0.825rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		display: inline-block;
-		max-width: 100%;
-		vertical-align: bottom;
+		word-break: break-all;
 	}
 
 	.website-url:hover {
@@ -1201,18 +1139,13 @@
 	.contact-value {
 		color: hsl(var(--foreground));
 		font-size: 0.825rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 100%;
+		word-break: break-all;
 	}
 
 	.contact-info {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		gap: 0.5rem;
-		flex-wrap: wrap;
-		max-width: 100%;
 	}
 
 	.date-value {
@@ -1224,8 +1157,6 @@
 		gap: 0.5rem;
 		margin-top: 0.75rem;
 		justify-content: flex-end;
-		flex-shrink: 0;
-		width: 100%;
 	}
 
 	.icon-btn {
@@ -1256,15 +1187,6 @@
 		border: 1px solid hsl(var(--input-border));
 		border-radius: 6px;
 		font-size: 1rem;
-		background-color: hsl(var(--input));
-		color: hsl(var(--input-foreground));
-		transition: border-color 0.15s, background-color 0.3s, color 0.3s, box-shadow 0.15s;
-	}
-
-	.project-input:focus {
-		outline: none;
-		border-color: hsl(var(--ring));
-		box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
 	}
 
 	.action-buttons {
@@ -1289,10 +1211,8 @@
 		border: 1px solid hsl(var(--input-border));
 		border-radius: 6px;
 		font-size: 1rem;
+		transition: all 0.2s ease;
 		width: 100%;
-		background-color: hsl(var(--input));
-		color: hsl(var(--input-foreground));
-		transition: border-color 0.15s, background-color 0.3s, color 0.3s, box-shadow 0.15s;
 	}
 
 	.form-input:focus, .form-textarea:focus {
@@ -1338,9 +1258,6 @@
 		border: 1px solid hsl(var(--border));
 		border-radius: 6px;
 		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-		transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-		padding: 1.5rem;
-		margin-top: 1.5rem;
 	}
 
 	.form-title {
@@ -1368,11 +1285,9 @@
 		color: hsl(var(--destructive));
 		font-size: 0.875rem;
 		padding: 0.25rem 0.5rem;
-		background: hsl(var(--destructive) / 0.1);
+		background: hsl(var(--destructive) / 0.2);
 		border-radius: 4px;
-		border: 1px solid hsl(var(--destructive) / 0.2);
-		margin-top: 0.25rem;
-		display: block;
+		border: 1px solid hsl(var(--destructive));
 	}
 
 	.required {
@@ -1448,23 +1363,23 @@
 	}
 
 	.secondary-btn {
-		background: hsl(var(--secondary));
-		color: hsl(var(--secondary-foreground));
-		border: 1px solid hsl(var(--secondary));
+		background: hsl(var(--background));
+		color: hsl(var(--primary));
+		border: 1px solid hsl(var(--primary));
 		padding: 0.75rem 1.5rem;
 		border-radius: 6px;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		font-weight: 600;
 		text-decoration: none;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-		gap: 0.5rem;
 	}
 
 	.secondary-btn:hover {
-		background: hsl(var(--secondary) / 0.8);
+		background: hsl(var(--primary) / 0.1);
+		transform: translateY(-1px);
 	}
 
 	@media (max-width: 768px) {

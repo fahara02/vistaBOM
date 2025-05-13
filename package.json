@@ -84,6 +84,7 @@
 		"dotenv": "^16.0.0",
 		"google-auth-library": "^9.15.1",
 		"lucide-svelte": "^0.509.0",
+		"mode-watcher": "0.5.1",
 		"pg": "^8.14.1",
 		"postgres": "^3.4.5",
 		"push": "^0.1.1",
