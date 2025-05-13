@@ -8,6 +8,13 @@ export interface ContactInfo {
 	fax?: string;
 	
   }
+
+  export interface Dimensions {
+    length: number | null;
+    width: number | null;
+    height: number | null;
+    [key: string]: number | null | undefined;
+  }
 // ======================
 // Enums
 // ======================

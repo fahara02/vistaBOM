@@ -108,13 +108,15 @@
   h1 {
     font-size: 2.5rem;
     margin-bottom: 1rem;
-    color: #1a1a1a;
+    color: hsl(var(--foreground));
+    transition: color 0.3s;
   }
 
   h2 {
     font-size: 1.75rem;
     margin-bottom: 1.5rem;
-    color: #2d2d2d;
+    color: hsl(var(--foreground));
+    transition: color 0.3s;
   }
   
   /* Header Styles */
@@ -133,27 +135,34 @@
   
   .view-toggle {
     display: flex;
-    border-radius: 6px;
+    border-radius: 0.5rem;
     overflow: hidden;
-    border: 1px solid #e0e0e0;
+    border: 1px solid hsl(var(--border));
+    transition: border-color 0.3s;
   }
   
   .view-toggle-btn {
     padding: 0.5rem 0.75rem;
     border: none;
-    background: #f5f5f5;
+    background: hsl(var(--surface-100));
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.875rem;
-    color: #555;
+    color: hsl(var(--muted-foreground));
+    transition: background-color 0.3s, color 0.3s;
   }
   
   .view-toggle-btn.active {
-    background: #e0e0e0;
-    color: #222;
+    background: hsl(var(--surface-300));
+    color: hsl(var(--foreground));
     font-weight: 500;
+  }
+  
+  .view-toggle-btn:hover:not(.active) {
+    background: hsl(var(--surface-200));
+    color: hsl(var(--foreground));
   }
   
   .view-toggle-btn i {
@@ -161,116 +170,177 @@
   }
 
   .toggle-btn {
-    padding: 0.5rem 1rem;
+    padding: 0.625rem 1.25rem;
     border: none;
-    border-radius: 6px;
+    border-radius: 0.5rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
-    background: #4f46e5;
+    background: hsl(var(--category-color));
     color: white;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .toggle-btn:hover {
-    background: #4338ca;
+    background: hsl(var(--category-color) / 0.8);
+    box-shadow: 0 2px 5px hsl(var(--category-color) / 0.3);
   }
 
   .toggle-btn:active {
-    transform: scale(0.98);
+    transform: translateY(1px);
   }
   
   /* Category Container Styles */
   .category-container {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.5rem;
     margin-bottom: 2rem;
   }
   
   .tree-view-container {
-    border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    padding: 1rem;
-    min-height: 300px;
+    border-radius: 0.75rem;
+    background: hsl(var(--surface-100));
+    box-shadow: 0 2px 6px hsl(var(--muted) / 0.15);
+    padding: 1.25rem;
+    min-height: 350px;
+    border: 1px solid hsl(var(--border));
+    transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
   }
   
   .list-view-container {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    background: hsl(var(--surface-100));
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    min-height: 350px;
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 2px 6px hsl(var(--muted) / 0.15);
+    transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
+  }
+  
+  /* Dark mode adjustments */
+  :global(.dark) .tree-view-container,
+  :global(.dark) .list-view-container {
+    box-shadow: 0 4px 8px hsl(217 33% 10% / 0.4);
+    border-color: hsl(var(--card-border));
+  }
+  
+  :global(.dark) .toggle-btn {
+    box-shadow: 0 2px 4px hsl(var(--category-color) / 0.3);
+  }
+  
+  :global(.dark) .toggle-btn:hover {
+    background: hsl(var(--category-color) / 0.9);
+    box-shadow: 0 3px 6px hsl(var(--category-color) / 0.4);
   }
 
   /* Form Styles */
   .create-form {
-    background: #ffffff;
+    background: hsl(var(--surface-100));
     padding: 2rem;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 8px hsl(var(--muted) / 0.1);
+    border: 1px solid hsl(var(--border));
     margin-bottom: 3rem;
     max-width: 800px;
     display: grid;
     gap: 1.5rem;
+    transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
   }
 
   /* Use label instead of .field for form styling */
-
   label {
     font-weight: 600;
-    color: #404040;
+    color: hsl(var(--foreground));
     font-size: 0.95rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    transition: color 0.3s;
+  }
+  
+  /* Dark mode form styles */
+  :global(.dark) .create-form {
+    box-shadow: 0 4px 12px hsl(217 33% 5% / 0.3);
+    border-color: hsl(var(--card-border));
   }
 
-  input,
-  textarea {
+  input, textarea {
+    width: 100%;
     padding: 0.75rem;
-    border: 2px solid #e0e0e0;
-    border-radius: 6px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
     font-size: 1rem;
     transition: all 0.2s ease;
+    background-color: hsl(var(--surface-50));
+    color: hsl(var(--foreground));
   }
 
-  input:focus,
-  textarea:focus {
+  input:focus, textarea:focus {
+    border-color: hsl(var(--category-color));
     outline: none;
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    box-shadow: 0 0 0 3px hsl(var(--category-color) / 0.2);
+  }
+
+  input[type="checkbox"] {
+    width: auto;
+    margin-right: 0.5rem;
+    accent-color: hsl(var(--category-color));
+  }
+  
+  :global(.dark) input, :global(.dark) textarea {
+    background-color: hsl(var(--surface-200));
+    border-color: hsl(var(--card-border));
   }
 
   .error {
-    color: #dc2626;
-    font-size: 0.875rem;
+    color: hsl(var(--destructive));
+    font-size: 0.8rem;
     margin-top: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    background: #fef2f2;
-    border-radius: 4px;
-    border: 1px solid #fecaca;
   }
 
   .form-actions {
-    margin-top: 1.5rem;
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: 1rem;
+    margin-top: 1rem;
   }
 
   button[type="submit"] {
-    background: #4f46e5;
-    color: white;
     padding: 0.75rem 1.5rem;
+    background: hsl(var(--category-color));
+    color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: 0.5rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 8rem;
   }
 
   button[type="submit"]:hover {
-    background: #4338ca;
+    background: hsl(var(--category-color) / 0.85);
+    box-shadow: 0 2px 5px hsl(var(--category-color) / 0.3);
   }
 
   button[type="submit"]:active {
-    transform: scale(0.98);
+    transform: translateY(1px);
+  }
+  
+  :global(.dark) button[type="submit"] {
+    box-shadow: 0 2px 4px hsl(var(--category-color) / 0.3);
+  }
+  
+  :global(.dark) button[type="submit"]:hover {
+    box-shadow: 0 3px 6px hsl(var(--category-color) / 0.4);
   }
 
   @media (max-width: 768px) {

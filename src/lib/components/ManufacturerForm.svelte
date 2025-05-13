@@ -1,6 +1,7 @@
 <!-- src/lib/components/ManufacturerForm.svelte -->
 <script lang="ts">
   import { slide } from 'svelte/transition';
+  
   import { onDestroy } from 'svelte';
   import type { SuperForm } from 'sveltekit-superforms';
   import type { SuperFormData } from 'sveltekit-superforms/client';

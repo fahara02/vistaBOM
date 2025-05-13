@@ -2,7 +2,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import { PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, LifecycleStatusEnum, PartStatusEnum } from '$lib/types';
+  import { PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, LifecycleStatusEnum, PartStatusEnum, type Dimensions } from '$lib/types';
   import type { SuperForm } from 'sveltekit-superforms';
   import type { SuperFormData } from 'sveltekit-superforms/client';
   import type { ValidationErrors } from 'sveltekit-superforms';
@@ -54,13 +54,7 @@
     [key: string]: any; // Allow for additional fields
   }
 
-  // Define proper type for dimensions to avoid TypeScript errors
-  interface Dimensions {
-    length: number | null;
-    width: number | null;
-    height: number | null;
-    [key: string]: number | null | undefined;
-  }
+
 
   // Helper function to convert string/number to number or null if invalid
   function parseFloatOrNull(value: string | number | null | undefined): number | null {

@@ -387,3 +387,14 @@ export function formatContactInfoForDisplay(input: string | null | undefined): s
     return input || '';
   }
 }
+
+
+export function validateJSON(jsonString: string | undefined | null): boolean {
+  if (!jsonString) return true;
+  try {
+    JSON.parse(jsonString);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
