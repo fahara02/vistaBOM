@@ -8,9 +8,8 @@
   export let data: PageData;
   
   // Extract manufacturer data
-  const { manufacturer } = data;
-  
-  // Initialize the form with SuperForms - moved to top level to avoid store subscription issues
+  const { manufacturer } = data;  
+            // Initialize the form with SuperForms - moved to top level to avoid store subscription issues
   // Direct debug of the form data from server
   console.log('Raw form data from server:', data.form);
   
@@ -36,6 +35,7 @@
     onResult: ({ result }) => {
       // Success notification handled by the message
       console.log('Form submission result:', result);
+      // Stay on same page after successful edit, just like supplier form
     }
   });
   
@@ -292,61 +292,8 @@
     height: auto;
     object-fit: contain;
   }
-  
-  .form-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    margin-bottom: 2rem;
-  }
-  
-  .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-  
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .form-group label {
-    font-weight: 500;
-    color: hsl(var(--foreground));
-    font-size: 0.875rem;
-  }
-  
-  .form-group input,
-  .form-group textarea {
-    width: 100%;
-    padding: 0.625rem;
-    border: 1px solid hsl(var(--input-border));
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    color: hsl(var(--input-foreground));
-    background-color: hsl(var(--input));
-    transition: border-color 0.15s, background-color 0.3s, color 0.3s;
-  }
-  
-  .form-group input:focus,
-  .form-group textarea:focus {
-    outline: none;
-    border-color: hsl(var(--ring));
-    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
-  }
-  
-  textarea.form-control {
-    resize: vertical;
-    min-height: 80px;
-  }
-  
-  .error-message {
-    font-size: 0.875rem;
-    color: hsl(var(--destructive));
-    margin-top: 0.25rem;
-  }
+
+
   
   .form-actions {
     display: flex;
@@ -430,151 +377,10 @@
     overflow: auto;
   }
   
-  /* Custom Fields Styling */
-  .custom-fields-container {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid hsl(var(--border));
-  }
+
   
-  .custom-fields-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-  
-  .custom-fields-header label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-    color: hsl(var(--foreground));
-    font-size: 1rem;
-  }
-  
-  .custom-fields-header .icon {
-    width: 18px;
-    height: 18px;
-    color: hsl(var(--muted-foreground));
-  }
-  
-  .json-status {
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-  
-  .valid-json {
-    color: hsl(var(--success));
-    background-color: hsl(var(--success) / 0.2);
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-  
-  .invalid-json {
-    color: hsl(var(--destructive));
-    background-color: hsl(var(--destructive) / 0.2);
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-  }
-  
-  .code-editor-container {
-    margin-bottom: 1rem;
-  }
-  
-  .code-editor-tools {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-  
-  .format-button {
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    background-color: hsl(var(--secondary));
-    border: 1px solid hsl(var(--border));
-    border-radius: 0.25rem;
-    cursor: pointer;
-    color: hsl(var(--secondary-foreground));
-    transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-  }
-  
-  .format-button:hover {
-    background-color: hsl(var(--secondary) / 0.8);
-  }
-  
-  .helper-toggle {
-    margin-top: 0.5rem;
-    display: flex;
-    justify-content: flex-start;
-  }
-  
-  .toggle-button {
-    background: none;
-    border: none;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.875rem;
-    color: hsl(var(--primary));
-    cursor: pointer;
-    padding: 0.25rem 0;
-  }
-  
-  .toggle-icon {
-    font-size: 1rem;
-    width: 1rem;
-    text-align: center;
-    line-height: 1;
-  }
-  
-  .toggle-text {
-    font-weight: 500;
-  }
-  
-  .custom-fields-help {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background-color: hsl(var(--background));
-    border-radius: 0.375rem;
-    font-size: 0.8125rem;
-    color: hsl(var(--foreground));
-  }
-  
-  .custom-fields-help p {
-    margin-top: 0;
-    margin-bottom: 0.5rem;
-  }
-  
-  .custom-fields-help ul {
-    margin: 0.5rem 0;
-    padding-left: 1.5rem;
-  }
-  
-  .custom-fields-help li {
-    margin-bottom: 0.25rem;
-    color: hsl(var(--muted-foreground));
-  }
-  
-  .example-json {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px dashed hsl(var(--border));
-  }
-  
-  .example-json pre {
-    background-color: hsl(var(--input));
-    border: 1px solid hsl(var(--border));
-    border-radius: 0.375rem;
-    padding: 0.75rem;
-    margin: 0.5rem 0 0;
-    font-size: 0.75rem;
-    overflow: auto;
-    color: hsl(var(--foreground));
-  }
+
+
   
   .modal-overlay {
     position: fixed;
@@ -620,9 +426,7 @@
       grid-template-columns: 1fr;
     }
     
-    .form-row {
-      grid-template-columns: 1fr;
-    }
+  
     
     .form-actions {
       flex-direction: column;

@@ -285,14 +285,15 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	// Manufacturer creation
+	// Manufacturer creation and update
 	manufacturer: async (event) => {
 		const { request, locals } = event;
 		const user = locals.user as User | null;
 		if (!user) return fail(401, { message: 'Unauthorized' });
 		
-		// Use the same schema as the manufacturer page but add custom_fields_json
-		const createManufacturerSchema = z.object({
+		// Use the same schema as the manufacturer page but add custom_fields_json and id for editing
+		const manufacturerActionSchema = z.object({
+			id: z.string().optional(), // Include ID for updates
 			name: z.string().min(1, 'Name is required'),
 			description: z.string().optional().nullable(),
 			website_url: z.string().url('Invalid URL format').optional().nullable(),
@@ -301,7 +302,7 @@ export const actions: Actions = {
 		});
 		
 		// Validate form data using superForm
-		const form = await superValidate(request, zod(createManufacturerSchema));
+		const form = await superValidate(request, zod(manufacturerActionSchema));
 		console.log('Manufacturer form data:', JSON.stringify(form.data, null, 2));
 		
 		if (!form.valid) {
@@ -322,14 +323,61 @@ export const actions: Actions = {
 				}
 			}
 
-			// Create the manufacturer first
-			const manufacturer = await createManufacturer({
-				name: form.data.name,
-				description: form.data.description ?? undefined,
-				websiteUrl: form.data.website_url ?? undefined,
-				logoUrl: form.data.logo_url ?? undefined,
-				createdBy: user.id
-			});
+			// Check if we're updating an existing manufacturer or creating a new one
+			let manufacturer;
+			const isUpdate = form.data.id && form.data.id.trim() !== '';
+			console.log(`${isUpdate ? 'Updating' : 'Creating'} manufacturer`, form.data);
+
+			if (isUpdate) {
+				// First verify this user is allowed to edit this manufacturer
+				const existingManufacturer = await sql`
+					SELECT id, created_by FROM manufacturer 
+					WHERE id = ${form.data.id}
+				`;
+
+				if (existingManufacturer.length === 0) {
+					return message(form, 'Manufacturer not found', { status: 404 });
+				}
+
+				if (existingManufacturer[0].created_by !== user.id) {
+					return message(form, 'You are not authorized to edit this manufacturer', { status: 403 });
+				}
+
+				// Update the manufacturer
+				await sql`
+					UPDATE manufacturer 
+					SET 
+						name = ${form.data.name},
+						description = ${form.data.description},
+						website_url = ${form.data.website_url},
+						logo_url = ${form.data.logo_url},
+						updated_by = ${user.id},
+						updated_at = NOW()
+					WHERE id = ${form.data.id}
+				`;
+
+				manufacturer = {
+					id: form.data.id,
+					name: form.data.name,
+					description: form.data.description,
+					websiteUrl: form.data.website_url,
+					logoUrl: form.data.logo_url
+				};
+
+				// Delete existing custom fields for this manufacturer
+				await sql`
+					DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${form.data.id}
+				`;
+			} else {
+				// Create a new manufacturer
+				manufacturer = await createManufacturer({
+					name: form.data.name,
+					description: form.data.description ?? undefined,
+					websiteUrl: form.data.website_url ?? undefined,
+					logoUrl: form.data.logo_url ?? undefined,
+					createdBy: user.id
+				});
+			}
 
 			// If we have custom fields, insert them into the manufacturercustomfield table
 			if (Object.keys(customFields).length > 0) {
@@ -368,7 +416,7 @@ export const actions: Actions = {
 			}
 			
 			// Return success message for superForm to display
-			return message(form, 'Manufacturer created successfully!');
+			return message(form, isUpdate ? 'Manufacturer updated successfully!' : 'Manufacturer created successfully!');
 		} catch (err) {
 			console.error('Create manufacturer error:', err);
 			// Return error message for superForm to display
