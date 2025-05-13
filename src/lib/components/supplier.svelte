@@ -252,10 +252,13 @@
                 </div>
             </div>
             
-            <div class="actions">
-                <button on:click={startEdit}>Edit</button>
-                <button on:click={removeSupplier} class="danger">Delete</button>
-            </div>
+            <!-- Only show edit/delete buttons if user is logged in and created this supplier -->
+            {#if currentUserId && supplier.createdBy === currentUserId}
+                <div class="actions">
+                    <button on:click={startEdit} class="btn-edit">Edit</button>
+                    <button on:click={removeSupplier} class="danger">Delete</button>
+                </div>
+            {/if}
         </div>
     {:else}
         <div class="edit-mode">

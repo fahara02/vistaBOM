@@ -36,7 +36,7 @@ export async function GET({ url, cookies }: RequestEvent) {
 	function rowToUser(row: any): User {
 		// With porsager/postgres, results are objects with named properties
 		if (row && typeof row === 'object' && !Array.isArray(row)) {
-			// Object style access for porsager/postgres
+			// Object style access for porsager/postgres - with Date parsing
 			return {
 				id: row.id,
 				username: row.username,
@@ -45,9 +45,10 @@ export async function GET({ url, cookies }: RequestEvent) {
 				passwordHash: row.passwordHash,
 				googleId: row.googleId,
 				avatarUrl: row.avatarUrl,
-				createdAt: row.createdAt,
-				updatedAt: row.updatedAt,
-				lastLoginAt: row.lastLoginAt,
+				// Convert string dates to Date objects
+				createdAt: row.createdAt ? new Date(row.createdAt) : new Date(),
+				updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
+				lastLoginAt: row.lastLoginAt ? new Date(row.lastLoginAt) : null,
 				isActive: row.isActive,
 				isAdmin: row.isAdmin,
 				isDeleted: row.isDeleted

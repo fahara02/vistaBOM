@@ -16,11 +16,17 @@ export function generateSessionToken(): string {
 
 // src/lib/server/auth.ts
 export async function createSession(token: string, userId: string): Promise<Session> {
+	// Create Date objects
 	const expiresAt = new Date(Date.now() + 30 * DAY_IN_MS);
 	const lastUsed = new Date();
+	
+	// Format dates as ISO strings for postgres.js compatibility
+	const expiresAtStr = expiresAt.toISOString();
+	const lastUsedStr = lastUsed.toISOString();
+	
 	await sql`
 		INSERT INTO "Session" (id, user_id, expires_at, last_used)
-		VALUES (${token}, ${userId}, ${expiresAt}, ${lastUsed})
+		VALUES (${token}, ${userId}, ${expiresAtStr}::timestamp, ${lastUsedStr}::timestamp)
 	`;
 	return { id: token, userId, expiresAt, lastUsed };
 }
@@ -87,7 +93,9 @@ export async function validateSessionToken(
 	const renewThreshold = session.expiresAt.getTime() - DAY_IN_MS * 15;
 	if (Date.now() >= renewThreshold) {
 		const newExpiresAt = new Date(Date.now() + DAY_IN_MS * 30);
-		await sql`UPDATE "Session" SET expires_at = ${newExpiresAt} WHERE id = ${session.id}`;
+		// Convert to ISO string for postgres.js
+		const newExpiresAtStr = newExpiresAt.toISOString();
+		await sql`UPDATE "Session" SET expires_at = ${newExpiresAtStr}::timestamp WHERE id = ${session.id}`;
 		session.expiresAt = newExpiresAt;
 	}
 	return { session, user };

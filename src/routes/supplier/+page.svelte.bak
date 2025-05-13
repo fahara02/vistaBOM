@@ -22,68 +22,65 @@
 
 <h1>Suppliers</h1>
 
-<!-- Only show form if user is logged in -->
-{#if user}
-  <form method="POST" use:enhance class="create-form">
-    <h2>Add New Supplier</h2>
-    <div class="field">
-      <label for="name">Name</label>
-      <input id="name" name="name" bind:value={$form.name} required />
-      {#if $errors.name}
-        <span class="error">{$errors.name}</span>
+<form method="POST" use:enhance class="create-form">
+  <h2>Add New Supplier</h2>
+  <div class="field">
+    <label for="name">Name</label>
+    <input id="name" name="name" bind:value={$form.name} required />
+    {#if $errors.name}
+      <span class="error">{$errors.name}</span>
+    {/if}
+  </div>
+  <div class="field">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" bind:value={$form.description}></textarea>
+    {#if $errors.description}
+      <span class="error">{$errors.description}</span>
+    {/if}
+  </div>
+  <div class="field">
+    <label for="website_url">Website URL</label>
+    <input id="website_url" name="website_url" type="url" bind:value={$form.website_url} />
+    {#if $errors.website_url}
+      <span class="error">{$errors.website_url}</span>
+    {/if}
+  </div>
+  <div class="field">
+    <label for="contact_info">Contact Info</label>
+    <textarea 
+      id="contact_info" 
+      name="contact_info" 
+      bind:value={$form.contact_info} 
+      placeholder="Enter contact info in any format (JSON, key-value pairs, or simple text)" 
+      rows="4"
+    ></textarea>
+    <div class="helper-text">
+      <button type="button" class="text-button" on:click={() => showContactExamples = !showContactExamples}>
+        {showContactExamples ? 'Hide examples' : 'Show format examples'}
+      </button>
+      {#if showContactExamples}
+        <div class="examples">
+          {#each contactInfoExamples as example}
+            <div class="example">{example}</div>
+          {/each}
+        </div>
       {/if}
     </div>
-    <div class="field">
-      <label for="description">Description</label>
-      <textarea id="description" name="description" bind:value={$form.description}></textarea>
-      {#if $errors.description}
-        <span class="error">{$errors.description}</span>
-      {/if}
-    </div>
-    <div class="field">
-      <label for="website_url">Website URL</label>
-      <input id="website_url" name="website_url" type="url" bind:value={$form.website_url} />
-      {#if $errors.website_url}
-        <span class="error">{$errors.website_url}</span>
-      {/if}
-    </div>
-    <div class="field">
-      <label for="contact_info">Contact Info</label>
-      <textarea 
-        id="contact_info" 
-        name="contact_info" 
-        bind:value={$form.contact_info} 
-        placeholder="Enter contact info in any format (JSON, key-value pairs, or simple text)" 
-        rows="4"
-      ></textarea>
-      <div class="helper-text">
-        <button type="button" class="text-button" on:click={() => showContactExamples = !showContactExamples}>
-          {showContactExamples ? 'Hide examples' : 'Show format examples'}
-        </button>
-        {#if showContactExamples}
-          <div class="examples">
-            {#each contactInfoExamples as example}
-              <div class="example">{example}</div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-      {#if $errors.contact_info}
-        <span class="error">{$errors.contact_info}</span>
-      {/if}
-    </div>
-    <div class="field">
-      <label for="logo_url">Logo URL</label>
-      <input id="logo_url" name="logo_url" type="url" bind:value={$form.logo_url} />
-      {#if $errors.logo_url}
-        <span class="error">{$errors.logo_url}</span>
-      {/if}
-    </div>
-    <div class="actions">
-      <button type="submit">Create</button>
-    </div>
-  </form>
-{/if}
+    {#if $errors.contact_info}
+      <span class="error">{$errors.contact_info}</span>
+    {/if}
+  </div>
+  <div class="field">
+    <label for="logo_url">Logo URL</label>
+    <input id="logo_url" name="logo_url" type="url" bind:value={$form.logo_url} />
+    {#if $errors.logo_url}
+      <span class="error">{$errors.logo_url}</span>
+    {/if}
+  </div>
+  <div class="actions">
+    <button type="submit">Create</button>
+  </div>
+</form>
 
 {#each suppliers as supplier}
   <Supplier {supplier} currentUserId={user?.id} />

@@ -11,54 +11,50 @@
 </script>
 
 <h1>Manufacturers</h1>
-
-<!-- Only show Add button if user is logged in -->
-{#if user}
-  <button type="button" on:click={() => showForm = !showForm} class="toggle-btn">
-    {showForm ? 'Cancel' : 'Add Manufacturer'}
-  </button>
-  
-  {#if showForm}
-    <form method="POST" class="create-form">
-      <h2>Add New Manufacturer</h2>
-      <div class="field">
-        <label for="name">Name</label>
-        <input id="name" name="name" bind:value={$form.name} required />
-        {#if $errors.name}
-          <span class="error">{$errors.name}</span>
-        {/if}
-      </div>
-      <div class="field">
-        <label for="description">Description</label>
-        <textarea id="description" name="description" bind:value={$form.description}></textarea>
-        {#if $errors.description}
-          <span class="error">{$errors.description}</span>
-        {/if}
-      </div>
-      <div class="field">
-        <label for="website_url">Website URL</label>
-        <input id="website_url" name="website_url" type="url" bind:value={$form.website_url} />
-        {#if $errors.website_url}
-          <span class="error">{$errors.website_url}</span>
-        {/if}
-      </div>
-      <div class="field">
-        <label for="logo_url">Logo URL</label>
-        <input id="logo_url" name="logo_url" type="url" bind:value={$form.logo_url} />
-        {#if $errors.logo_url}
-          <span class="error">{$errors.logo_url}</span>
-        {/if}
-      </div>
-      <div class="actions">
-        <button type="submit">Create</button>
-      </div>
-    </form>
-  {/if}
+<button type="button" on:click={() => showForm = !showForm} class="toggle-btn">
+  {showForm ? 'Cancel' : 'Add Manufacturer'}
+</button>
+{#if showForm}
+  <form method="POST" class="create-form">
+    <h2>Add New Manufacturer</h2>
+    <div class="field">
+      <label for="name">Name</label>
+      <input id="name" name="name" bind:value={$form.name} required />
+      {#if $errors.name}
+        <span class="error">{$errors.name}</span>
+      {/if}
+    </div>
+    <div class="field">
+      <label for="description">Description</label>
+      <textarea id="description" name="description" bind:value={$form.description}></textarea>
+      {#if $errors.description}
+        <span class="error">{$errors.description}</span>
+      {/if}
+    </div>
+    <div class="field">
+      <label for="website_url">Website URL</label>
+      <input id="website_url" name="website_url" type="url" bind:value={$form.website_url} />
+      {#if $errors.website_url}
+        <span class="error">{$errors.website_url}</span>
+      {/if}
+    </div>
+    <div class="field">
+      <label for="logo_url">Logo URL</label>
+      <input id="logo_url" name="logo_url" type="url" bind:value={$form.logo_url} />
+      {#if $errors.logo_url}
+        <span class="error">{$errors.logo_url}</span>
+      {/if}
+    </div>
+    <div class="actions">
+      <button type="submit">Create</button>
+    </div>
+  </form>
 {/if}
 
 {#each manufacturers as manufacturer}
   <Manufacturer {manufacturer} currentUserId={user?.id} />
 {/each}
+
 <style>
   h1 {
     font-size: 2.5rem;

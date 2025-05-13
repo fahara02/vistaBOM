@@ -4,7 +4,6 @@
   import type { PageData } from './$types';
   import { goto } from '$app/navigation';
   import { parseContactInfo, formatContactInfoForDisplay } from '$lib/utils/util';
-  import type { ContactInfo } from '@/types/types';
   import { slide } from 'svelte/transition';
   
   export let data: PageData;
