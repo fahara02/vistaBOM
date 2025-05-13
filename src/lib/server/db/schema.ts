@@ -9,7 +9,7 @@ import {
 	StructuralRelationTypeEnum,
 	TemperatureUnitEnum,
 	WeightUnitEnum
-} from '$lib/server/db/types';
+} from '@/types/types';
 import { z } from 'zod';
 
 // Helper schema for JSONB fields where the exact structure is not fixed

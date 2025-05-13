@@ -2,28 +2,12 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   
-  import { onDestroy } from 'svelte';
-  import type { SuperForm } from 'sveltekit-superforms';
-  import type { SuperFormData } from 'sveltekit-superforms/client';
-  import type { z } from 'zod';
+  import type { ManufacturerFormData} from '@/types/formTypes';
+	import { validateJSON } from '@/utils/util';
   
-    // Using a type alias for Json since we can't import it directly
-  type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+
   
-  // Define the type for the form schema
-  interface ManufacturerFormData extends Record<string, unknown> {
-    id: string;
-    name: string;
-    description?: string | null;
-    website_url?: string | null;
-    logo_url?: string | null;
-    contact_info?: string | null; // Support contact_info field if present
-    custom_fields_json?: string | null; // Match the schema definition exactly (string | null)
-    created_by?: string | null;
-    created_at?: Date | string | null; // Make optional to match actual form data
-    updated_by?: string | null;
-    updated_at?: Date | string | null; // Make optional to match actual form data
-    }
+
     
     // Props - Accept the form in the proper format
     export let form: any; // SuperForm<ManufacturerFormData> | SuperFormData<ManufacturerFormData>;
@@ -75,16 +59,7 @@
       console.log('Direct form data:', form.data);
     }
     
-    // Validate JSON
-    function validateJSON(jsonString: string | undefined | null): boolean {
-      if (!jsonString) return true;
-      try {
-        JSON.parse(jsonString);
-        return true;
-      } catch (e) {
-        return false;
-      }
-    }
+
   </script>
   
   <div class="form-fields">

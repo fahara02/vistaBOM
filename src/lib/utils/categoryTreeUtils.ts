@@ -1,4 +1,4 @@
-import type { Category } from '$lib/server/db/types';
+import type { Category } from '@/types/types';
 
 /**
  * TreeNode represents a node in our custom category tree view

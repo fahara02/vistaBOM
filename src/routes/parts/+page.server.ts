@@ -1,6 +1,6 @@
 // src/routes/parts/+page.server.ts
 import type { PageServerLoad } from './$types';
-import { listParts } from '$lib/server/parts';
+import { listParts } from '@/core/parts';
 import { error } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async ({ locals }) => {

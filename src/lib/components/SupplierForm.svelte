@@ -4,26 +4,10 @@
   import type { SuperForm } from 'sveltekit-superforms';
   import type { SuperFormData } from 'sveltekit-superforms/client';
   import type { z } from 'zod';
-  import { parseContactInfo, formatContactInfoForDisplay } from '$lib/utils/util';
+  import { parseContactInfo, formatContactInfoForDisplay, validateJSON } from '$lib/utils/util';
+	import type { SupplierFormData,Json } from '@/types/formTypes';
 
-  // Using a type alias for Json since we can't import it directly
-  type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
-  // Define the type for the form schema with custom fields added for UI
-  interface SupplierFormData extends Record<string, unknown> {
-    id: string;
-    name: string;
-    description?: string | null;
-    website_url?: string | null;
-    contact_info?: Json | null;
-    logo_url?: string | null;
-    custom_fields_json?: string; // Additional field for form UI, not in DB schema
-    created_by?: string | null;
-    created_at: Date;
-    updated_by?: string | null;
-    updated_at: Date;
-  }
-  
   // Props
   export let form: SuperForm<SupplierFormData> | SuperFormData<SupplierFormData>;
   export let errors: any; // Form validation errors
@@ -98,16 +82,7 @@
     }
   }
   
-  // Validate JSON
-  function validateJSON(jsonString: string | undefined): boolean {
-    if (!jsonString) return true;
-    try {
-      JSON.parse(jsonString);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
+
 </script>
 
 <div class="form-fields">
@@ -181,7 +156,7 @@
     {#if formData.contact_info && !contactInfoFormatted}
       <!-- One-time initialization to format contact info for better display -->
       {@const formattedContact = formatContactInfoForDisplay(formData.contact_info)}
-      {@const _ = formattedContact && (formData.contact_info = formattedContact) && (contactInfoFormatted = true)}
+      {@const _ = formattedContact && (formData.contact_info = formattedContact as any) && (contactInfoFormatted = true)}
     {/if}
     <textarea 
       id="contact_info" 
@@ -198,7 +173,7 @@
       {#if formData && formData.contact_info}
         <div class="preview-heading">Contact Information Preview:</div>
         <div class="contact-list">
-          {#each (typeof formData.contact_info === 'object' && formData.contact_info ? formatContactInfoForDisplay(formData.contact_info as Json) : '').split(';') as contactItem}
+          {#each (typeof formData.contact_info === 'object' && formData.contact_info ? formatContactInfoForDisplay(formData.contact_info) : '').split(';') as contactItem}
             {#if contactItem.trim()}
               <div class="contact-item">
                 {#if contactItem.toLowerCase().includes('email')}
@@ -358,14 +333,15 @@
   
   input.form-control,
   textarea.form-control,
-  select.form-control {
+  input, textarea {
+    width: 100%;
     padding: 0.75rem;
-    border-radius: 0.375rem;
     border: 1px solid hsl(var(--input-border));
+    border-radius: 4px;
     font-size: 1rem;
-    color: hsl(var(--input-foreground));
     background-color: hsl(var(--input));
-    transition: border-color 0.15s, background-color 0.3s, color 0.3s;
+    color: hsl(var(--input-foreground));
+    transition: border-color 0.15s, background-color 0.3s, color 0.3s, box-shadow 0.15s;
   }
   
   .form-group input:focus,

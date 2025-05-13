@@ -3,7 +3,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { updateManufacturer, deleteManufacturer } from '$lib/server/manufacturer.js';
+import { updateManufacturer, deleteManufacturer } from '@/core/manufacturer.js';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!locals.user) {

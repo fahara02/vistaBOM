@@ -3,7 +3,7 @@
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from '$lib/env';
 import { createSession, generateSessionToken } from '$lib/server/auth';
 import sql from '$lib/server/db/index'; // Using the consolidated postgres client
-import type { User } from '$lib/server/db/types';
+import type { User } from '@/types/types';
 import type { RequestEvent } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';

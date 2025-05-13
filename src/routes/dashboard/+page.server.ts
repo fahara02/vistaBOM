@@ -1,25 +1,25 @@
 //src/routes/dashboard/+page.server.ts
 import sql from '$lib/server/db/index';
 import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum, TemperatureUnitEnum } from '$lib/types';
-import type { Project } from '$lib/server/db/types';
-import type { User } from '$lib/server/db/types';
+import type { Project } from '@/types/types';
+import type { User } from '@/types/types';
 import { fail, redirect } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import type { Actions, PageServerLoad } from './$types';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import { createPartSchema, manufacturerSchema, categorySchema } from '$lib/server/db/schema';
-import { createPart, getPartWithCurrentVersion } from '$lib/server/parts';
-import type { CreatePartInput } from '$lib/server/parts';
+import { createPart, getPartWithCurrentVersion } from '@/core/parts';
+import type { CreatePartInput } from '@/core/parts';
 
 // Extended input type that includes category and manufacturer relationships 
 type ExtendedPartInput = CreatePartInput & {
 	categoryIds?: string[];
 	manufacturerParts?: Array<{manufacturerId: string; partNumber: string}>;
 };
-import { createManufacturer } from '$lib/server/manufacturer';
-import { createSupplier } from '$lib/server/supplier';
-import { createCategory, getCategoryTree } from '$lib/server/category';
+import { createManufacturer } from '@/core/manufacturer';
+import { createSupplier } from '@/core/supplier';
+import { createCategory, getCategoryTree } from '@/core/category';
 import { z } from 'zod';
 import { parsePartJsonField } from '$lib/utils/util';
 
@@ -330,9 +330,11 @@ export const actions: Actions = {
 
 			if (isUpdate) {
 				// First verify this user is allowed to edit this manufacturer
+				// Use explicit query to avoid TypeScript errors with template literals
+				// Use proper type casting for PostgreSQL
 				const existingManufacturer = await sql`
 					SELECT id, created_by FROM manufacturer 
-					WHERE id = ${form.data.id}
+					WHERE id = ${form.data.id}::text
 				`;
 
 				if (existingManufacturer.length === 0) {
@@ -343,17 +345,23 @@ export const actions: Actions = {
 					return message(form, 'You are not authorized to edit this manufacturer', { status: 403 });
 				}
 
-				// Update the manufacturer
+				// Update the manufacturer - use separate variables to avoid template literal type issues
+				const name = form.data.name;
+				const description = form.data.description || null;
+				const website_url = form.data.website_url || null;
+				const logo_url = form.data.logo_url || null;
+				const id = form.data.id;
+				
 				await sql`
 					UPDATE manufacturer 
 					SET 
-						name = ${form.data.name},
-						description = ${form.data.description},
-						website_url = ${form.data.website_url},
-						logo_url = ${form.data.logo_url},
-						updated_by = ${user.id},
+						name = ${name}::text,
+						description = ${description}::text,
+						website_url = ${website_url}::text,
+						logo_url = ${logo_url}::text,
+						updated_by = ${user.id}::text,
 						updated_at = NOW()
-					WHERE id = ${form.data.id}
+					WHERE id = ${id}::text
 				`;
 
 				manufacturer = {
@@ -365,9 +373,7 @@ export const actions: Actions = {
 				};
 
 				// Delete existing custom fields for this manufacturer
-				await sql`
-					DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${form.data.id}
-				`;
+				await sql`DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${form.data.id}::text`;
 			} else {
 				// Create a new manufacturer
 				manufacturer = await createManufacturer({
@@ -409,8 +415,8 @@ export const actions: Actions = {
 
 					// Associate this custom field with the manufacturer
 					await sql`
-						INSERT INTO manufacturercustomfield (manufacturer_id, field_id, value)
-						VALUES (${manufacturer.id}, ${fieldId}, ${String(fieldValue)})
+						INSERT INTO manufacturercustomfield (id, manufacturer_id, field_name, field_value, data_type, created_by, created_at)
+						VALUES (${randomUUID()}, ${manufacturer.id}::text, ${fieldName}::text, ${String(fieldValue)}::text, ${dataType}::text, ${user.id}::text, NOW())
 					`;
 				}
 			}

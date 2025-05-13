@@ -2,7 +2,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import { PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, LifecycleStatusEnum, PartStatusEnum, type Dimensions } from '$lib/types';
+  import { PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, LifecycleStatusEnum, PartStatusEnum, type Dimensions } from '@/types/types';
   import type { SuperForm } from 'sveltekit-superforms';
   import type { SuperFormData } from 'sveltekit-superforms/client';
   import type { ValidationErrors } from 'sveltekit-superforms';
@@ -11,57 +11,7 @@
   import MultiCategorySelector from './MultiCategorySelector.svelte';
  
   import ManufacturerSelector from './ManufacturerSelector.svelte';
-
-  // Define a type for the form data
-  interface FormData {
-    id?: string;
-    part_id?: string;
-    name: string;
-    version: string;
-    status: string;
-    part_status?: string;
-    short_description?: string;
-    functional_description?: string;
-    long_description?: string | Record<string, any>;
-    technical_specifications?: Record<string, any>;
-    properties?: Record<string, any>;
-    electrical_properties?: Record<string, any>;
-    mechanical_properties?: Record<string, any>;
-    thermal_properties?: Record<string, any>;
-    material_composition?: Record<string, any>;
-    environmental_data?: Record<string, any>;
-    dimensions?: Dimensions;
-    dimensions_unit?: string;
-    weight?: number;
-    weight_unit?: string;
-    package_type?: string;
-    pin_count?: number;
-    operating_temperature_min?: number;
-    operating_temperature_max?: number;
-    storage_temperature_min?: number;
-    storage_temperature_max?: number;
-    temperature_unit?: string;
-    voltage_rating_min?: number;
-    voltage_rating_max?: number;
-    current_rating_min?: number;
-    current_rating_max?: number;
-    power_rating_max?: number;
-    tolerance?: number;
-    tolerance_unit?: string;
-    revision_notes?: string;
-    category_ids?: string;
-    manufacturer_parts?: string;
-    [key: string]: any; // Allow for additional fields
-  }
-
-
-
-  // Helper function to convert string/number to number or null if invalid
-  function parseFloatOrNull(value: string | number | null | undefined): number | null {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = typeof value === 'string' ? parseFloat(value) : value;
-    return isNaN(parsed) ? null : parsed;
-  }
+ 
 
   // Define a snake_case version of the schema to handle both naming conventions
   type SnakeCasePartSchema = {
@@ -98,13 +48,13 @@
   // Combine both schema versions into a flexible type
   type FlexiblePartSchema = z.infer<typeof createPartSchema> | SnakeCasePartSchema;
 
-  export let form: SuperForm<FlexiblePartSchema> | SuperFormData<FlexiblePartSchema> | FormData;
+  export let form: SuperForm<FlexiblePartSchema> | SuperFormData<FlexiblePartSchema> | PartsFormData;
   // Accept any error type - can be Record<string, string[]>, ValidationErrors, or SuperFormErrors
   // Since SuperFormErrors has a subscribe method and additional properties
   export let errors: any = null;
 
   // Helper function to extract the data from form (regardless of form type)
-  function getData(form: SuperForm<FlexiblePartSchema> | SuperFormData<FlexiblePartSchema> | FormData): Record<string, unknown> {
+  function getData(form: SuperForm<FlexiblePartSchema> | SuperFormData<FlexiblePartSchema> | PartsFormData): Record<string, unknown> {
     let data;
     
     if ('form' in form) {
@@ -163,6 +113,8 @@
 
   // Initialize form fields on component mount to prevent null references
   import { onMount } from 'svelte';
+	import { parseFloatOrNull } from '@/utils/util';
+	import type { PartsFormData } from '@/types/formTypes';
 
   // Create reactive variables for form data binding
   $: formData = getData(form);
@@ -779,7 +731,21 @@
     border: 1px solid hsl(var(--border));
     border-radius: 6px;
     overflow: hidden;
-    transition: border-color 0.3s, box-shadow 0.3s;
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+    box-shadow: 0 2px 6px hsl(var(--muted) / 0.1);
+  }
+  
+  :global(.dark) .form-section {
+    box-shadow: 0 3px 8px hsl(var(--muted) / 0.3);
+  }
+  
+  .form-section:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px hsl(var(--muted) / 0.15);
+  }
+  
+  :global(.dark) .form-section:hover {
+    box-shadow: 0 4px 12px hsl(var(--muted) / 0.4);
   }
   
   .section-header {
@@ -871,6 +837,11 @@
     font-size: 0.8rem;
     color: hsl(var(--muted-foreground));
     margin-top: 0.25rem;
+    transition: color 0.3s;
+  }
+  
+  :global(.dark) .hint {
+    color: hsl(var(--muted-foreground) / 0.9);
   }
   
   .error {
@@ -926,5 +897,21 @@
   .active .section-header {
     background-color: hsl(var(--primary) / 0.1);
     border-bottom: 1px solid hsl(var(--primary) / 0.2);
+  }
+  
+  :global(.dark) .active .section-header {
+    background-color: hsl(var(--primary) / 0.2);
+  }
+  
+  :global(.dark) .section-content {
+    background-color: hsl(var(--card-foreground) / 0.02);
+  }
+  
+  :global(.dark) .section-header:hover {
+    background-color: hsl(var(--accent) / 0.2);
+  }
+  
+  .section-header:hover {
+    background-color: hsl(var(--accent) / 0.1);
   }
 </style>

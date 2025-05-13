@@ -1,7 +1,7 @@
  <!-- src/lib/components/CategoryItem.svelte -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { Category } from '$lib/server/db/types';
+  import type { Category } from '@/types/types';
   export let category: Category;
   /** current user ID executing actions */
   export let currentUserId: string | undefined;

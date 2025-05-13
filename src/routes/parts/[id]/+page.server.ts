@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getPartWithCurrentVersion, deletePart } from '$lib/server/parts';
+import { getPartWithCurrentVersion, deletePart } from '@/core/parts';
 import { redirect, error } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async ({ params }) => {

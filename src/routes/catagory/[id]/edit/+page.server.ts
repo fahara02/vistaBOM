@@ -5,7 +5,7 @@ import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db';
-import type { Category } from '$lib/server/db/types';
+import type { Category } from '@/types/types';
 
 // Define schema for category validation
 const rawSchema = z.object({

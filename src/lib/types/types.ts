@@ -531,3 +531,14 @@ export interface DatabaseSchema {
 	BOMItemSubstitute: BOMItemSubstitute;
 	// Add other tables if needed, e.g., ChangeLog if implemented
 }
+
+// export type ManufacturerPart = {
+//     id?: string;
+//     manufacturer_id: string;
+//     manufacturer_name?: string; // For display purposes
+//     manufacturer_part_number: string;
+//     description?: string;
+//     datasheet_url?: string;
+//     product_url?: string;
+//     is_recommended: boolean;
+//   };

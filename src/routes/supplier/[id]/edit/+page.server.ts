@@ -1,7 +1,7 @@
 // src/routes/supplier/[id]/edit/+page.server.ts
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
-import { getSupplier } from '$lib/server/supplier';
+import { getSupplier } from '@/core/supplier';
 import { z } from 'zod';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';

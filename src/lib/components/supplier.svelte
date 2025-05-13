@@ -1,18 +1,10 @@
 <!-- src/lib/components/supplier.svelte -->
 <script lang="ts">
-    import type { Supplier } from '$lib/types';
-    import type { ContactInfo } from '$lib/types/contact';
-    import { parseContactInfo } from '$lib/types/contact';
+    import type { Supplier } from '$lib/types';    
+	import { formatFieldName, processContactInfo } from '@/utils/util';
     import { onDestroy } from 'svelte';
     
-    // Format field names from camelCase to Title Case with spaces
-    function formatFieldName(fieldName: string): string {
-        // Add space before capital letters and capitalize the first letter
-        const formatted = fieldName
-            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-            .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
-        return formatted.trim();
-    }
+
 
     export let supplier: Supplier;
     export let currentUserId: string;
@@ -24,78 +16,7 @@
     let contactInfoString = '';
     let abortController = new AbortController();
     
-    // Process contact info into structured data with email, phone, address and other fields
-    function processContactInfo(info: any): { email?: string; phone?: string; address?: string; text?: string; other: {key: string; value: string}[] } {
-        const result = { email: undefined, phone: undefined, address: undefined, text: undefined, other: [] } as {
-            email?: string;
-            phone?: string;
-            address?: string;
-            text?: string;
-            other: {key: string; value: string}[];
-        };
-        
-        if (!info) return result;
-        
-        let jsonData: Record<string, any> = {};
-        
-        // Handle different input formats
-        if (typeof info === 'string') {
-            try {
-                // Try parsing as JSON
-                if (info.trim().startsWith('{')) {
-                    jsonData = JSON.parse(info);
-                } else if (info.includes(':')) {
-                    // Handle key-value format (email: value; phone: value)
-                    const pairs = info.split(/[;,\n]+/);
-                    
-                    for (const pair of pairs) {
-                        const parts = pair.split(':');
-                        if (parts.length >= 2) {
-                            const key = parts[0].trim().toLowerCase();
-                            const value = parts.slice(1).join(':').trim();
-                            
-                            if (key.includes('email')) jsonData.email = value;
-                            else if (key.includes('phone') || key.includes('tel')) jsonData.phone = value;
-                            else if (key.includes('address')) jsonData.address = value;
-                            else jsonData[key] = value;
-                        }
-                    }
-                } else {
-                    // Treat as plain text
-                    result.text = info;
-                    return result;
-                }
-            } catch (e) {
-                // If JSON parsing fails, treat as plain text
-                result.text = info;
-                return result;
-            }
-        } else if (typeof info === 'object' && info !== null) {
-            jsonData = info;
-        }
-        
-        // Extract known fields
-        if ('email' in jsonData && typeof jsonData.email === 'string') {
-            result.email = jsonData.email;
-        }
-        
-        if ('phone' in jsonData && typeof jsonData.phone === 'string') {
-            result.phone = jsonData.phone;
-        }
-        
-        if ('address' in jsonData && typeof jsonData.address === 'string') {
-            result.address = jsonData.address;
-        }
-        
-        // Handle additional fields
-        for (const [key, value] of Object.entries(jsonData)) {
-            if (!['email', 'phone', 'address'].includes(key) && typeof value === 'string') {
-                result.other.push({ key, value });
-            }
-        }
-        
-        return result;
-    }
+
     
     // Prepare contact info for display
     const getContactInfo = (contactInfoInput: any) => {

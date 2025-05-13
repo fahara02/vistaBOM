@@ -2,7 +2,7 @@
 import { partVersionSchema, partVersionEditSchema } from '$lib/server/db/schema';
 // Import types from lib/types.ts for client-side compatibility
 import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, PartStatusEnum, TemperatureUnitEnum, DimensionUnitEnum } from '$lib/types';
-import { createPartVersion, getPartWithCurrentVersion, updatePartWithStatus } from '$lib/server/parts';
+import { createPartVersion, getPartWithCurrentVersion, updatePartWithStatus } from '@/core/parts';
 import { error, fail } from '@sveltejs/kit';
 import { zod } from 'sveltekit-superforms/adapters';
 import { superValidate } from 'sveltekit-superforms/server';

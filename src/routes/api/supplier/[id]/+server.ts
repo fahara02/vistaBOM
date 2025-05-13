@@ -2,7 +2,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { updateSupplier, deleteSupplier } from '$lib/server/supplier';
+import { updateSupplier, deleteSupplier } from '@/core/supplier';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!locals.user) {

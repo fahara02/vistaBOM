@@ -1,6 +1,6 @@
 // src/lib/types.ts
 // Expose server-side types for client-side import (type-only)
-export type { Manufacturer, Category, Supplier, JsonValue, Part, PartVersion , Dimensions} from '$lib/server/db/types';
+export type { Manufacturer, Category, Supplier, JsonValue, Part, PartVersion , Dimensions} from '@/types/types';
 
 // CLIENT-SIDE ENUM DEFINITIONS - EXACT COPY OF SERVER VALUES
 // These definitions are direct copies of types in server/db/types.ts

@@ -1,6 +1,6 @@
 // src/routes/+layout.server.ts
 import sql from '$lib/server/db/index';
-import type { User } from '$lib/server/db/types';
+import type { User } from '@/types/types';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ cookies }) => {

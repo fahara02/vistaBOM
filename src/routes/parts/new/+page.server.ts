@@ -1,14 +1,14 @@
 //src/routes/part/new/+page.server.ts
 
-import { createPart } from '$lib/server/parts';
-import type { CreatePartInput } from '$lib/server/parts';
+import { createPart } from '@/core/parts';
+import type { CreatePartInput } from '@/core/parts';
 import type { PageServerLoad, Actions } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
 import { createPartSchema } from '$lib/server/db/schema';
 // Server-side code should import directly from server types
-import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum } from '$lib/server/db/types';
+import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum } from '@/types/types';
 
 /**
  * Load function - initializes the form and loads lifecycle statuses

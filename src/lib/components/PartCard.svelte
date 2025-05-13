@@ -1,47 +1,10 @@
 <script lang="ts">
-  import type { Part, PartVersion } from '$lib/types';
+  import type { Part, PartVersion } from '@/types/types';
   import { formatDate } from '$lib/utils';
+	import { displayJSONData, formatUsername, formatWithUnit } from '@/utils/util';
   export let part: Part;
   export let currentVersion: PartVersion;
 
-  // Helper function to format values with units
-  function formatWithUnit(value: number | null | undefined, unit: string | null | undefined, defaultText = 'Not specified'): string {
-    if (value === null || value === undefined) return defaultText;
-    return `${value}${unit ? ` ${unit}` : ''}`;
-  }
-
-  // Function to display JSON data in a readable format
-  function displayJSONData(jsonData: any): { key: string, value: string }[] {
-    if (!jsonData) return [];
-    
-    try {
-      const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-      return Object.entries(data).map(([key, value]) => ({
-        key: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
-        value: typeof value === 'object' ? JSON.stringify(value) : String(value)
-      }));
-    } catch (e) {
-      console.error('Error parsing JSON data:', e);
-      return [];
-    }
-  }
-
-  // Function to format creator/updater name
-  function formatUsername(userId: string | null | undefined): string {
-    if (!userId) return 'System';
-    // In a real app, you would look up the username from the user ID
-    // For now, we'll just show a formatted version
-    return `User ${userId.substring(0, 8)}`;
-  }
-
-//   // Safely get family/category from part or version
-//   function getCategory(): string {
-//     return part.category || 'Not specified';
-//   }
-  
-//   function getFamily(): string {
-//     return part.family || 'Not specified';
-//   }
 </script>
 
 <div class="part-card">
@@ -289,7 +252,12 @@
   </div>
   
   <style>
-    .part-card { max-width: 960px; margin: 1rem auto; color: #333; }
+    .part-card { 
+      max-width: 960px; 
+      margin: 1rem auto; 
+      color: hsl(var(--foreground)); 
+      transition: color 0.3s, background-color 0.3s;
+    }
     
     .card-header {
       margin-bottom: 1.5rem;
@@ -302,8 +270,9 @@
     
     .part-number {
       font-size: 1rem;
-      color: #666;
+      color: hsl(var(--muted-foreground));
       font-weight: normal;
+      transition: color 0.3s;
     }
     
     .status-badges {
@@ -321,46 +290,54 @@
     }
     
     .status-badge {
-      background-color: #007bff;
-      color: white;
+      background-color: hsl(var(--primary));
+      color: hsl(var(--primary-foreground));
+      transition: background-color 0.3s, color 0.3s;
     }
     
     .lifecycle-badge {
-      background-color: #6c757d;
-      color: white;
+      background-color: hsl(var(--secondary));
+      color: hsl(var(--secondary-foreground));
+      transition: background-color 0.3s, color 0.3s;
     }
     
     .public-badge {
-      background-color: #28a745;
-      color: white;
+      background-color: hsl(var(--success));
+      color: hsl(var(--success-foreground));
+      transition: background-color 0.3s, color 0.3s;
     }
     
     .card { 
       padding: 1.5rem; 
       margin-bottom: 1.5rem; 
-      border: 1px solid #e0e0e0; 
+      border: 1px solid hsl(var(--border)); 
       border-radius: 8px; 
-      background: #fff; 
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      background: hsl(var(--card)); 
+      box-shadow: 0 2px 4px hsl(var(--muted) / 0.1);
+      transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
     }
     
     h2 {
       font-size: 1.4rem;
       margin-bottom: 1rem;
       padding-bottom: 0.5rem;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid hsl(var(--border));
+      color: hsl(var(--foreground));
+      transition: color 0.3s, border-color 0.3s;
     }
     
     h3 {
       font-size: 1.2rem;
       margin: 1rem 0 0.75rem 0;
-      color: #555;
+      color: hsl(var(--foreground));
+      transition: color 0.3s;
     }
     
     h4 {
       font-size: 1.1rem;
       margin: 0.75rem 0;
-      color: #666;
+      color: hsl(var(--muted-foreground));
+      transition: color 0.3s;
     }
     
     .grid-2 {
@@ -383,8 +360,9 @@
     
     .subsection {
       margin-bottom: 2rem;
-      border-bottom: 1px dashed #e0e0e0;
+      border-bottom: 1px dashed hsl(var(--border));
       padding-bottom: 1rem;
+      transition: border-color 0.3s;
     }
     
     .subsection:last-child {
@@ -399,14 +377,16 @@
     
     strong {
       font-weight: 600;
-      color: #444;
+      color: hsl(var(--foreground));
+      transition: color 0.3s;
     }
     
     .json-data-section {
-      background-color: #f8f9fa;
+      background-color: hsl(var(--muted) / 0.3);
       border-radius: 6px;
       padding: 0.75rem 1rem;
       margin: 1rem 0;
+      transition: background-color 0.3s;
     }
     
     .json-data-grid {
@@ -423,7 +403,8 @@
     .json-data-key {
       font-weight: 500;
       min-width: 120px;
-      color: #555;
+      color: hsl(var(--foreground));
+      transition: color 0.3s;
     }
     
     .json-data-value {
@@ -432,18 +413,21 @@
     }
     
     .description {
-      background: #f9f9ff;
+      background: hsl(var(--accent) / 0.1);
       padding: 0.75rem 1rem;
       border-radius: 4px;
       margin: 1rem 0;
+      transition: background-color 0.3s;
     }
     
     .system-metadata {
-      background: #f9f9f9;
+      background: hsl(var(--surface-50));
+      transition: background-color 0.3s;
     }
     
     .tech-specs, .basic-info {
-      background: #ffffff;
+      background: hsl(var(--card));
+      transition: background-color 0.3s;
     }
     
     .actions { 
@@ -453,34 +437,37 @@
     }
     
     .btn { 
-      background: #007bff; 
-      color: #fff; 
+      background: hsl(var(--primary)); 
+      color: hsl(var(--primary-foreground)); 
       padding: 0.6rem 1.2rem; 
       border: none; 
       border-radius: 4px; 
       text-decoration: none; 
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background-color 0.3s, color 0.3s, transform 0.2s;
     }
     
     .btn:hover {
-      background: #0069d9;
+      background: hsl(var(--primary) / 0.9);
+      transform: translateY(-1px);
     }
     
     .btn-secondary {
-      background: #6c757d;
+      background: hsl(var(--secondary));
+      color: hsl(var(--secondary-foreground));
     }
     
     .btn-secondary:hover {
-      background: #5a6268;
+      background: hsl(var(--secondary) / 0.9);
     }
     
     .btn-danger { 
-      background: #dc3545; 
+      background: hsl(var(--destructive)); 
+      color: hsl(var(--destructive-foreground));
     }
     
     .btn-danger:hover {
-      background: #c82333;
+      background: hsl(var(--destructive) / 0.9);
     }
   </style>

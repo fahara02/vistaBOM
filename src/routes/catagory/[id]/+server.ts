@@ -2,7 +2,7 @@
 //src/routes/catagory/[id]/+server.ts
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { updateCategory, deleteCategory } from '$lib/server/category';
+import { updateCategory, deleteCategory } from '@/core/category';
 
 export const PUT: RequestHandler = async ({ params, request }) => {
   const id = params.id;

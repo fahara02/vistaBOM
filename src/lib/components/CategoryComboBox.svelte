@@ -7,7 +7,7 @@
   import * as Command from "$lib/components/ui/command/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { cn } from "$lib/utils.js";
-  import type { Category } from '$lib/server/db/types';
+  import type { Category } from '@/types/types';
   
   // Props
   export let categories: Category[] = [];

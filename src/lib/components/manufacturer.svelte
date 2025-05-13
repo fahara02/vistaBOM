@@ -1,7 +1,8 @@
 <!-- src/lib/components/manufacturer.svelte -->
 <script lang="ts">
     import { onDestroy } from 'svelte';
-    import type { Manufacturer } from '$lib/server/db/types';
+    import type { Manufacturer } from '@/types/types';
+	import { formatFieldName } from '@/utils/util';
 
     export let manufacturer: Manufacturer;
     export let currentUserId: string;
@@ -13,14 +14,7 @@
     let success: string | null = null;
     let abortController = new AbortController();
     
-    // Format field names from camelCase to Title Case with spaces
-    function formatFieldName(fieldName: string): string {
-        // Add space before capital letters and capitalize the first letter
-        const formatted = fieldName
-            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-            .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
-        return formatted.trim();
-    }
+
 
     onDestroy(() => {
         abortController.abort();

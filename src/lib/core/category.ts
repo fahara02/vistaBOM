@@ -1,6 +1,6 @@
 // src/lib/server/category.ts
 import sql from '$lib/server/db/index';
-import type { Category } from '$lib/server/db/types';
+import type { Category } from '@/types/types';
 
 /**
  * Sanitizes a category name for use in ltree paths.

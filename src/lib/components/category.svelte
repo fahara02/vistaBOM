@@ -2,10 +2,10 @@
 <script lang="ts">
     import { onDestroy, onMount } from 'svelte';
     import CategoryComboBox from './CategoryComboBox.svelte';
-    import type { Category } from '$lib/server/db/types';
+    import type { Category } from '@/types/types';
 
     export let category: any;
-    export let currentUserId: string;
+    export const currentUserId: string = ''; // Changed to const as it's not being used directly in the template
     export let allCategories: Category[] = [];
 
     let editMode = false;

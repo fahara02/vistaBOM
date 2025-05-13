@@ -1,7 +1,7 @@
 //src/routes/supplier/+page.server.ts
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
-import { listSuppliers, createSupplier } from '$lib/server/supplier';
+import { listSuppliers, createSupplier } from '@/core/supplier';
 import { supplierSchema } from '$lib/server/db/schema';
 import { parseContactInfo } from '$lib/utils/util';
 import { superValidate } from 'sveltekit-superforms';

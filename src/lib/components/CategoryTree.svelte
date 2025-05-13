@@ -1,7 +1,7 @@
 <!-- src/lib/components/CategoryTree.svelte -->
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Category } from '$lib/server/db/types';
+  import type { Category } from '@/types/types';
   import { categoriesToTreeNodes, selectAndExpandToNode } from '$lib/utils/categoryTreeUtils';
   import CategoryTreeNode from './CategoryTreeNode.svelte';
   

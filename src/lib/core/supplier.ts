@@ -1,6 +1,6 @@
 // src/lib/server/supplier.ts
 import sql from '$lib/server/db/index';
-import type { Supplier, JsonValue } from '$lib/server/db/types';
+import type { Supplier, JsonValue } from '@/types/types';
 
 // Helper to normalize supplier data from postgres result
 function normalizeSupplier(row: any): Supplier {

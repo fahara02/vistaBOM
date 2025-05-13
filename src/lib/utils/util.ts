@@ -1,5 +1,86 @@
 //src/lib/utils/util.ts
-import type { ContactInfo } from '$lib/server/db/types';
+import type { ContactInfo } from '@/types/types';
+
+
+
+    // Process contact info into structured data with email, phone, address and other fields
+   export  function processContactInfo(info: any): { email?: string; phone?: string; address?: string; text?: string; other: {key: string; value: string}[] } {
+      const result = { email: undefined, phone: undefined, address: undefined, text: undefined, other: [] } as {
+          email?: string;
+          phone?: string;
+          address?: string;
+          text?: string;
+          other: {key: string; value: string}[];
+      };
+      
+      if (!info) return result;
+      
+      let jsonData: Record<string, any> = {};
+      
+      // Handle different input formats
+      if (typeof info === 'string') {
+          try {
+              // Try parsing as JSON
+              if (info.trim().startsWith('{')) {
+                  jsonData = JSON.parse(info);
+              } else if (info.includes(':')) {
+                  // Handle key-value format (email: value; phone: value)
+                  const pairs = info.split(/[;,\n]+/);
+                  
+                  for (const pair of pairs) {
+                      const parts = pair.split(':');
+                      if (parts.length >= 2) {
+                          const key = parts[0].trim().toLowerCase();
+                          const value = parts.slice(1).join(':').trim();
+                          
+                          if (key.includes('email')) jsonData.email = value;
+                          else if (key.includes('phone') || key.includes('tel')) jsonData.phone = value;
+                          else if (key.includes('address')) jsonData.address = value;
+                          else jsonData[key] = value;
+                      }
+                  }
+              } else {
+                  // Treat as plain text
+                  result.text = info;
+                  return result;
+              }
+          } catch (e) {
+              // If JSON parsing fails, treat as plain text
+              result.text = info;
+              return result;
+          }
+      } else if (typeof info === 'object' && info !== null) {
+          jsonData = info;
+      }
+      
+      // Extract known fields
+      if ('email' in jsonData && typeof jsonData.email === 'string') {
+          result.email = jsonData.email;
+      }
+      
+      if ('phone' in jsonData && typeof jsonData.phone === 'string') {
+          result.phone = jsonData.phone;
+      }
+      
+      if ('address' in jsonData && typeof jsonData.address === 'string') {
+          result.address = jsonData.address;
+      }
+      
+      // Handle additional fields
+      for (const [key, value] of Object.entries(jsonData)) {
+          if (!['email', 'phone', 'address'].includes(key) && typeof value === 'string') {
+              result.other.push({ key, value });
+          }
+      }
+      
+      return result;
+  }
+  
+
+
+
+
+
 
 /**
  * Parses contact information from various formats and returns a JSON string
@@ -318,7 +399,7 @@ export function formatPartJsonFieldForDisplay(input: any, fieldName: string): st
  * @param input The contact info string to format
  * @returns Formatted string with key-value pairs separated by semicolons
  */
-export function formatContactInfoForDisplay(input: string | null | undefined): string {
+export function formatContactInfoForDisplay(input: string | null | undefined | any): string {
   if (!input || input.trim() === '') {
     return '';
   }
@@ -340,7 +421,7 @@ export function formatContactInfoForDisplay(input: string | null | undefined): s
       const pairs = cleanInput.split(/[;,\n]+/);
       
       // If it already looks like a formatted list, return as is
-      if (pairs.length > 1 && pairs.every(p => p.includes(':') || p.includes('='))) {
+      if (pairs.length > 1 && pairs.every((p: string) => p.includes(':') || p.includes('='))) {
         return cleanInput;
       }
       
@@ -398,3 +479,50 @@ export function validateJSON(jsonString: string | undefined | null): boolean {
     return false;
   }
 }
+  // Format field names from camelCase to Title Case with spaces
+export function formatFieldName(fieldName: string): string {
+  // Add space before capital letters and capitalize the first letter
+  const formatted = fieldName
+      .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+      .replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
+  return formatted.trim();
+}
+
+
+ // Helper function to convert string/number to number or null if invalid
+export function parseFloatOrNull(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'string' ? parseFloat(value) : value;
+  return isNaN(parsed) ? null : parsed;
+}
+  
+  // Function to format creator/updater name
+export  function formatUsername(userId: string | null | undefined): string {
+    if (!userId) return 'System';
+    // In a real app, you would look up the username from the user ID
+    // For now, we'll just show a formatted version
+    return `User ${userId.substring(0, 8)}`;
+  }
+   // Helper function to format values with units
+   export   function formatWithUnit(value: number | null | undefined, unit: string | null | undefined, defaultText = 'Not specified'): string {
+    if (value === null || value === undefined) return defaultText;
+    return `${value}${unit ? ` ${unit}` : ''}`;
+  }
+
+  // Function to display JSON data in a readable format
+  export  function displayJSONData(jsonData: any): { key: string, value: string }[] {
+    if (!jsonData) return [];
+    
+    try {
+      const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+      return Object.entries(data).map(([key, value]) => ({
+        key: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
+        value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+      }));
+    } catch (e) {
+      console.error('Error parsing JSON data:', e);
+      return [];
+    }
+  }
+
+

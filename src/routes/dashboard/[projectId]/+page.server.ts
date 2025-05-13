@@ -1,6 +1,6 @@
 // src/routes/dashboard/[projectId]/+page.server.ts
 import sql from '$lib/server/db/index';
-import type { Project, User, LifecycleStatusEnum } from '$lib/server/db/types';
+import type { Project, User, LifecycleStatusEnum } from '@/types/types';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 

@@ -1,6 +1,6 @@
 // src/lib/server/manufacturer.ts
 import sql from '$lib/server/db/index';
-import type { Manufacturer } from '$lib/server/db/types';
+import type { Manufacturer } from '@/types/types';
 
 // Helper to normalize manufacturer data from postgres result
 function normalizeManufacturer(row: any): Manufacturer {

@@ -1,6 +1,6 @@
 //src/lib/server/auth.ts
 import sql from '$lib/server/db/postgres';
-import type { Session, User } from '$lib/server/db/types';
+import type { Session, User } from '@/types/types';
 import { encodeBase64url } from '@oslojs/encoding';
 import type { RequestEvent } from '@sveltejs/kit';
 import { randomBytes } from 'crypto';
