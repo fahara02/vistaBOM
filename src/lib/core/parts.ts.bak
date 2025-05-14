@@ -413,13 +413,13 @@ export async function createPart(input: any, userId: string) {
             console.log('[createPart] Inserting part');
             
             // Insert the part record
-            // CRITICAL FIX: Using exact schema column names from schema.sql
             await transaction`
             INSERT INTO "Part" (
-                id, creator_id, status, lifecycle_status
+                id, creator_id, global_part_number, status, lifecycle_status
             ) VALUES (
-                ${partId}, 
+                ${partId},
                 ${userId}, 
+                ${input.name}, 
                 ${String(partStatusToUse).toLowerCase()}::part_status_enum, 
                 ${String(input.status).toLowerCase()}::lifecycle_status_enum
             )
@@ -428,125 +428,17 @@ export async function createPart(input: any, userId: string) {
             
             console.log('[createPart] Now inserting PartVersion');
             
-            // CRITICAL FIX: Process dimensions value properly WITHOUT losing user data
-            let dimensionsValue = null;
-            if (input.dimensions) {
-                console.log('[createPart] Processing dimensions:', input.dimensions, 'type:', typeof input.dimensions);
-                if (typeof input.dimensions === 'string') {
-                    try {
-                        // Try to parse as JSON if it looks like JSON
-                        if (input.dimensions.trim().startsWith('{')) {
-                            dimensionsValue = sql.json(JSON.parse(input.dimensions));
-                            console.log('[createPart] Parsed dimensions as JSON object');
-                        } else {
-                            // Not JSON format - preserve as custom object
-                            dimensionsValue = sql.json({value: input.dimensions, raw: true});
-                            console.log('[createPart] Stored dimensions as custom object');
-                        }
-                    } catch (e) {
-                        // If parsing fails, preserve the original string in an object
-                        console.log('[createPart] Error parsing dimensions, storing as raw:', e);
-                        dimensionsValue = sql.json({value: input.dimensions, raw: true});
-                    }
-                } else if (typeof input.dimensions === 'object') {
-                    // Already an object, just convert to JSON
-                    dimensionsValue = sql.json(input.dimensions);
-                    console.log('[createPart] Used dimensions object directly');
-                }
             }
             
-            // CRITICAL FIX: Process ALL JSON fields WITHOUT cherry-picking
-            // Log every field name to ensure nothing is being lost
-            console.log('[createPart] Processing ALL user input fields:');
-            console.log(Object.keys(input).map(k => `${k}: ${input[k] !== undefined ? 'present' : 'missing'}`).join(','));
-            
-            // Process JSON fields with improved error handling to preserve ALL user data
-            const processJsonField = (fieldValue: any, fieldName: string) => {
-                if (fieldValue === undefined || fieldValue === null) {
-                    console.log(`[createPart] Field ${fieldName} is null/undefined`);
-                    return null;
-                }
-                
-                if (typeof fieldValue === 'string') {
-                    try {
-                        // Check if it's already valid JSON
-                        if (fieldValue.trim().startsWith('{') || fieldValue.trim().startsWith('[')) {
-                            const parsed = JSON.parse(fieldValue);
-                            console.log(`[createPart] Field ${fieldName} is valid JSON string, parsing`);
-                            return sql.json(parsed);
-                        } else {
-                            // Not JSON, but still preserve the user's text input
-                            console.log(`[createPart] Field ${fieldName} is non-JSON string, preserving as raw`);
-                            return sql.json({value: fieldValue, raw: true});
-                        }
-                    } catch (e) {
-                        // If parsing fails, wrap the string in an object to preserve it
-                        console.log(`[createPart] Error parsing ${fieldName}, preserving as raw:`, e);
-                        return sql.json({value: fieldValue, raw: true});
-                    }
-                } else if (typeof fieldValue === 'object') {
-                    // Already an object, just make sure it's properly jsonified
-                    console.log(`[createPart] Field ${fieldName} is object, using directly`);
-                    return sql.json(fieldValue);
-                } else {
-                    // For other types (number, boolean, etc.), preserve the type info
-                    console.log(`[createPart] Field ${fieldName} is ${typeof fieldValue}, converting to object`);
-                    return sql.json({value: fieldValue, type: typeof fieldValue});
-                }
-            };
-            
-            // Process all JSON fields with proper error handling to prevent data loss
-            const technicalSpecsValue = processJsonField(input.technicalSpecifications, 'technicalSpecifications');
-            const propertiesValue = processJsonField(input.properties, 'properties');
-            const electricalPropsValue = processJsonField(input.electricalProperties, 'electricalProperties');
-            const mechanicalPropsValue = processJsonField(input.mechanicalProperties, 'mechanicalProperties');
-            const thermalPropsValue = processJsonField(input.thermalProperties, 'thermalProperties');
-            const materialCompValue = processJsonField(input.materialComposition, 'materialComposition');
-            const environDataValue = processJsonField(input.environmentalData, 'environmentalData');
-            const longDescValue = processJsonField(input.longDescription, 'longDescription');
-            
-            // CRITICAL FIX: Log complete data payload before database insertion to trace data loss
-            console.log('[createPart] FINAL PRE-INSERTION DATA DUMP');
-            console.log('------------ TRACE FOR DEBUGGING DATA LOSS ------------');
-            console.log('partId:', partId);
-            console.log('versionId:', versionId);
-            console.log('status:', input.status, typeof input.status);
-            console.log('dimensions:', JSON.stringify(dimensionsValue));
-            console.log('technicalSpecs:', JSON.stringify(technicalSpecsValue));
-            console.log('properties:', JSON.stringify(propertiesValue));
-            console.log('electrical:', JSON.stringify(electricalPropsValue));
-            console.log('mechanical:', JSON.stringify(mechanicalPropsValue));
-            console.log('thermal:', JSON.stringify(thermalPropsValue));
-            console.log('material:', JSON.stringify(materialCompValue));
-            console.log('environmental:', JSON.stringify(environDataValue));
-            console.log('long desc:', JSON.stringify(longDescValue));
-            console.log('dimensions unit:', input.dimensionsUnit);
-            console.log('weight:', input.weight);
-            console.log('weight unit:', input.weightUnit);
-            console.log('package type:', input.packageType);
-            console.log('pin count:', input.pinCount);
-            // Log all temperature-related fields
-            console.log('temperatures:', JSON.stringify({
-                min: input.operatingTemperatureMin,
-                max: input.operatingTemperatureMax,
-                storageMin: input.storageTemperatureMin,
-                storageMax: input.storageTemperatureMax,
-                unit: input.temperatureUnit
-            }));
-            // Log voltage ratings
-            console.log('voltages:', JSON.stringify({
-                min: input.voltageRatingMin,
-                max: input.voltageRatingMax
-            }));
-            // Log current ratings
-            console.log('currents:', JSON.stringify({
-                min: input.currentRatingMin,
-                max: input.currentRatingMax
-            }));
-            console.log('power max:', input.powerRatingMax);
-            console.log('tolerance:', input.tolerance);
-            console.log('tolerance unit:', input.toleranceUnit);
-            console.log('------------ END TRACE ------------');
+            // Process other JSON fields outside the SQL template
+            const technicalSpecsValue = input.technicalSpecifications ? sql.json(input.technicalSpecifications) : null;
+            const propertiesValue = input.properties ? sql.json(input.properties) : null;
+            const electricalPropsValue = input.electricalProperties ? sql.json(input.electricalProperties) : null;
+            const mechanicalPropsValue = input.mechanicalProperties ? sql.json(input.mechanicalProperties) : null;
+            const thermalPropsValue = input.thermalProperties ? sql.json(input.thermalProperties) : null;
+            const materialCompValue = input.materialComposition ? sql.json(input.materialComposition) : null;
+            const environDataValue = input.environmentalData ? sql.json(input.environmentalData) : null;
+            const longDescValue = input.longDescription ? sql.json(input.longDescription) : null;
             
             // Use a modified approach with named parameters to avoid syntax errors
             await transaction`

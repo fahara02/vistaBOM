@@ -103,53 +103,30 @@
 	
 	// Function to toggle part form visibility
 	function togglePartForm() {
-		// CRITICAL FIX: Don't reset user's data when showing/hiding the form
-		// This allows users to keep working on their capacitor details without losing data
-
 		// If we're closing the form and in edit mode, cancel the edit
 		if (showPartForm && editPartMode) {
 			cancelEditPart();
-			return; // Exit early to avoid toggling again
-		} 
-
-		// If we're opening the form for a new part, just reset edit mode flags
-		if (!showPartForm) {
-			// Reset edit mode flags only
-			editPartMode = false;
-			currentPartId = null;
-			
-			// CRITICAL FIX: DON'T reset the form data - preserve user's work!
-			// Only initialize essential fields if they're completely missing
-			if (!$partForm || typeof $partForm !== 'object') {
-				console.log('Initializing partForm with minimal defaults (only for completely missing form)');
-				$partForm = {
-					name: '',
-					version: '0.1.0',
-					status: LifecycleStatusEnum.DRAFT,
-					part_status: PartStatusEnum.ACTIVE
-				};
-			} else {
-				// Log existing form data for debugging
-				console.log('Preserving existing form data:', $partForm);
-			}
-			
-			// Just clear any form messages, but KEEP the form data!
-			$partMessage = '';
-			console.log('Showing part form while preserving user data');
-			
-			// CRITICAL FIX: DON'T reset the form component state!
-			// This was destroying all user input data
-			// if (partFormRef && typeof partFormRef.resetFormState === 'function') {
-			//     partFormRef.resetFormState();
-			//     console.log('PartForm component state reset');
-			// }
 		}
 		
 		// Toggle form visibility
 		showPartForm = !showPartForm;
-		console.log(`PartForm visibility toggled: ${showPartForm ? 'showing' : 'hiding'}`);
+		
+		// If we're opening the form for a new part, reset edit mode
+		if (showPartForm) {
+			editPartMode = false;
+			currentPartId = null;
+			// Reset form to default values for a new part
+			$partForm = {
+				name: '',
+				version: '0.1.0',
+				status: LifecycleStatusEnum.DRAFT,
+			    part_status: PartStatusEnum.ACTIVE,
+				short_description: ''
+				// Other fields will get default values from schema
+			};
+		}
 	}
-
+	
 	// All categories data for ComboBox in both create and edit forms
 	let allCategories: CategoryType[] = [];
 
@@ -162,100 +139,66 @@
 			// Called when the form is updated by SuperForm
 			console.log('SuperForm updated form data:', form);
 		},
-		// Enhanced validation and data extraction before form is submitted
-		validationMethod: 'onsubmit',
+		// Step 1: Add validation before form is submitted
+		validationMethod: 'submit',
 		onSubmit: ({ formData, cancel }) => {
 			try {
 				// Step 1: Check if component is available
 				if (!partFormRef) {
 					console.error('PartForm reference is not available');
-					$partMessage = 'Internal error: Form component not available';
 					cancel();
 					return;
 				}
-				
-				// Log important state for debugging
-				console.log(`Form submission started - Edit mode: ${editPartMode}, Part ID: ${currentPartId}`);
-				
 
-				// Step 2: Extract data from PartForm component and preserve user input
+				// Step 2: Extract data from PartForm component
 				const partData = partFormRef.prepareFormSubmission();
 				console.log('Form data extracted from PartForm component:', partData);
 				
-				// CRITICAL FIX: Create a completely new FormData object
-				// This eliminates the possibility of duplicate fields
-				formData = new FormData();
-				console.log('Created fresh FormData object to prevent duplicates');
+				// Step 3: Completely reset form data to avoid conflicts
+				Array.from(formData.keys()).forEach(key => formData.delete(key));
 				
-				// Add user input data with careful handling of each field type
-				const jsonFields = ['technical_specifications', 'properties', 'electrical_properties', 
-					'mechanical_properties', 'thermal_properties', 'material_composition', 
-					'environmental_data', 'long_description', 'dimensions'];
+				// Step 4: Set only required fields with fallbacks
+				formData.append('name', partData.name || 'New Part'); // Required
+				formData.append('version', partData.version || '0.1.0'); // Required
+				formData.append('status', partData.status || LifecycleStatusEnum.DRAFT); // Required
+				formData.append('part_status', partData.part_status || PartStatusEnum.CONCEPT); // Required
 				
-				// CRITICAL FIX: Backup the part data as-is before ANY processing for debugging
-				// This ensures we always have the original raw data for troubleshooting
-				console.log('BACKUP OF RAW USER DATA:', JSON.stringify(partData, null, 2));
-
-				// CRITICAL FIX: Update the SuperForm store with the COMPLETE form data
-				// This ensures the SuperForm validation sees the same data as the FormData
-				$partForm = {
-					...$partForm, // Keep any existing values as base
-					...partData // OVERRIDE with the latest data from the PartForm component
-				};
-				console.log('CRITICAL FIX: Updated SuperForm store with complete data:', $partForm);
-
-				// Process ALL fields without cherry-picking or filtering
+				// Only add optional enum fields if they actually have values
+				if (partData.weight_unit && partData.weight_unit !== '') {
+					formData.append('weight_unit', partData.weight_unit);
+				}
+				
+				if (partData.package_type && partData.package_type !== '') {
+					formData.append('package_type', partData.package_type);
+				}
+				
+				// Step 5: Add all other fields from partData
 				Object.entries(partData).forEach(([key, value]) => {
-					// Log each field for debugging purposes
-					console.log(`Processing field ${key} with value:`, value);
-
-					// CRITICAL FIX: PRESERVE ALL VALUES EXACTLY as provided by user
-					// Only exception is if name field is completely undefined/null (not empty string)
-					if (key === 'name') {
-						// Only use 'New Part' if name is strictly undefined or null (not an empty string)
-						const nameValue = (value === undefined || value === null) ? 'New Part' : String(value);
-						formData.append('name', nameValue);
-						console.log(`Using part name: '${nameValue}'`);
-					} else if (jsonFields.includes(key)) {
-						// Handle JSON fields carefully to preserve structure
-						if (value === undefined || value === null) {
-							// Preserve null as empty string for form submission
-							formData.append(key, '');
-							console.log(`Added empty string for null JSON field ${key}`);
-						} else if (typeof value === 'string') {
-							// For string values that might be JSON
-							try {
-								// Check if already valid JSON
-								JSON.parse(value);
-								// If it's valid JSON, use it directly
-								formData.append(key, value);
-								console.log(`Added valid JSON string for field ${key}`);
-							} catch (e) {
-								// Not a valid JSON string, convert to JSON object
-								formData.append(key, JSON.stringify({ value: value }));
-								console.log(`Converted non-JSON string to object for field ${key}`);
-							}
-						} else if (typeof value === 'object') {
-							// For object values, stringify without modification
+					// Skip already handled fields
+					if (['name', 'version', 'status', 'part_status'].includes(key)) {
+						return;
+					}
+					
+					if (value !== undefined && value !== null) {
+						if (typeof value === 'object') {
 							formData.append(key, JSON.stringify(value));
-							console.log(`Added stringified object for field ${key}`);
 						} else {
-							// For other types (number, boolean), convert to JSON
-							formData.append(key, JSON.stringify({ value: value }));
-							console.log(`Converted ${typeof value} to JSON for field ${key}`);
+							formData.append(key, String(value));
 						}
-					} else {
-						// For all non-JSON fields, append as-is
-						formData.append(key, value === null || value === undefined ? '' : String(value));
-						console.log(`Added regular field ${key}: ${value}`);
 					}
 				});
-
-				// Add partId if in edit mode
-				if (editPartMode && currentPartId) {
-					formData.append('partId', currentPartId);
-					console.log(`Added partId ${currentPartId} to form data for edit mode`);
-				}
+				
+				// Step 6: Update the SuperForm store with just the user data
+				// For optional fields, let the schema handle defaults at the server if needed
+				$partForm = {
+					...partData,
+					// Only required fields get fallbacks
+					name: partData.name || 'New Part',
+					version: partData.version || '0.1.0',
+					status: partData.status || LifecycleStatusEnum.DRAFT,
+					part_status: partData.part_status || PartStatusEnum.CONCEPT
+					// No defaults for optional fields
+				};
 
 				// Step 7: Debug verification
 				console.log('Critical values set directly in form:', {
@@ -270,22 +213,17 @@
 				}
 			} catch (error) {
 				console.error('Error preparing form data:', error);
-				$partMessage = `Error preparing form: ${error instanceof Error ? error.message : 'Unknown error'}`;
 				cancel();
 			}
 		},
 		onResult: ({ result }) => {
 			console.log('Form submission result:', result);
 			if (result.type === 'success') {
-				// Reset form state on success
-				editPartMode = false;
-				currentPartId = null;
 				showPartForm = false;
 				window.location.reload();
 			} else {
 				console.error('Form submission failed:', result);
-				// FIXED: TypeScript errors by properly checking result type
-				if (result.type === 'failure' && result.data && result.data.form && result.data.form.errors) {
+				if (result.data?.form?.errors) {
 					console.error('Validation errors:', result.data.form.errors);
 				}
 			}
@@ -400,35 +338,12 @@
 
 	// Function to handle edit part button click
 	async function editPart(part: any) {
-		// CRITICAL FIX: DO NOT RESET THE FORM FIRST - That was destroying user data!
-		// Instead, directly populate with the part data, preserving ALL fields
-		
-		// Log the part data we're about to edit for debugging
-		console.log('EDIT PART - Original part data:', JSON.stringify(part, null, 2));
-		
-		// Create a complete copy of the part data to preserve ALL fields without cherry-picking
-		// This ensures we don't lose any data the user has entered
-		const partData = { ...part };
-		
-		// Only set defaults for truly missing required fields, NEVER override existing data
-		if (!partData.name) partData.name = part.name || '';
-		if (!partData.version) partData.version = part.version || '0.1.0';
-		if (!partData.status) partData.status = part.status || LifecycleStatusEnum.DRAFT;
-		if (!partData.part_status) partData.part_status = part.part_status || PartStatusEnum.ACTIVE;
-		
-		// Preserve ALL existing part data without any cherry-picking or filtering
-		// If a field is missing in the part object, keep it as undefined rather than forcing a default
-		$partForm = partData;
-		
-		// Set edit mode parameters
+		// Set part ID being edited
 		currentPartId = part.id;
-		editPartMode = true;
 		
-		// Show loading message and form
-		$partMessage = 'Loading part data...'; 
+		// Show form immediately with loading indication
 		showPartForm = true;
-		
-		console.log(`Starting part edit for ID: ${part.id}`);
+		editPartMode = true;
 		
 		try {
 			// Fetch complete part data with all fields
@@ -440,12 +355,7 @@
 			const partData = await response.json();
 			console.log('Fetched part data for edit:', partData);
 			
-			// Clear any previous messages
-			$partMessage = '';
-			
 			// Map the part data to form fields (snake_case format for form)
-			// Make sure we use null for empty values rather than empty strings
-			// for better compatibility with the schema validation
 			$partForm = {
 				// Required fields with defaults
 				name: partData.currentVersion.name || '',
@@ -454,26 +364,26 @@
 				part_status: partData.part.status || 'ACTIVE',
 				
 				// Optional descriptive fields
-				short_description: partData.currentVersion.shortDescription || null,
+				short_description: partData.currentVersion.shortDescription || '',
 				functional_description: partData.currentVersion.functionalDescription || '',
 				long_description: partData.currentVersion.longDescription || '',
 				revision_notes: partData.currentVersion.revisionNotes || '',
 				
-				// JSON fields - initialize correctly for schema compatibility
-				technical_specifications: partData.currentVersion.technicalSpecifications || null,
-				properties: partData.currentVersion.properties || null,
-				electrical_properties: partData.currentVersion.electricalProperties || null,
-				mechanical_properties: partData.currentVersion.mechanicalProperties || null,
-				thermal_properties: partData.currentVersion.thermalProperties || null,
-				material_composition: partData.currentVersion.materialComposition || null,
-				environmental_data: partData.currentVersion.environmentalData || null,
+				// JSON fields
+				technical_specifications: partData.currentVersion.technicalSpecifications || {},
+				properties: partData.currentVersion.properties || {},
+				electrical_properties: partData.currentVersion.electricalProperties || {},
+				mechanical_properties: partData.currentVersion.mechanicalProperties || {},
+				thermal_properties: partData.currentVersion.thermalProperties || {},
+				material_composition: partData.currentVersion.materialComposition || '',
+				environmental_data: partData.currentVersion.environmentalData || {},
 				
 				// Physical properties
-				dimensions: partData.currentVersion.dimensions || null,
-				dimensions_unit: partData.currentVersion.dimensionsUnit || null,
+				dimensions: partData.currentVersion.dimensions || { length: 0, width: 0, height: 0 },
+				dimensions_unit: partData.currentVersion.dimensionsUnit || '',
 				weight: partData.currentVersion.weight || null,
-				weight_unit: partData.currentVersion.weightUnit || null,
-				package_type: partData.currentVersion.packageType || null,
+				weight_unit: partData.currentVersion.weightUnit || '',
+				package_type: partData.currentVersion.packageType || '',
 				pin_count: partData.currentVersion.pinCount || null,
 				
 				// Temperature properties
@@ -481,7 +391,7 @@
 				operating_temperature_max: partData.currentVersion.operatingTemperatureMax || null,
 				storage_temperature_min: partData.currentVersion.storageTemperatureMin || null,
 				storage_temperature_max: partData.currentVersion.storageTemperatureMax || null,
-				temperature_unit: partData.currentVersion.temperatureUnit || null,
+				temperature_unit: partData.currentVersion.temperatureUnit || '',
 				
 				// Electrical properties
 				voltage_rating_min: partData.currentVersion.voltageRatingMin || null,
@@ -490,10 +400,10 @@
 				current_rating_max: partData.currentVersion.currentRatingMax || null,
 				power_rating_max: partData.currentVersion.powerRatingMax || null,
 				tolerance: partData.currentVersion.tolerance || null,
-				tolerance_unit: partData.currentVersion.toleranceUnit || null
+				tolerance_unit: partData.currentVersion.toleranceUnit || ''
 			};
 			
-			console.log('Successfully populated form with part data for edit mode:', $partForm);
+			console.log('Populated form with part data:', $partForm);
 		} catch (error) {
 			console.error('Error loading part data:', error);
 			$partMessage = `Failed to load part data: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -502,23 +412,23 @@
 
 	// Function to cancel part editing
 	function cancelEditPart() {
-		// CRITICAL FIX: Preserve user data and only reset edit mode flags
-		// This ensures that canceling an edit doesn't destroy all the user's work
-		console.log('Canceling edit mode while preserving form data');
-		
-		// Just reset edit mode flags without touching the form data
+		// Reset edit mode flags
 		editPartMode = false;
 		currentPartId = null;
 		showPartForm = false;
 		
-		// CRITICAL FIX: DON'T reset the form to empty values!
-		// This was destroying ALL user input data unnecessarily
-		// Instead, just clear the message to indicate we're not in edit mode
-		$partMessage = '';
+		// Reset the part form to initial values
+		$partForm = {
+			name: '',
+			version: '0.1.0',
+			status: LifecycleStatusEnum.DRAFT,
+			part_status: PartStatusEnum.ACTIVE,
+			short_description: '',
+			// Reset other fields to their defaults
+		};
 		
-		// Log the current form state for debugging
-		console.log('Form data preserved after cancel:', $partForm);
-		console.log('Edit cancelled, form reset to defaults - all fields explicitly cleared');
+		// Clear any form messages
+		$partMessage = '';
 	}
 
 	// Function to toggle category form visibility
@@ -680,7 +590,7 @@
 					<button 
 						type="button" 
 						class="enhanced-btn add-btn" 
-						on:click={togglePartForm}
+						on:click={() => showPartForm = !showPartForm}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							{#if showPartForm}
@@ -700,7 +610,7 @@
 					<div class="form-container enhanced-form">
 						<h2 class="form-title">{editPartMode ? 'Edit Part' : 'Create New Part'}</h2>
 						
-						{#if $partMessage && typeof $partMessage === 'string'}
+						{#if $partMessage}
 							<div class="form-message {$partMessage.includes('Failed') ? 'error' : 'success'}">
 								{$partMessage}
 							</div>
@@ -1265,7 +1175,7 @@
 										</svg>
 										{$categorySubmitting ? (editCategoryMode ? 'Saving...' : 'Creating...') : (editCategoryMode ? 'Save Changes' : 'Create Category')}
 									</button>
-									<button type="button" class="enhanced-btn cancel-btn" on:click={cancelEditCategory}>
+									<button type="button" class="enhanced-btn cancel-btn" on:click={cancelCategoryEdit}>
 										<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<path d="M18 6L6 18M6 6l12 12"></path>
 										</svg>

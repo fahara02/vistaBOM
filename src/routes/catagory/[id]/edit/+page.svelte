@@ -4,7 +4,7 @@
   import type { PageData } from './$types';
   import { formatJSON, isJSONValid } from '$lib/utils/formatters';
   import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
-  import type { Category } from '$lib/server/db/types';
+  import type { Category } from '@/types/types';
 
   export let data: PageData;
   const { form, errors, enhance, submitting } = superForm(data.form, {

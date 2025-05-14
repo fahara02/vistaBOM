@@ -178,9 +178,42 @@
 				console.log(`Form submission started - Edit mode: ${editPartMode}, Part ID: ${currentPartId}`);
 				
 
+				// Utility function to strip function properties from an object
+				function stripFunctionProperties(obj: any): any {
+					// If it's not an object, return it as is
+					if (obj === null || typeof obj !== 'object') {
+						return obj;
+					}
+					
+					// Create a new object to hold non-function properties
+					const result: Record<string, any> = {};
+					
+					// Copy all non-function properties
+					for (const key in obj) {
+						// Skip functions
+						if (typeof obj[key] === 'function') {
+							console.log(`Skipping function property: ${key}`);
+							continue;
+						}
+						
+						// Copy value (recursively strip functions if it's an object)
+						if (typeof obj[key] === 'object' && obj[key] !== null) {
+							result[key] = stripFunctionProperties(obj[key]);
+						} else {
+							result[key] = obj[key];
+						}
+					}
+					
+					return result;
+				}
+
 				// Step 2: Extract data from PartForm component and preserve user input
 				const partData = partFormRef.prepareFormSubmission();
 				console.log('Form data extracted from PartForm component:', partData);
+				
+				// CRITICAL FIX: Strip function properties while preserving ALL other data
+				const cleanedFormData = stripFunctionProperties(partData);
+				console.log('Cleaned form data (functions removed):', cleanedFormData);
 				
 				// CRITICAL FIX: Create a completely new FormData object
 				// This eliminates the possibility of duplicate fields
@@ -192,20 +225,20 @@
 					'mechanical_properties', 'thermal_properties', 'material_composition', 
 					'environmental_data', 'long_description', 'dimensions'];
 				
-				// CRITICAL FIX: Backup the part data as-is before ANY processing for debugging
-				// This ensures we always have the original raw data for troubleshooting
-				console.log('BACKUP OF RAW USER DATA:', JSON.stringify(partData, null, 2));
+				// CRITICAL FIX: We need to use the cleaned data (without functions) for any JSON operations
+				// This ensures we always have the original raw data for troubleshooting without function properties
+				console.log('BACKUP OF RAW USER DATA:', JSON.stringify(cleanedFormData, null, 2));
 
-				// CRITICAL FIX: Update the SuperForm store with the COMPLETE form data
+				// CRITICAL FIX: Update the SuperForm store with the COMPLETE form data (without functions)
 				// This ensures the SuperForm validation sees the same data as the FormData
 				$partForm = {
 					...$partForm, // Keep any existing values as base
-					...partData // OVERRIDE with the latest data from the PartForm component
+					...cleanedFormData // OVERRIDE with the latest data from the PartForm component (without functions)
 				};
 				console.log('CRITICAL FIX: Updated SuperForm store with complete data:', $partForm);
 
-				// Process ALL fields without cherry-picking or filtering
-				Object.entries(partData).forEach(([key, value]) => {
+				// Process ALL fields without cherry-picking or filtering, using the cleaned data without functions
+				Object.entries(cleanedFormData).forEach(([key, value]) => {
 					// Log each field for debugging purposes
 					console.log(`Processing field ${key} with value:`, value);
 

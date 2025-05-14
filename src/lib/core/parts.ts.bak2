@@ -413,13 +413,13 @@ export async function createPart(input: any, userId: string) {
             console.log('[createPart] Inserting part');
             
             // Insert the part record
-            // CRITICAL FIX: Using exact schema column names from schema.sql
             await transaction`
             INSERT INTO "Part" (
-                id, creator_id, status, lifecycle_status
+                id, created_by, name, part_status, status
             ) VALUES (
                 ${partId}, 
                 ${userId}, 
+                ${input.name}, 
                 ${String(partStatusToUse).toLowerCase()}::part_status_enum, 
                 ${String(input.status).toLowerCase()}::lifecycle_status_enum
             )
@@ -504,49 +504,6 @@ export async function createPart(input: any, userId: string) {
             const materialCompValue = processJsonField(input.materialComposition, 'materialComposition');
             const environDataValue = processJsonField(input.environmentalData, 'environmentalData');
             const longDescValue = processJsonField(input.longDescription, 'longDescription');
-            
-            // CRITICAL FIX: Log complete data payload before database insertion to trace data loss
-            console.log('[createPart] FINAL PRE-INSERTION DATA DUMP');
-            console.log('------------ TRACE FOR DEBUGGING DATA LOSS ------------');
-            console.log('partId:', partId);
-            console.log('versionId:', versionId);
-            console.log('status:', input.status, typeof input.status);
-            console.log('dimensions:', JSON.stringify(dimensionsValue));
-            console.log('technicalSpecs:', JSON.stringify(technicalSpecsValue));
-            console.log('properties:', JSON.stringify(propertiesValue));
-            console.log('electrical:', JSON.stringify(electricalPropsValue));
-            console.log('mechanical:', JSON.stringify(mechanicalPropsValue));
-            console.log('thermal:', JSON.stringify(thermalPropsValue));
-            console.log('material:', JSON.stringify(materialCompValue));
-            console.log('environmental:', JSON.stringify(environDataValue));
-            console.log('long desc:', JSON.stringify(longDescValue));
-            console.log('dimensions unit:', input.dimensionsUnit);
-            console.log('weight:', input.weight);
-            console.log('weight unit:', input.weightUnit);
-            console.log('package type:', input.packageType);
-            console.log('pin count:', input.pinCount);
-            // Log all temperature-related fields
-            console.log('temperatures:', JSON.stringify({
-                min: input.operatingTemperatureMin,
-                max: input.operatingTemperatureMax,
-                storageMin: input.storageTemperatureMin,
-                storageMax: input.storageTemperatureMax,
-                unit: input.temperatureUnit
-            }));
-            // Log voltage ratings
-            console.log('voltages:', JSON.stringify({
-                min: input.voltageRatingMin,
-                max: input.voltageRatingMax
-            }));
-            // Log current ratings
-            console.log('currents:', JSON.stringify({
-                min: input.currentRatingMin,
-                max: input.currentRatingMax
-            }));
-            console.log('power max:', input.powerRatingMax);
-            console.log('tolerance:', input.tolerance);
-            console.log('tolerance unit:', input.toleranceUnit);
-            console.log('------------ END TRACE ------------');
             
             // Use a modified approach with named parameters to avoid syntax errors
             await transaction`

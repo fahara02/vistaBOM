@@ -806,23 +806,6 @@ export const enhance: ((node: HTMLFormElement) => { destroy: () => void }) | nul
 
   // This section handled in the initialization
 
-  // Add method to explicitly initialize edit mode
-  // This is called by the parent component when editing a part
-  export function initializeEditMode(): void {
-    console.log('⚙️ Initializing edit mode for PartForm component');
-    isEditMode = true;
-    isFormInitialized = true;
-    
-    // Set proper form state for edit mode
-    const currentFormData = getData(form);
-    console.log('Initialize edit mode with form data:', currentFormData);
-    
-    // Ensure form sections are properly initialized
-    if (!activeSection) {
-      activeSection = 'basic'; // Default to basic section when initializing edit mode
-    }
-  }
-
   // Log all form data changes for debugging
   $: {
     console.log('🔄 FORM DATA UPDATED:', form);
@@ -937,32 +920,32 @@ export const enhance: ((node: HTMLFormElement) => { destroy: () => void }) | nul
     <div class="section-content" class:visible={activeSection === 'electrical'}>
       <div class="form-grid">
         <div class="form-group">
-          <label for="voltage_rating_min">Min Voltage (V)</label>
-          <input type="number" name="voltage_rating_min" id="voltage_rating_min" 
-                 bind:value={formData.voltage_rating_min} min="0" step="any">
+          <label for="voltageRatingMin">Min Voltage Rating (V)</label>
+          <input type="number" name="voltageRatingMin" id="voltageRatingMin" 
+                 bind:value={formData.voltage_rating_min} step="any">
         </div>
 
         <div class="form-group">
-          <label for="voltage_rating_max">Max Voltage (V)</label>
-          <input type="number" name="voltage_rating_max" id="voltage_rating_max" 
-                 bind:value={formData.voltage_rating_max} min="0" step="any">
+          <label for="voltageRatingMax">Max Voltage Rating (V)</label>
+          <input type="number" name="voltageRatingMax" id="voltageRatingMax" 
+                 bind:value={formData.voltage_rating_max} step="any">
         </div>
 
         <div class="form-group">
-          <label for="current_rating_min">Min Current (A)</label>
-          <input type="number" name="current_rating_min" id="current_rating_min" 
-                 bind:value={formData.current_rating_min} min="0" step="any">
+          <label for="currentRatingMin">Min Current Rating (A)</label>
+          <input type="number" name="currentRatingMin" id="currentRatingMin" 
+                 bind:value={formData.current_rating_min} step="any">
         </div>
 
         <div class="form-group">
-          <label for="current_rating_max">Max Current (A)</label>
-          <input type="number" name="current_rating_max" id="current_rating_max" 
-                 bind:value={formData.current_rating_max} min="0" step="any">
+          <label for="currentRatingMax">Max Current Rating (A)</label>
+          <input type="number" name="currentRatingMax" id="currentRatingMax" 
+                 bind:value={formData.current_rating_max} step="any">
         </div>
 
         <div class="form-group">
-          <label for="power_rating_max">Max Power Rating (W)</label>
-          <input type="number" name="power_rating_max" id="power_rating_max" 
+          <label for="powerRatingMax">Max Power Rating (W)</label>
+          <input type="number" name="powerRatingMax" id="powerRatingMax" 
                  bind:value={formData.power_rating_max} min="0" step="any">
         </div>
 

@@ -508,320 +508,175 @@ export const enhance: ((node: HTMLFormElement) => { destroy: () => void }) | nul
 
   // Handle form submission and extract all data
   export function prepareFormSubmission(): Record<string, any> {
-    console.log(`❗❗❗ PREPARING FORM SUBMISSION - EXTRACTING ALL FIELDS WITHOUT EXCEPTION (isEditMode: ${isEditMode}, isFormInitialized: ${isFormInitialized})`);
+    console.log(`Preparing form submission - extracting all fields (isEditMode: ${isEditMode}, isFormInitialized: ${isFormInitialized})`);
     try {
-      // COMPREHENSIVE FIX: Get ALL possible form inputs without ANY filtering
-      // Create a map of ALL possible field IDs to ensure NOTHING is missed
-      const fieldMap: Record<string, HTMLElement | null> = {};
+      // CRITICAL FIX: Get ALL form element values directly from the DOM to prevent data loss
+      // Direct DOM access ensures we get the latest values regardless of reactivity issues
+      const weightEl = document.getElementById('weight') as HTMLInputElement | null;
+      const weightUnitEl = document.getElementById('weight_unit') as HTMLSelectElement | null;
+      const pinCountEl = document.getElementById('pin_count') as HTMLInputElement | null;
+      const packageTypeEl = document.getElementById('package_type') as HTMLSelectElement | null;
+      const voltageMinEl = document.getElementById('voltage_rating_min') as HTMLInputElement | null;
+      const voltageMaxEl = document.getElementById('voltage_rating_max') as HTMLInputElement | null;
+      const currentMinEl = document.getElementById('current_rating_min') as HTMLInputElement | null;
+      const currentMaxEl = document.getElementById('current_rating_max') as HTMLInputElement | null;
+      const powerMaxEl = document.getElementById('power_rating_max') as HTMLInputElement | null;
+      const toleranceEl = document.getElementById('tolerance') as HTMLInputElement | null;
+      const toleranceUnitEl = document.getElementById('tolerance_unit') as HTMLSelectElement | null;
+      const tempMinEl = document.getElementById('operating_temperature_min') as HTMLInputElement | null;
+      const tempMaxEl = document.getElementById('operating_temperature_max') as HTMLInputElement | null;
+      const storeTempMinEl = document.getElementById('storage_temperature_min') as HTMLInputElement | null;
+      const storeTempMaxEl = document.getElementById('storage_temperature_max') as HTMLInputElement | null;
+      const tempUnitEl = document.getElementById('temperature_unit') as HTMLSelectElement | null;
       
-      // Define ALL POSSIBLE FIELD NAMES that could exist in the form - COMPREHENSIVE LIST
-      // This ensures we catch EVERY SINGLE FIELD, regardless of UI section, visibility or type
-      const allPossibleFields = [
-        // REQUIRED BASIC FIELDS
-        'name', 'version', 'status', 'part_status', 'partStatus', 'short_description', 'long_description', 
-        'functional_description', 'revision_notes', 'id', 'created_at', 'updated_at',
+      // Get these field values directly from DOM to prevent data loss
+      const domValues = {
+        weight: weightEl?.value || formData.weight,
+        weight_unit: weightUnitEl?.value || formData.weight_unit,
+        pin_count: pinCountEl?.value || formData.pin_count,
+        package_type: packageTypeEl?.value || formData.package_type,
+        voltage_rating_min: voltageMinEl?.value || formData.voltage_rating_min,
+        voltage_rating_max: voltageMaxEl?.value || formData.voltage_rating_max,
+        current_rating_min: currentMinEl?.value || formData.current_rating_min,
+        current_rating_max: currentMaxEl?.value || formData.current_rating_max,
+        power_rating_max: powerMaxEl?.value || formData.power_rating_max,
+        tolerance: toleranceEl?.value || formData.tolerance,
+        tolerance_unit: toleranceUnitEl?.value || formData.tolerance_unit,
+        operating_temperature_min: tempMinEl?.value || formData.operating_temperature_min,
+        operating_temperature_max: tempMaxEl?.value || formData.operating_temperature_max,
+        storage_temperature_min: storeTempMinEl?.value || formData.storage_temperature_min,
+        storage_temperature_max: storeTempMaxEl?.value || formData.storage_temperature_max,
+        temperature_unit: tempUnitEl?.value || formData.temperature_unit,
+      };
+      
+      console.log('⚠️ CRITICAL VALUES FROM DOM:', domValues);
+      
+      // Get the SuperForm data for other fields
+      const currentFormData = getData(form);
+      
+      console.log('Form data at submission time:', currentFormData);
+      console.log('Current formData.name value:', formData.name);
+      
+      // CRITICAL FIX: Preserve ALL user input data combining DOM values, formData and defaults
+      const extractedFormData: Record<string, any> = {
+        // Start with the form data from SuperForm
+        ...currentFormData,
         
-        // ELECTRICAL PROPERTIES
-        'voltage_rating_min', 'voltage_rating_max', 'current_rating_min', 'current_rating_max',
-        'power_rating_max', 'tolerance', 'tolerance_unit', 'electrical_properties',
+        // Add the direct form binding data which might be more recent
+        ...formData,
         
-        // MECHANICAL PROPERTIES
-        'dimensions', 'dimensions_unit', 'dimensionsUnit', 'package_type', 'packageType',
-        'pin_count', 'pinCount', 'weight', 'weight_unit', 'weightUnit', 'mechanical_properties',
-        'dimensions.length', 'dimensions.width', 'dimensions.height',
+        // CRITICAL: Add the direct DOM values which are most reliable
+        // especially for fields like weight, pin_count, etc. that were being lost
+        ...domValues,
         
-        // THERMAL PROPERTIES
-        'operating_temperature_min', 'operatingTemperatureMin', 'operating_temperature_max', 'operatingTemperatureMax',
-        'storage_temperature_min', 'storageTemperatureMin', 'storage_temperature_max', 'storageTemperatureMax',
-        'temperature_unit', 'temperatureUnit', 'thermal_properties',
+        // Only add minimal critical defaults for completely missing required fields
+        // but NEVER override any user-entered data, even if it's an empty string
+        name: formData.name !== undefined ? formData.name : (currentFormData.name || ''),
+        version: formData.version !== undefined ? formData.version : (currentFormData.version || '0.1.0'),
+        status: formData.status !== undefined ? formData.status : (currentFormData.status || LifecycleStatusEnum.DRAFT),
+        part_status: formData.part_status !== undefined ? formData.part_status : (currentFormData.part_status || PartStatusEnum.CONCEPT),
         
-        // ADDITIONAL PROPERTIES
-        'technical_specifications', 'technicalSpecifications', 'properties', 'material_composition',
-        'materialComposition', 'environmental_data', 'environmentalData',
+        // Process JSON fields - parse the editor content and stringify for schema validation
+        technical_specifications: JSON.stringify(parseJsonSafely(jsonEditors.technicalSpecs)),
+        properties: JSON.stringify(parseJsonSafely(jsonEditors.properties)),
+        electrical_properties: JSON.stringify(parseJsonSafely(jsonEditors.electricalProperties)),
+        mechanical_properties: JSON.stringify(parseJsonSafely(jsonEditors.mechanicalProperties)),
+        thermal_properties: JSON.stringify(parseJsonSafely(jsonEditors.thermalProperties)),
+        material_composition: JSON.stringify(parseJsonSafely(jsonEditors.materialComposition)),
+        environmental_data: JSON.stringify(parseJsonSafely(jsonEditors.environmentalData)),
+        long_description: JSON.stringify(parseJsonSafely(jsonEditors.longDescription)),
         
-        // RELATIONSHIP FIELDS - both snake_case and camelCase variations
-        'category_ids', 'categoryIds', 'manufacturer_parts', 'manufacturerParts',
-        'creator_id', 'creatorId', 'updated_by', 'updatedBy', 'is_public', 'isPublic',
-        'global_part_number', 'globalPartNumber',
+        // Physical properties - ensure null for empty values
+        weight: parseFloatOrNull(currentFormData.weight),
+        weight_unit: currentFormData.weight_unit || '',
+        package_type: currentFormData.package_type || '',
+        pin_count: parseFloatOrNull(currentFormData.pin_count),
         
-        // INTERNAL FIELDS
-        '_isEditMode', 'formInitialized', 'part_id', 'partId', 'part_version_id', 'partVersionId'
-      ];
-      
-      // Get DOM references for ALL possible fields to ensure nothing is missed
-      // Also check for variations with different naming conventions
-      allPossibleFields.forEach(fieldId => {
-        // Try exact ID first
-        const element = document.getElementById(fieldId);
-        if (element) {
-          fieldMap[fieldId] = element;
-        }
+        // Temperature properties - ensure null for empty values
+        operating_temperature_min: parseFloatOrNull(currentFormData.operating_temperature_min),
+        operating_temperature_max: parseFloatOrNull(currentFormData.operating_temperature_max),
+        storage_temperature_min: parseFloatOrNull(currentFormData.storage_temperature_min),
+        storage_temperature_max: parseFloatOrNull(currentFormData.storage_temperature_max),
+        temperature_unit: currentFormData.temperature_unit || '',
         
-        // Also look for elements with name attribute
-        const namedElements = document.getElementsByName(fieldId);
-        if (namedElements.length > 0) {
-          const namedElement = namedElements[0];
-          if (namedElement instanceof HTMLElement) {
-            fieldMap[`name:${fieldId}`] = namedElement;
-          }
-        }
-      });
-      
-      // Also look for ANY input, select or textarea elements with any name/id
-      // that might not be in our predefined list
-      const allInputElements = document.querySelectorAll('input, select, textarea');
-      Array.from(allInputElements).forEach((element) => {
-        const el = element as HTMLElement;
-        const id = el.id;
-        const name = (el as any).name;
+        // Electrical properties - ensure null for empty values
+        voltage_rating_min: parseFloatOrNull(currentFormData.voltage_rating_min),
+        voltage_rating_max: parseFloatOrNull(currentFormData.voltage_rating_max),
+        current_rating_min: parseFloatOrNull(currentFormData.current_rating_min),
+        current_rating_max: parseFloatOrNull(currentFormData.current_rating_max),
+        power_rating_max: parseFloatOrNull(currentFormData.power_rating_max),
+        tolerance: parseFloatOrNull(currentFormData.tolerance),
+        tolerance_unit: currentFormData.tolerance_unit || null,
         
-        if (id && !fieldMap[id]) {
-          fieldMap[id] = el;
-          console.log(`🔎 Found additional input element with id: ${id}`);
-        }
+        // Include mode in debug data
+        _isEditMode: isEditMode,
         
-        if (name && !fieldMap[name] && !fieldMap[`name:${name}`]) {
-          fieldMap[`name:${name}`] = el;
-          console.log(`🔎 Found additional input element with name: ${name}`);
-        }
-      });
-      
-      console.log(`🔍 Found ${Object.keys(fieldMap).length} DOM elements out of ${allPossibleFields.length} possible fields`);
-      
-      // Extract values from all DOM elements
-      const domValues: Record<string, any> = {};
-      
-      // Process each form element to get its value
-      Object.entries(fieldMap).forEach(([fieldId, element]) => {
-        if (!element) return;
+        // Dimensions - convert to proper format and stringify for schema validation
+        dimensions: JSON.stringify({
+          length: parseFloatOrNull(dimensions?.length),
+          width: parseFloatOrNull(dimensions?.width),
+          height: parseFloatOrNull(dimensions?.height)
+        }),
+        dimensions_unit: dimensionsUnit || '',
         
-        // Handle different element types appropriately
-        if (element instanceof HTMLInputElement) {
-          domValues[fieldId] = element.value;
-        } else if (element instanceof HTMLSelectElement) {
-          domValues[fieldId] = element.value;
-        } else if (element instanceof HTMLTextAreaElement) {
-          domValues[fieldId] = element.value;
-        }
-      });
+        // Relationship data
+        category_ids: selectedCategoryIds.join(','),
+        manufacturer_parts: JSON.stringify(selectedManufacturerParts),
+      };
       
-      // SPECIAL HANDLING: Also look for any hidden form fields that might contain data
-      const hiddenInputs = document.querySelectorAll('input[type="hidden"]');
-      // Fix TypeScript error by properly typing the NodeList elements
-      Array.from(hiddenInputs).forEach((element) => {
-        // Type assertion to fix TypeScript error
-        const input = element as HTMLInputElement;
-        if (input.name && input.name.trim() !== '') {
-          domValues[input.name] = input.value;
-        }
-      });
-      
-      console.log('📊 DOM VALUES COLLECTED:', domValues);
-      
-      // DIRECT RAW ACCESS: Get ALL form data without any abstractions or helper functions
-      // Access the raw form data directly from ALL possible sources
-      let rawFormData: Record<string, any> = {};
-      
-      // DIRECT ACCESS to SuperForm data if available (no filtering via helper functions)
-      if ('form' in form && form.form) {
-        console.log('🔄 DIRECT ACCESS TO SUPERFORM DATA');
-        // Direct object access to the raw form data
-        rawFormData = { ...form.form };
-      } 
-      // DIRECT ACCESS to form if it's just a data object
-      else if (typeof form === 'object') {
-        console.log('🔍 DIRECT ACCESS TO RAW FORM OBJECT');
-        // Copy ALL properties without any filtering
-        rawFormData = { ...form };
-      }
-      
-      console.log('📊 RAW FORM DATA (DIRECT ACCESS):', rawFormData);
-      console.log('📝 LOCAL FORM STATE:', formData);
-      
-      // COMPREHENSIVE DATA COLLECTION: Raw direct access to ALL form data
-      // Create a complete merged object that preserves ALL fields without exception
-      const extractedFormData: Record<string, any> = {};
-      
-      // 1. FIRST: Direct raw copy of ALL fields from form (no filtering)
-      // This ensures we get EVERY field without any abstraction layer filtering
-      Object.entries(rawFormData).forEach(([key, value]) => {
-        extractedFormData[key] = value;
-      });
-      
-      // 2. Add ALL fields from local reactive state (may have most recent updates)
-      Object.entries(formData).forEach(([key, value]) => {
-        extractedFormData[key] = value;
-      });
-      
-      // 3. Add ALL fields from DOM elements (most reliable source for actual user input)
-      Object.entries(domValues).forEach(([key, value]) => {
-        extractedFormData[key] = value;
-      });
-      
-      // 4. Process JSON fields - use the editor content
-      extractedFormData.technical_specifications = JSON.stringify(parseJsonSafely(jsonEditors.technicalSpecs));
-      extractedFormData.properties = JSON.stringify(parseJsonSafely(jsonEditors.properties));
-      extractedFormData.electrical_properties = JSON.stringify(parseJsonSafely(jsonEditors.electricalProperties));
-      extractedFormData.mechanical_properties = JSON.stringify(parseJsonSafely(jsonEditors.mechanicalProperties));
-      extractedFormData.thermal_properties = JSON.stringify(parseJsonSafely(jsonEditors.thermalProperties));
-      extractedFormData.material_composition = JSON.stringify(parseJsonSafely(jsonEditors.materialComposition));
-      extractedFormData.environmental_data = JSON.stringify(parseJsonSafely(jsonEditors.environmentalData));
-      extractedFormData.long_description = JSON.stringify(parseJsonSafely(jsonEditors.longDescription));
-      
-      // 5. Handle numeric fields - BUT PRESERVE ALL RAW VALUES
-      // CRITICAL: Keep empty strings, zeros, falsy values - pass through RAW data
-      const numericFields = [
-        'voltage_rating_min', 'voltage_rating_max', 'current_rating_min', 'current_rating_max',
-        'power_rating_max', 'tolerance', 'operating_temperature_min', 'operating_temperature_max', 
-        'storage_temperature_min', 'storage_temperature_max', 'weight', 'pin_count'
-      ];
-      
-      // We're keeping EVERY SINGLE VALUE AS IS, no filtering
-      console.log('RAW NUMERIC FIELDS BEFORE PROCESSING:', {
-        ...Object.fromEntries(numericFields.map(f => [f, extractedFormData[f]]))
-      });
-      
-      // 6. DIRECT RAW dimensions handling - NO PROCESSING AT ALL
-      // Keep the raw values exactly as they appear in the form
-      // Don't process or filter anything
-      
-      // Preserve ORIGINAL dimensions exactly as is if it exists
-      if (extractedFormData.dimensions) {
-        console.log('PRESERVING ORIGINAL dimensions AS IS:', extractedFormData.dimensions);
-      } 
-      // Otherwise use whatever raw values we have from various sources
-      else {
-        console.log('RAW DIMENSION VALUES:', {
-          dimensions,
-          dimensionsLength: extractedFormData['dimensions.length'],
-          dimensionsWidth: extractedFormData['dimensions.width'], 
-          dimensionsHeight: extractedFormData['dimensions.height']
-        });
-       
-        // Use raw values without any processing
-        const rawDimensionsData = {
-          length: dimensions?.length || extractedFormData['dimensions.length'] || null,
-          width: dimensions?.width || extractedFormData['dimensions.width'] || null,
-          height: dimensions?.height || extractedFormData['dimensions.height'] || null
-        };
-        
-        // Store raw values as-is
-        extractedFormData.dimensions = JSON.stringify(rawDimensionsData);
-      }
-      
-      // 7. Handle relationship data
-      // USE RAW VALUES - only transform if absolutely necessary
-      if (Array.isArray(selectedCategoryIds)) {
-        extractedFormData.category_ids = selectedCategoryIds.join(',');
-      }
-      
-      if (selectedManufacturerParts !== undefined) {
-        extractedFormData.manufacturer_parts = JSON.stringify(selectedManufacturerParts);
-      }
-      
-      // PRESERVE ALL RAW VALUES - Only provide defaults if fields are COMPLETELY MISSING
-      // Keep empty strings, zeros, falsy values - we want the RAW data without any filtering
-      if (extractedFormData.name === undefined) extractedFormData.name = '';
-      if (extractedFormData.version === undefined) extractedFormData.version = '0.1.0';
-      if (extractedFormData.status === undefined) extractedFormData.status = LifecycleStatusEnum.DRAFT;
-      if (extractedFormData.part_status === undefined) extractedFormData.part_status = PartStatusEnum.CONCEPT;
-      
-      // Helper function to safely parse JSON
-      function parseJsonSafely(jsonString: string): unknown {
+      // Helper function to safely parse JSON or return empty object
+      function parseJsonSafely(jsonString: string): any {
         if (!jsonString || jsonString.trim() === '') return {};
         try {
-          return JSON.parse(jsonString);
+          // Already parsed JSON should be returned as is
+          const parsedValue = JSON.parse(jsonString);
+          return parsedValue;
         } catch (e) {
+          // If it's not valid JSON, return empty object
           console.warn('Failed to parse JSON, returning empty object:', e);
           return {};
         }
       }
       
-      // Verify we have ALL expected fields (comprehensive field count validation)
-      const extractedKeys = Object.keys(extractedFormData);
-      const allFieldsPresent = allPossibleFields.every(field => {
-        // Skip dimension components since they're combined
-        if (field.startsWith('dimensions.')) return true;
-        return extractedKeys.includes(field) || field.includes('.');
-      });
+      // Also update the original form data (shouldn't affect submission, but just for consistency)
+      const actualForm = 'form' in form ? form.form : form;
       
-      console.log(`✅ ALL FIELDS PRESENT: ${allFieldsPresent ? 'YES' : 'NO'}`);
-      
-      // Detailed logging of all collected fields
-      console.log(`📋 FORM CONTAINS ${extractedKeys.length} FIELDS`);
-      console.log('KEYS FOUND:', extractedKeys);
-      
-      // Audit which expected fields might be missing
-      const missingFields = allPossibleFields.filter(field => {
-        // Skip dimension components since they're combined
-        if (field.startsWith('dimensions.')) return false;
-        return !extractedKeys.includes(field) && !field.includes('.');
-      });
-      
-      if (missingFields.length > 0) {
-        console.warn('⚠️ MISSING FIELDS:', missingFields);
-      }
-      
-      // Debug summary of ALL field data types
-      const dataTypeInfo: Record<string, string> = {};
+      // Apply all fields to the form data (for completeness)
       Object.entries(extractedFormData).forEach(([key, value]) => {
-        dataTypeInfo[key] = typeof value;
-      });
-      
-      console.log('📊 ALL FIELD DATA TYPES:', dataTypeInfo);
-      
-      // FINAL WARNINGS: Check for any critical missing fields
-      const criticalFields = ['name', 'version', 'status', 'part_status'];
-      let hasCriticalMissing = false;
-      criticalFields.forEach(field => {
-        if (extractedFormData[field] === undefined) {
-          console.error(`❌❌❌ CRITICAL MISSING FIELD: ${field}`);
-          hasCriticalMissing = true;
+        if (value !== undefined) {
+          (actualForm as any)[key] = value;
         }
       });
       
-      if (hasCriticalMissing) {
-        console.error('⚠️⚠️⚠️ CRITICAL FIELDS MISSING! Form data may be incomplete! This will likely cause database errors.');
-      } else {
-        console.log('✓✓✓ All critical fields present.');
-      }
+      // Comprehensive logging of ALL fields being returned
+      console.log('📤 EXTRACTED FORM DATA:', extractedFormData);
       
-      // Return the complete form data with NO filtering whatsoever
+      // Also log flat format for easier debugging
+      const fieldKeys = Object.keys(extractedFormData);
+      console.log(`📋 FORM CONTAINS ${fieldKeys.length} FIELDS:`, fieldKeys);
+      
+      // Verify critical fields are present
+      console.log('🔍 CRITICAL FIELDS:', {
+        name: extractedFormData.name,
+        version: extractedFormData.version,
+        status: extractedFormData.status,
+        part_status: extractedFormData.part_status
+      });
+      
+      // Return the actual form data to be used in submission
       return extractedFormData;
     } catch (error) {
-      console.error('❌ ERROR PREPARING FORM SUBMISSION:', error);
-      // Even in error case, try to return all available data
-      const emergencyData = {
-        name: formData.name || '',
-        version: formData.version || '0.1.0',
-        status: formData.status || LifecycleStatusEnum.DRAFT,
-        part_status: formData.part_status || PartStatusEnum.CONCEPT,
-        // Include the original form data if possible
-        ...getData(form)
+      console.error('Error preparing form submission:', error);
+      return {
+        name: '',
+        version: '0.1.0',
+        status: LifecycleStatusEnum.DRAFT,
+        part_status: PartStatusEnum.ACTIVE
       };
-      console.log('⚠️ EMERGENCY FALLBACK DATA:', emergencyData);
-      return emergencyData;
     }
   }
 
   // This section handled in the initialization
-
-  // Add method to explicitly initialize edit mode
-  // This is called by the parent component when editing a part
-  export function initializeEditMode(): void {
-    console.log('⚙️ Initializing edit mode for PartForm component');
-    isEditMode = true;
-    isFormInitialized = true;
-    
-    // Set proper form state for edit mode
-    const currentFormData = getData(form);
-    console.log('Initialize edit mode with form data:', currentFormData);
-    
-    // Ensure form sections are properly initialized
-    if (!activeSection) {
-      activeSection = 'basic'; // Default to basic section when initializing edit mode
-    }
-  }
 
   // Log all form data changes for debugging
   $: {
@@ -937,32 +792,32 @@ export const enhance: ((node: HTMLFormElement) => { destroy: () => void }) | nul
     <div class="section-content" class:visible={activeSection === 'electrical'}>
       <div class="form-grid">
         <div class="form-group">
-          <label for="voltage_rating_min">Min Voltage (V)</label>
-          <input type="number" name="voltage_rating_min" id="voltage_rating_min" 
-                 bind:value={formData.voltage_rating_min} min="0" step="any">
+          <label for="voltageRatingMin">Min Voltage Rating (V)</label>
+          <input type="number" name="voltageRatingMin" id="voltageRatingMin" 
+                 bind:value={formData.voltage_rating_min} step="any">
         </div>
 
         <div class="form-group">
-          <label for="voltage_rating_max">Max Voltage (V)</label>
-          <input type="number" name="voltage_rating_max" id="voltage_rating_max" 
-                 bind:value={formData.voltage_rating_max} min="0" step="any">
+          <label for="voltageRatingMax">Max Voltage Rating (V)</label>
+          <input type="number" name="voltageRatingMax" id="voltageRatingMax" 
+                 bind:value={formData.voltage_rating_max} step="any">
         </div>
 
         <div class="form-group">
-          <label for="current_rating_min">Min Current (A)</label>
-          <input type="number" name="current_rating_min" id="current_rating_min" 
-                 bind:value={formData.current_rating_min} min="0" step="any">
+          <label for="currentRatingMin">Min Current Rating (A)</label>
+          <input type="number" name="currentRatingMin" id="currentRatingMin" 
+                 bind:value={formData.current_rating_min} step="any">
         </div>
 
         <div class="form-group">
-          <label for="current_rating_max">Max Current (A)</label>
-          <input type="number" name="current_rating_max" id="current_rating_max" 
-                 bind:value={formData.current_rating_max} min="0" step="any">
+          <label for="currentRatingMax">Max Current Rating (A)</label>
+          <input type="number" name="currentRatingMax" id="currentRatingMax" 
+                 bind:value={formData.current_rating_max} step="any">
         </div>
 
         <div class="form-group">
-          <label for="power_rating_max">Max Power Rating (W)</label>
-          <input type="number" name="power_rating_max" id="power_rating_max" 
+          <label for="powerRatingMax">Max Power Rating (W)</label>
+          <input type="number" name="powerRatingMax" id="powerRatingMax" 
                  bind:value={formData.power_rating_max} min="0" step="any">
         </div>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
-	import type { Project } from '$lib/server/db/types';
+	import type { Project } from '@/types/types';
 	export let data: PageData;
 	const project = data.project as Project;
 </script>

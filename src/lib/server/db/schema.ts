@@ -20,6 +20,14 @@ export const jsonSchema: z.ZodType<Json> = z.lazy(() =>
 	z.union([literalSchema, z.array(jsonSchema), z.record(jsonSchema)])
 );
 
+// Helper function to create enum schemas that handle empty strings correctly
+function createEnumSchema<T>(enumSchema: T) {
+  return z.union([
+    enumSchema as any, // Use type assertion to accommodate both ZodEnum and ZodNativeEnum
+    z.literal('').transform(() => null) // Transform empty strings to null
+  ]).optional().nullable();
+}
+
 // User Schema
 export const userSchema = z.object({
 	id: z.string().uuid(), // UUID PRIMARY KEY
@@ -162,44 +170,70 @@ export const partVersionSchemaBase = z.object({
 });
 // Create the schema with required and optional fields
 export const partVersionSchema = partVersionSchemaBase
-	.refine((data) => (data.weight === undefined) === (data.weight_unit === undefined), {
+	.refine((data) => 
+		(data.weight === undefined || data.weight === null) === 
+		(data.weight_unit === undefined || data.weight_unit === null), {
 		message: 'Weight and unit must both be present or omitted',
 		path: ['weight_unit']
 	})
-	.refine((data) => (data.dimensions === undefined) === (data.dimensions_unit === undefined), {
+	.refine((data) => 
+		(data.dimensions === undefined || data.dimensions === null) === 
+		(data.dimensions_unit === undefined || data.dimensions_unit === null), {
 		message: 'Dimensions and unit must both be present or omitted',
 		path: ['dimensions_unit']
 	})
-	.refine((data) => (data.tolerance === undefined) === (data.tolerance_unit === undefined), {
+	.refine((data) => 
+		(data.tolerance === undefined || data.tolerance === null) === 
+		(data.tolerance_unit === undefined || data.tolerance_unit === null), {
 		message: 'Tolerance and unit must both be present or omitted',
 		path: ['tolerance_unit']
 	})
 	.refine(
-		(data) =>
-			!data.voltage_rating_max ||
-			!data.voltage_rating_min ||
-			data.voltage_rating_max >= data.voltage_rating_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.voltage_rating_max === undefined || data.voltage_rating_max === null || 
+				data.voltage_rating_min === undefined || data.voltage_rating_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.voltage_rating_max >= data.voltage_rating_min;
+		},
 		{ message: 'Max voltage must be >= min', path: ['voltage_rating_max'] }
 	)
 	.refine(
-		(data) =>
-			!data.current_rating_max ||
-			!data.current_rating_min ||
-			data.current_rating_max >= data.current_rating_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.current_rating_max === undefined || data.current_rating_max === null || 
+				data.current_rating_min === undefined || data.current_rating_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.current_rating_max >= data.current_rating_min;
+		},
 		{ message: 'Max current must be >= min', path: ['current_rating_max'] }
 	)
 	.refine(
-		(data) =>
-			!data.operating_temperature_max ||
-			!data.operating_temperature_min ||
-			data.operating_temperature_max >= data.operating_temperature_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.operating_temperature_max === undefined || data.operating_temperature_max === null || 
+				data.operating_temperature_min === undefined || data.operating_temperature_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.operating_temperature_max >= data.operating_temperature_min;
+		},
 		{ message: 'Operating temp max must be >= min', path: ['operating_temperature_max'] }
 	)
 	.refine(
-		(data) =>
-			!data.storage_temperature_max ||
-			!data.storage_temperature_min ||
-			data.storage_temperature_max >= data.storage_temperature_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.storage_temperature_max === undefined || data.storage_temperature_max === null || 
+				data.storage_temperature_min === undefined || data.storage_temperature_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.storage_temperature_max >= data.storage_temperature_min;
+		},
 		{ message: 'Storage temp max must be >= min', path: ['storage_temperature_max'] }
 	);
 
@@ -250,6 +284,7 @@ export const partVersionEditSchema = partVersionSchemaBase.extend({
 
 export const createPartSchema = z
 	.object({
+		// Core required fields
 		name: z.string().min(3).max(100), // from partVersionSchema
 		version: z
 			.string()
@@ -258,21 +293,28 @@ export const createPartSchema = z
 		status: z.nativeEnum(LifecycleStatusEnum).default(LifecycleStatusEnum.DRAFT), // from partVersionSchema (using lifecycle status)
 		// Add part status field (separate from lifecycle status)
 		partStatus: z.nativeEnum(PartStatusEnum).default(PartStatusEnum.CONCEPT),
-		// Add other fields required for the initial version creation if needed
+		
+		// Description fields - all optional
 		short_description: z.string().max(200).optional().nullable(),
 		long_description: jsonSchema.optional().nullable(),
 		functional_description: z.string().optional().nullable(),
 		technical_specifications: jsonSchema.optional().nullable(),
+		
+		// Property collections - all optional
 		properties: jsonSchema.optional().nullable(),
 		electrical_properties: jsonSchema.optional().nullable(),
 		mechanical_properties: jsonSchema.optional().nullable(),
 		thermal_properties: jsonSchema.optional().nullable(),
+		material_composition: jsonSchema.optional().nullable(),
+		environmental_data: jsonSchema.optional().nullable(),
+		
+		// Physical properties - all optional for non-semiconductor parts
 		weight: z.number().nonnegative().optional().nullable(),
 		weight_unit: z.nativeEnum(WeightUnitEnum).optional().nullable(),
 		dimensions: dimensionSchema.optional().nullable(),
 		dimensions_unit: z.nativeEnum(DimensionUnitEnum).optional().nullable(),
-		material_composition: jsonSchema.optional().nullable(),
-		environmental_data: jsonSchema.optional().nullable(),
+		
+		// Electrical properties - all optional for non-electronic parts
 		voltage_rating_max: z.number().optional().nullable(),
 		voltage_rating_min: z.number().optional().nullable(),
 		current_rating_max: z.number().optional().nullable(),
@@ -280,68 +322,139 @@ export const createPartSchema = z
 		power_rating_max: z.number().nonnegative().optional().nullable(),
 		tolerance: z.number().nonnegative().optional().nullable(),
 		tolerance_unit: z.string().optional().nullable(),
-		package_type: z.nativeEnum(PackageTypeEnum).optional().nullable(),
+		
+		// Semiconductor-specific properties - all optional for non-semiconductor parts
+		package_type: createEnumSchema(z.nativeEnum(PackageTypeEnum)),
 		pin_count: z.number().int().nonnegative().optional().nullable(),
+		
+		// Thermal properties - all optional
 		operating_temperature_min: z.number().optional().nullable(),
 		operating_temperature_max: z.number().optional().nullable(),
 		storage_temperature_min: z.number().optional().nullable(),
 		storage_temperature_max: z.number().optional().nullable(),
 		temperature_unit: z.nativeEnum(TemperatureUnitEnum).optional().nullable(),
+		
+		// Metadata fields
 		revision_notes: z.string().optional().nullable(),
 		released_at: z.date().optional().nullable()
 	})
+	// Simpler refinements with early returns when fields are null/undefined
+	// Validate field pairs - ensure that if one field is provided, its corresponding pair is also provided
+	.superRefine((data, ctx) => {
+		// If weight is provided, weight_unit must be provided
+		// Check if weight has a valid value (not undefined, null, or 0)
+		const weightExists = data.weight !== undefined && data.weight !== null && data.weight !== 0;
+		
+		// Check if weight_unit has a valid value
+		// We use a safe check that works with any type to avoid type errors
+		const weightUnitValue = data.weight_unit as unknown;
+		const weightUnitExists = weightUnitValue !== undefined && 
+			weightUnitValue !== null && 
+			(typeof weightUnitValue === 'string' ? weightUnitValue !== '' && weightUnitValue !== 'null' : true);
+		
+		// Validate the pair consistency
+		if (weightExists !== weightUnitExists) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Weight and unit must both be present or omitted',
+				path: ['weight_unit']
+			});
+		}
+	})
+	.superRefine((data, ctx) => {
+		// If dimensions is provided and has any non-null values, dimensions_unit must be provided
+		// Handle dimensions as potentially undefined/null or containing all nulls
+		let dimensionsHaveValues = false;
+		
+		if (data.dimensions && typeof data.dimensions === 'object') {
+			// Check if dimensions is non-null and has at least one non-null value
+			const dims = data.dimensions as any;
+			dimensionsHaveValues = 
+				(dims.length !== undefined && dims.length !== null && dims.length !== 0) ||
+				(dims.width !== undefined && dims.width !== null && dims.width !== 0) ||
+				(dims.height !== undefined && dims.height !== null && dims.height !== 0);
+		}
+		
+		// Safely check dimensions_unit using a type-agnostic approach
+		const dimensionsUnitValue = data.dimensions_unit as unknown;
+		const dimensionsUnitExists = dimensionsUnitValue !== undefined && 
+			dimensionsUnitValue !== null && 
+			(typeof dimensionsUnitValue === 'string' ? dimensionsUnitValue !== '' && dimensionsUnitValue !== 'null' : true);
+		
+		// Validate the pair consistency
+		if (dimensionsHaveValues !== dimensionsUnitExists) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Dimensions and unit must both be present or omitted',
+				path: ['dimensions_unit']
+			});
+		}
+	})
+	.superRefine((data, ctx) => {
+		// If tolerance is provided, tolerance_unit must be provided
+		const toleranceExists = data.tolerance !== undefined && data.tolerance !== null && data.tolerance !== 0;
+		
+		// Safely check tolerance_unit using a type-agnostic approach
+		const toleranceUnitValue = data.tolerance_unit as unknown;
+		const toleranceUnitExists = toleranceUnitValue !== undefined && 
+			toleranceUnitValue !== null && 
+			(typeof toleranceUnitValue === 'string' ? toleranceUnitValue !== '' && toleranceUnitValue !== 'null' : true);
+		
+		// Validate the pair consistency
+		if (toleranceExists !== toleranceUnitExists) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Tolerance and unit must both be present or omitted',
+				path: ['tolerance_unit']
+			});
+		}
+	})
 	.refine(
-		(data) =>
-			(data.weight === undefined || data.weight === null) ===
-			(data.weight_unit === undefined || data.weight_unit === null),
-		{ message: 'Weight and unit must both be present or omitted', path: ['weight_unit'] }
-	)
-	.refine(
-		(data) =>
-			(data.dimensions === undefined || data.dimensions === null) ===
-			(data.dimensions_unit === undefined || data.dimensions_unit === null),
-		{ message: 'Dimensions and unit must both be present or omitted', path: ['dimensions_unit'] }
-	)
-	.refine(
-		(data) =>
-			(data.tolerance === undefined || data.tolerance === null) ===
-			(data.tolerance_unit === undefined || data.tolerance_unit === null),
-		{ message: 'Tolerance and unit must both be present or omitted', path: ['tolerance_unit'] }
-	)
-	.refine(
-		(data) =>
-			data.voltage_rating_max === undefined ||
-			data.voltage_rating_max === null ||
-			data.voltage_rating_min === undefined ||
-			data.voltage_rating_min === null ||
-			data.voltage_rating_max >= data.voltage_rating_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.voltage_rating_max === undefined || data.voltage_rating_max === null || 
+				data.voltage_rating_min === undefined || data.voltage_rating_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.voltage_rating_max >= data.voltage_rating_min;
+		},
 		{ message: 'Max voltage must be >= min', path: ['voltage_rating_max'] }
 	)
 	.refine(
-		(data) =>
-			data.current_rating_max === undefined ||
-			data.current_rating_max === null ||
-			data.current_rating_min === undefined ||
-			data.current_rating_min === null ||
-			data.current_rating_min <= data.current_rating_max,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.current_rating_max === undefined || data.current_rating_max === null || 
+				data.current_rating_min === undefined || data.current_rating_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.current_rating_max >= data.current_rating_min;
+		},
 		{ message: 'Max current must be >= min', path: ['current_rating_max'] }
 	)
 	.refine(
-		(data) =>
-			data.operating_temperature_max === undefined ||
-			data.operating_temperature_max === null ||
-			data.operating_temperature_min === undefined ||
-			data.operating_temperature_min === null ||
-			data.operating_temperature_max >= data.operating_temperature_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.operating_temperature_max === undefined || data.operating_temperature_max === null || 
+				data.operating_temperature_min === undefined || data.operating_temperature_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.operating_temperature_max >= data.operating_temperature_min;
+		},
 		{ message: 'Operating temp max must be >= min', path: ['operating_temperature_max'] }
 	)
 	.refine(
-		(data) =>
-			data.storage_temperature_max === undefined ||
-			data.storage_temperature_max === null ||
-			data.storage_temperature_min === undefined ||
-			data.storage_temperature_min === null ||
-			data.storage_temperature_max >= data.storage_temperature_min,
+		(data) => {
+			// Skip validation if either value is null/undefined
+			if (data.storage_temperature_max === undefined || data.storage_temperature_max === null || 
+				data.storage_temperature_min === undefined || data.storage_temperature_min === null) {
+				return true;
+			}
+			// Only validate when both values are present
+			return data.storage_temperature_max >= data.storage_temperature_min;
+		},
 		{ message: 'Storage temp max must be >= min', path: ['storage_temperature_max'] }
 	);
 // Schema for creating subsequent Part Versions - Refined
