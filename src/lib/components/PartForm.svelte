@@ -1,7 +1,7 @@
 <!-- src/lib/components/PartForm.svelte -->
 
 <script lang="ts">
-import type { categorySchema, createPartSchema, manufacturerSchema, partVersionSchema } from '$lib/server/db/schema';
+import type { categorySchema, createPartSchema, manufacturerSchema } from '$lib/server/db/schema';
 import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, TemperatureUnitEnum, WeightUnitEnum, type Dimensions } from '@/types/types';
 import { onMount } from 'svelte';
 import type { SuperForm } from 'sveltekit-superforms';
@@ -39,8 +39,8 @@ export const options = {
   partStatuses: Object.values(PartStatusEnum),
   temperatureUnits: Object.values(TemperatureUnitEnum)
 }; 
-export let partData: Partial<z.infer<typeof partVersionSchema>> | undefined = undefined;
-export let versionData: Partial<z.infer<typeof partVersionSchema>> | undefined = undefined
+export let partData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined;
+export let versionData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined
 export let categories: Category[] = [];
 export let manufacturers: partManufacturer[] = [];
 export let selectedCategoryIds: string[] = [];
@@ -74,8 +74,8 @@ let activeSection = 'basic';
   let formData: Partial<z.infer<typeof createPartSchema>> = {
     name: '',
     version: '0.1.0',
-    status: LifecycleStatusEnum.DRAFT,
-    partStatus: PartStatusEnum.CONCEPT,
+    lifecycle_status: LifecycleStatusEnum.DRAFT,
+    part_status: PartStatusEnum.CONCEPT,
     short_description: '',
     functional_description: '',
     revision_notes: '',
@@ -274,9 +274,9 @@ function updateFormData(fieldName: string, value: any): void {
 
      if (isEditMode && partData && versionData) {
       if (partData && 'part_status' in partData) {
-        formData.partStatus = partData.part_status as PartStatusEnum;
+        formData.part_status = partData.part_status as PartStatusEnum;
       } else {
-        formData.partStatus = PartStatusEnum.CONCEPT;
+        formData.part_status = PartStatusEnum.CONCEPT;
       }
       if (versionData && 'category_ids' in versionData) {
         selectedCategoryIds = String(versionData.category_ids).split(',');
@@ -325,8 +325,8 @@ function updateFormData(fieldName: string, value: any): void {
   <!-- Hidden inputs -->
   <input type="hidden" name="name" value={formData.name || ''} />
   <input type="hidden" name="version" value={formData.version || '0.1.0'} />
-  <input type="hidden" name="lifecycle_status" value={formData.status || LifecycleStatusEnum.DRAFT} />
-  <input type="hidden" name="part_status" value={formData.partStatus || PartStatusEnum.CONCEPT} />
+  <input type="hidden" name="lifecycle_status" value={formData.lifecycle_status || LifecycleStatusEnum.DRAFT} />
+  <input type="hidden" name="part_status" value={formData.part_status || PartStatusEnum.CONCEPT} />
 
   <!-- Basic Information -->
   <div class="form-section {activeSection === 'basic' ? 'active' : ''}">
@@ -348,7 +348,7 @@ function updateFormData(fieldName: string, value: any): void {
         </div>
         <div class="form-group">
           <label for="lifecycle_status">Lifecycle Status</label>
-          <select name="lifecycle_status" id="lifecycle_status" bind:value={formData.status} required>
+          <select name="lifecycle_status" id="lifecycle_status" bind:value={formData.lifecycle_status} required>
             {#each options.statuses as status}
               <option value={status}>{status}</option>
             {/each}
@@ -357,7 +357,7 @@ function updateFormData(fieldName: string, value: any): void {
         </div>
         <div class="form-group">
           <label for="part_status">Part Status</label>
-          <select name="part_status" id="part_status" bind:value={formData.partStatus}>
+          <select name="part_status" id="part_status" bind:value={formData.part_status}>
             {#each options.partStatuses as status}
               <option value={status}>{status}</option>
             {/each}
