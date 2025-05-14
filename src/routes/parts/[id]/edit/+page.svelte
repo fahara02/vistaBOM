@@ -5,9 +5,25 @@
 	import type { PageData } from './$types';
 
 	export let data: PageData;
-	const { form, errors, enhance } = superForm(data.form, {
-		dataType: 'json' // Enable handling of complex JSON data and union types
+
+	// Debug the data being passed to the form component
+	console.log('Edit page loaded with part data:', {
+		part: data.part,
+		currentVersion: data.currentVersion,
+		formData: data.form
 	});
+
+	// Initialize SuperForm with server-provided data
+	const { form, errors, enhance } = superForm(data.form, {
+		dataType: 'json',
+		onUpdated: ({ form }) => {
+			console.log('Form updated in edit page:', form);
+		}
+	});
+
+	// Verify form data is correctly loaded with all fields
+	console.log('SuperForm initialized with data:', $form);
+	console.log('Form fields count:', Object.keys($form).length);
 </script>
 
 <div class="container">
@@ -24,6 +40,14 @@
 		isEditMode={true}
 		dimensionUnits={data.dimensionUnits}
 		partStatuses={data.partStatuses}
+		
+		{/* Add type assertions to fix TypeScript errors */}
+		partData={{ ...data.part, status: data.part.status as any }}
+		versionData={{ ...data.currentVersion, dimensions: data.currentVersion.dimensions as any }}
+		
+		{/* Pass the form data directly for SuperForm */}
+		data={{ form: data.form.data }} 
+		serverFormData={data.form} 
 	/>
 </div>
 

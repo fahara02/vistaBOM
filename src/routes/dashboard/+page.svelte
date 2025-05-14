@@ -2,11 +2,14 @@
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import { PartForm } from '$lib/components';
+	import { LifecycleStatusEnum, PartStatusEnum } from '@/types/types';
+	import type { createPartSchema } from '$lib/server/db/schema';
+	import type { z } from 'zod';
 	import { superForm } from 'sveltekit-superforms/client';
 	import { parseContactInfo } from '$lib/utils/util';
 	import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
 	import Category from '$lib/components/category.svelte';
-	import type { Category as CategoryType } from '$lib/server/db/types';
+	import type { Category as CategoryType } from '@/types/types';
 	import { onMount } from 'svelte';
 
 	export let data: PageData;
@@ -99,30 +102,88 @@
 		activeTab = tab;
 	}
 	
+	// Reference to the form element for form submission
+	let partFormElement: HTMLFormElement;
+	
 	// Function to toggle part form visibility
 	function togglePartForm(): void {
 		showPartForm = !showPartForm;
-		console.log("part form is " + (showPartForm ? "showing" : "hidden"));
+		
+		// If we're closing the form, reset the form data to prevent stale data issues
+		if (!showPartForm) {
+			// Reset the part form to default values with proper enum values
+			// Use proper schema field names matching the createPartSchema
+			$partForm = {
+				name: '',
+				version: '0.1.0',
+				short_description: '',
+				// Use proper enum values to ensure type safety
+				status: LifecycleStatusEnum.DRAFT, // Use status as per schema
+				part_status: PartStatusEnum.CONCEPT
+			};
+		}
+		
+		console.log("Part form is " + (showPartForm ? "showing" : "hidden"));
+	}
+	
+	// Update form data when the PartForm component changes
+	function updateFormData(event: CustomEvent) {
+		const formData = event.detail;
+		console.log('📦 Received form update from PartForm:', formData);
+		
+		// Update the SuperForm store with the new data
+		$partForm = { ...$partForm, ...formData };
 	}
 	
 	// All categories data for ComboBox in both create and edit forms
 	let allCategories: CategoryType[] = [];
 
-	// Initialize part form with superForm - make sure we pass all required data
+	// Initialize part form with superForm with improved error handling
 	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.partForm, {
 		dataType: 'json',
-		onSubmit: ({ cancel, formData, formElement }) => {
-			// Make sure we're using the correct action URL with the named action
-			formElement.setAttribute('action', '?/part');
+		resetForm: false, // Keep form values on submission
+		onSubmit: ({ formData }) => {
+			console.log('Submitting part form with data:', formData);
+			
+			// Make sure enum fields with empty values are properly handled
+			// Update enum field names to match the schema
+			const enumFields = ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'];
+			enumFields.forEach(field => {
+				if (formData.has(field)) {
+					const value = formData.get(field);
+					if (value === '' || value === undefined) {
+						// Remove empty enum fields instead of setting to null
+						// This avoids FormData type issues with null values
+						formData.delete(field);
+					}
+				}
+			});
 		},
 		onResult: ({ result }) => {
-			// Handle successful submission
+			console.log('Part form submission result:', result);
+			
+			// Check if the submission was successful
 			if (result.type === 'success') {
+				// Show success message
+				$partMessage = 'Part created successfully!';
+				
+				// Hide the form
 				showPartForm = false;
+				
 				// Reload the page to get updated parts list
-				window.location.reload();
+				setTimeout(() => {
+					window.location.reload();
+				}, 1000); // Short delay to show the success message
+			} else if (result.type === 'error') {
+				// Show error message
+				$partMessage = 'Failed to create part. Please check the form for errors.';
+				console.error('Part form submission error:', result.error);
 			}
-			// Don't reset the form on error to preserve user input
+		},
+		onError: (error) => {
+			// Handle validation errors
+			console.error('Part form validation error:', error);
+			$partMessage = 'Form validation failed. Please check the highlighted fields.';
 		}
 	});
 
@@ -362,24 +423,35 @@
 						<h2>Create New Part</h2>
 						
 						{#if $partMessage}
-							<div class="form-message {$partMessage.includes('Failed') ? 'error' : 'success'}">
+							<div class="form-message {typeof $partMessage === 'string' && $partMessage.includes('Failed') ? 'error' : 'success'}">
 								{$partMessage}
 							</div>
 						{/if}
 						
 						<div class="embedded-form">
-							<form method="POST" action="?/part" use:partEnhance>
+							<!-- Using bind:this to capture form element reference -->
+							<form method="POST" action="?/part" use:partEnhance bind:this={partFormElement}>
+								<!-- Hidden fields to capture form data from PartForm component -->
+								{#each Object.entries($partForm) as [key, value]}
+									{#if typeof value !== 'object' || value === null}
+										<input type="hidden" name={key} value={value ?? ''} />
+									{:else if key === 'dimensions' && value !== null}
+										<!-- Handle dimensions object specially -->
+										<input type="hidden" name="dimensions" value={JSON.stringify(value)} />
+									{:else if typeof value === 'object'}
+										<!-- Handle other object values -->
+										<input type="hidden" name={key} value={JSON.stringify(value)} />
+									{/if}
+								{/each}
+
 								<PartForm 
-									form={partForm} 
-									errors={partErrors}
-									packageTypes={data.packageTypes}
-									weightUnits={data.weightUnits}
-									dimensionUnits={data.dimensionUnits}
-									statuses={data.statuses}
-									enhance={partEnhance}
-									categories={data.categories}
-									manufacturers={data.userManufacturers}
-									hideButtons={true}
+									categories={categories || []}
+									errors={$partErrors as Record<string, any>}
+									data={{ partForm: $partForm }}
+									hideButtons={false}
+									isDashboardContext={true}
+									isEditMode={false}
+									on:formUpdate={updateFormData}
 								/>
 								
 								<div class="form-actions">

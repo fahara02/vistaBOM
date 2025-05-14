@@ -662,14 +662,49 @@ export const actions: Actions = {
 		}
 		
 		// Now validate the form data with zod schema including relationship fields
-		// Add debug logging for each field before validation
-		const debugFormData = {};
+		// Add debug logging for each field before validation and process JSON fields
+		// Use a Record to ensure TypeScript knows this object can have string keys
+		const debugFormData: Record<string, string> = {};
+		const processedFormData = new FormData();
+		
+		// IMPORTANT: Process all form data, parsing JSON fields as needed
 		for (const [key, value] of formData.entries()) {
-			debugFormData[key] = value;
+			// Convert to string for logging
+			debugFormData[key] = value.toString();
+			
+			// Handle potential JSON fields properly
+			if (typeof value === 'string' && 
+				(key === 'dimensions' || 
+				key === 'technical_specifications' || 
+				key === 'properties' || 
+				key === 'electrical_properties' ||
+				key === 'mechanical_properties' || 
+				key === 'thermal_properties' || 
+				key === 'material_composition' || 
+				key === 'environmental_data')) {
+				try {
+					// If it starts with '{', it's likely a JSON string
+					if (value.trim().startsWith('{')) {
+						const parsedValue = JSON.parse(value);
+						console.log(`Parsed JSON field ${key}:`, parsedValue);
+						// Use the parsed object directly with SuperForm
+						processedFormData.append(key, value);
+						continue;
+					}
+				} catch (e) {
+					console.warn(`Failed to parse ${key} as JSON:`, e);
+					// Keep original value if parsing fails
+				}
+			}
+			
+			// Add to processed form data
+			processedFormData.append(key, value);
 		}
+		
 		console.log('Form data before validation:', debugFormData);
 
-		const form = await superValidate(formData, zod(extendedPartSchema));
+		// Use processed form data for validation instead of the original
+		const form = await superValidate(processedFormData, zod(extendedPartSchema));
 		
 		// CRITICAL FIX: If form validation fails but we have a name, override the error
 		if (!form.valid) {

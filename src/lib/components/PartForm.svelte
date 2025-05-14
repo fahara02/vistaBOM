@@ -1,36 +1,178 @@
 <!-- src/lib/components/PartForm.svelte -->
 
 <script lang="ts">
-import type { categorySchema, createPartSchema, manufacturerSchema } from '$lib/server/db/schema';
+import type { categoryClientSchema as categorySchema } from '$lib/schema/shared';
+import type { manufacturerSchema } from '$lib/server/db/schema';
+import { createPartSchema } from '$lib/schema/shared';
 import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, TemperatureUnitEnum, WeightUnitEnum, type Dimensions } from '@/types/types';
-import { onMount } from 'svelte';
-import type { SuperForm } from 'sveltekit-superforms';
-import type { SuperFormData } from 'sveltekit-superforms/client';
+import { onMount, createEventDispatcher } from 'svelte';
+import { superForm } from 'sveltekit-superforms/client';
 import type { z } from 'zod';
 import ManufacturerSelector from './ManufacturerSelector.svelte';
 import MultiCategorySelector from './MultiCategorySelector.svelte';
+
+// Event dispatcher to send form updates to parent component
+const dispatch = createEventDispatcher<{
+  formUpdate: Record<string, any>;
+}>();
 
 
 //DECLARATION OF TYPES 
 type SnakeCasePartSchema = z.infer<typeof createPartSchema>;
 // Define Category and Manufacturer types based on schema
 type Category = z.infer<typeof categorySchema>;
-// Update Manufacturer type to match schema
-type partManufacturer = z.infer<typeof manufacturerSchema> ;
+// Define Manufacturer type with proper handling of null/undefined
+type Manufacturer = {
+  id: string;
+  name: string;
+  created_at: Date;
+  updated_at: Date;
+  description?: string | undefined;  // Remove null to match expected type
+  created_by?: string | undefined;
+  updated_by?: string | undefined;
+  website_url?: string | undefined;
+  contact_info?: any;
+  logo_url?: string | undefined;
+};
 // Updated type based on new schema
-type PartsFormData = SnakeCasePartSchema & {
+type PartsFormData = Omit<SnakeCasePartSchema, 'lifecycle_status'> & {
   id?: string;
+  status: LifecycleStatusEnum; // Using status instead of lifecycle_status to match schema
   category_ids?: string;
   manufacturer_parts?: string;
   dimensions?: Dimensions | null;
+  
+  // All electrical properties
+  voltage_rating_min?: number | null;
+  voltage_rating_max?: number | null;
+  current_rating_min?: number | null;
+  current_rating_max?: number | null;
+  power_rating_max?: number | null;
+  tolerance?: number | null;
+  tolerance_unit?: string | null;
+  
+  // Thermal properties
+  operating_temperature_min?: number | null;
+  operating_temperature_max?: number | null;
+  storage_temperature_min?: number | null;
+  storage_temperature_max?: number | null;
+  temperature_unit?: TemperatureUnitEnum | null;
+  
+  // Additional fields
+  pin_count?: number | null;
+  functional_description?: string | null;
+  revision_notes?: string | null;
+  
+  // JSON fields
+  electrical_properties?: any;
+  mechanical_properties?: any;
+  thermal_properties?: any;
+  material_composition?: any;
+  environmental_data?: any;
 };   
  
-type FlexiblePartSchema = z.infer<typeof createPartSchema> | SnakeCasePartSchema|PartsFormData;
+// This type accommodates the various field name variations that might come from the server
+type ServerPartData = Partial<z.infer<typeof createPartSchema>> & {
+  // Standard fields that may have different names on the server
+  id?: string;
+  part_id?: string;
+  // Status field variations
+  lifecycle_status?: string;
+  version_status?: string;
+  // Description field variations
+  long_description?: string | null;
+  full_description?: string | null;
+  // JSON fields that might be stored as strings
+  technical_specifications?: string | Record<string, any>;
+  properties?: string | Record<string, any>;
+  electrical_properties?: string | Record<string, any>;
+  mechanical_properties?: string | Record<string, any>;
+  thermal_properties?: string | Record<string, any>;
+  material_composition?: string | Record<string, any>;
+  environmental_data?: string | Record<string, any>;
+  // Dimensions might be a string, object, or have different structure
+  dimensions?: string | { length?: number | string; width?: number | string; height?: number | string } | null;
+  // Any other potential variations
+  [key: string]: any;
+};
+
+type FlexiblePartSchema = z.infer<typeof createPartSchema> | SnakeCasePartSchema | PartsFormData;
+
+// Define a FormData type for our component's use
+type FormDataType = {
+  partForm?: Record<string, any>;
+  [key: string]: any;
+};
+
+// Define an ErrorsType for our component's use that accommodates SuperForm validation errors
+type ErrorsType = Record<string, string | string[] | undefined> | Record<string, any> | undefined;
 
 
 //REACTIVE DATAS
-export let form: FlexiblePartSchema | SuperForm<FlexiblePartSchema> | SuperFormData<FlexiblePartSchema>;
-export let errors: any = null;
+// These are input props provided to the component
+// Allow form data to be passed directly or via a data object
+export let data: FormDataType = {};
+// Note: We're accessing errors through formErrors from superForm, so making this a const
+export const errors: ErrorsType = {};
+// Optional direct props for standalone edit page context - these take precedence over data object props
+export let form: any = undefined;
+export let enhance: any = undefined; // Will be used in SuperForm initialization
+// Direct access to server form data - reliable source for edit mode
+// We're expecting SuperForm's structure which contains a data property
+export let serverFormData: { data: Record<string, any>; [key: string]: any } | undefined = undefined;
+
+// Initialize reactive form data with schema defaults
+let formData: PartsFormData = {
+  id: '',
+  name: '',
+  version: '0.1.0',
+  status: LifecycleStatusEnum.DRAFT, // Changed from lifecycle_status to match schema
+  part_status: PartStatusEnum.CONCEPT,
+  full_description: '',
+  manufacturer_parts: '',
+  category_ids: '',
+  short_description: '',
+  technical_specifications: {},
+  properties: {},
+  electrical_properties: {},
+  mechanical_properties: {},
+  thermal_properties: {},
+  material_composition: {},
+  environmental_data: {},
+  is_public: false,
+  dimensions: { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number }
+};
+
+// Initialize SuperForm at component top level
+const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm<FlexiblePartSchema>(
+  // Use provided form data or empty object
+  (form !== undefined ? form : data?.form || {}) as FlexiblePartSchema, 
+  {
+    resetForm: false,
+    dataType: 'json',
+    ...(enhance ? enhance : {}),
+    // Log all form update events to trace data flow
+    onUpdated: (event) => {
+      console.log('🔄 FORM DATA UPDATED:', event.form);
+      // Keep formData in sync with the form store
+      formData = { ...formData, ...event.form };
+      console.log('DIMENSIONS STATE:', formData.dimensions);
+      
+      // Dispatch form update event to parent component when in dashboard context
+      if (isDashboardContext) {
+        // Only send the data when it's meaningful (not during initialization)
+        if (isFormInitialized) {
+          dispatch('formUpdate', formData);
+        }
+      }
+    }
+  }
+);
+
+// Form variables - initialize to empty string by default, will be set during initialization
+let activeSection = '';
+
+// Options for enum fields
 export const options = {
   statuses: Object.values(LifecycleStatusEnum),
   packageTypes: Object.values(PackageTypeEnum),
@@ -39,254 +181,722 @@ export const options = {
   partStatuses: Object.values(PartStatusEnum),
   temperatureUnits: Object.values(TemperatureUnitEnum)
 }; 
-export let partData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined;
-export let versionData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined
+
+// Component props
+export let partData: ServerPartData | undefined = undefined;
+export let versionData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined;
 export let categories: Category[] = [];
-export let manufacturers: partManufacturer[] = [];
+export let manufacturers: Manufacturer[] = [];
 export let selectedCategoryIds: string[] = [];
 export let selectedManufacturerParts: any[] = [];
 export let isEditMode: boolean = false;
 export let hideButtons: boolean = false;
-export let isEmbedded: boolean = false; 
-export let isFormInitialized: boolean = false;
-  // Used by the parent component - converting to const as recommended by linter
-export const enhance: ((node: HTMLFormElement) => { destroy: () => void }) | null = null;
-  // Reactive dimensions
-let dimensions: Dimensions = { length: null, width: null, height: null };
+// Flag to indicate if this form is being used in dashboard context - affects initialization behavior
+export let isDashboardContext: boolean = false;
+// Track if form has been initialized
+let isFormInitialized = false;
+
+// Reactive dimensions - ensure they're properly initialized with safe defaults
+let dimensions: Dimensions = { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number };
 let dimensionsUnit: DimensionUnitEnum | null = null;
-let activeSection = 'basic';
 
-  
-  // Initialize JSON editors with empty objects
-  let jsonEditors = {
-    technicalSpecs: '{}',
-    properties: '{}',
-    electricalProperties: '{}',
-    mechanicalProperties: '{}',
-    thermalProperties: '{}',
-    materialComposition: '{}',
-    environmentalData: '{}',
-    longDescription: '{}'
-  };
+// Safe parsing helper for dimensions and other numeric fields
+function parseFloatOrNull(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'string' ? parseFloat(value) : value;
+  return isNaN(parsed) ? null : parsed;
+}
 
+// Initialize JSON editors with empty objects
+let jsonEditors = {
+  technicalSpecs: '{}',
+  properties: '{}',
+  electricalProperties: '{}',
+  mechanicalProperties: '{}',
+  thermalProperties: '{}',
+  materialComposition: '{}',
+  environmentalData: '{}',
+  fullDescription: '{}'
+};
 
-   // Reactive form data initialized with schema defaults
-  let formData: Partial<z.infer<typeof createPartSchema>> = {
-    name: '',
-    version: '0.1.0',
-    lifecycle_status: LifecycleStatusEnum.DRAFT,
-    part_status: PartStatusEnum.CONCEPT,
-    short_description: '',
-    functional_description: '',
-    revision_notes: '',
-    dimensions: null,
-    dimensions_unit: null,
-    temperature_unit: null,
-    weight_unit: null,
-    tolerance_unit: null,
-    operating_temperature_min: null,
-    operating_temperature_max: null,
-    storage_temperature_min: null,
-    storage_temperature_max: null,
-    voltage_rating_min: null,
-    voltage_rating_max: null,
-    current_rating_min: null,
-    current_rating_max: null,
-    power_rating_max: null,
-    tolerance: null,
-    weight: null,
-    package_type: null,
-    pin_count: null,
-    technical_specifications: {},
-    properties: {},
-    electrical_properties: {},
-    mechanical_properties: {},
-    thermal_properties: {},
-    material_composition: {},
-    environmental_data: {},
-    long_description: {}
-  };
-//HELPER FUNCTIONS 
-  // Helper function to extract the data from form (regardless of form type)
-  function getData(formInput: typeof form): Record<string, any> {
-    if (!form) return {};
-    
-    let data: Record<string, any> = {};
-    
-    // Handle various form types that may be passed
-    if ('subscribe' in form) {
-      // It's a Svelte store (likely from SuperForm)
+// Handle JSON editor changes
+function onJsonEditorChange(editorName: string, value: string): void {
+  jsonEditors[editorName as keyof typeof jsonEditors] = value;
+}
+
+// Convert JSON to editable string safely with better error handling
+function jsonToString(json: any): string {
+  if (!json) return '{}';
+  try {
+    if (typeof json === 'string') {
+      // Try to parse the string as JSON
       try {
-        // Access the current value using subscribe
-        const formStore = form as { subscribe: Function };
-        let storeValue: Record<string, any> | null = null;
-        const unsubscribe = formStore.subscribe((value: Record<string, any>) => {
-          storeValue = value;
-        });
-        unsubscribe();
-        data = storeValue ? Object.assign({}, storeValue) : {};
+        const parsed = JSON.parse(json);
+        return JSON.stringify(parsed, null, 2);
       } catch (e) {
-        console.error('Error accessing form store:', e);
+        // Not valid JSON, return empty object
+        return '{}';
       }
-    } else if ('form' in form) {
-      // It's a SuperForm instance with a form property
-      const formObj = form.form as Record<string, any>;
-      data = Object.assign({}, formObj);
     } else {
-      // It's a direct data object
-      data = Object.assign({}, form as Record<string, any>);
+      return JSON.stringify(json, null, 2);
     }
-     return data; // 
-
+  } catch (error) {
+    console.error('Error converting JSON to string:', error);
+    return '{}';
   }
-  // Update form data non-reactively
-function updateFormData(fieldName: string, value: any): void {
-    const target = 'form' in form ? (form.form as any) : (form as any);
-    target[fieldName] = value;
-} 
+}
 
- 
+// Check if dimensions are complete
+function isCompleteDimensions(dims: Dimensions): dims is { length: number; width: number; height: number } {
+  return dims.length != null && dims.width != null && dims.height != null;
+}
 
-  // Handle JSON editor changes
-  function onJsonEditorChange(editorName: string, value: string) {
-    jsonEditors[editorName as keyof typeof jsonEditors] = value;
-  }
-
-   // Convert JSON to editable string safely with better error handling
-  function jsonToString(json: any): string {
-    if (!json) return '';
-    try {
-      if (typeof json === 'string') {
-        // Try to parse the string as JSON
-        try {
-          const parsed = JSON.parse(json);
-          return JSON.stringify(parsed, null, 2);
-        } catch (e) {
-          // Not valid JSON, return the string as is
-          return json;
-        }
-      } else {
-        return JSON.stringify(json, null, 2);
-      }
-    } catch (error) {
-      console.error('Error converting JSON to string:', error);
-      return '';
-      return '{}'; 
-    }
-  }
-
-  function isCompleteDimensions(dims: Dimensions): dims is { length: number; width: number; height: number } {
-    return dims.length != null && dims.width != null && dims.height != null;
-  }
-
-
-//REACTIVITY
-    // Sync dimensions
-
-   // Update these values when formData changes
-  $: {
-    if (formData) {
-      // Handle dimensions safely - parse if string, use directly if object
-      if (formData.dimensions) {
-        if (typeof formData.dimensions === 'string') {
-          try {
-            dimensions = JSON.parse(formData.dimensions) as Dimensions;
-          } catch (e) {
-            dimensions = { length: null, width: null, height: null };
-            console.warn('Failed to parse dimensions from string:', e);
-          }
-        } else {
-          dimensions = formData.dimensions as Dimensions;
-        }
-      }
-      
-      // Set dimension unit
-      dimensionsUnit = formData.dimensions_unit || null;
-    }
-  }
-    $: if (formData) {
-    
-    formData.dimensions_unit = dimensionsUnit;
-  }
-
-  // No longer needed - using enum values directly in the component
-
-
-  const toggleSection = (section: string) => {
-    activeSection = activeSection === section ? '' : section;
+// Ensure dimensions is always a properly formatted object
+function ensureDimensions(dims: any): Dimensions {
+  // Default empty dimensions object
+  const defaultDims: Dimensions = { 
+    length: null as unknown as number, 
+    width: null as unknown as number, 
+    height: null as unknown as number 
   };
-
   
-  // Prepare form submission
- function prepareFormSubmission(): Record<string, any> {
-    const extractedFormData: Record<string, any> = { ...getData(form), ...formData };
-    const domInputs = document.querySelectorAll('input, select, textarea');
-    domInputs.forEach((el) => {
-      const input = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-      if (input.name) extractedFormData[input.name] = input.value;
-    });
-
-    const jsonFieldMap: Record<string, string> = { /* ... */ };
-    Object.entries(jsonFieldMap).forEach(([editor, field]) => {
-      extractedFormData[field] = JSON.parse(jsonEditors[editor as keyof typeof jsonEditors] || '{}');
-    });
-
-    if (isCompleteDimensions(dimensions)) {
-      extractedFormData.dimensions = dimensions;
-    } else {
-      extractedFormData.dimensions = null;
+  if (!dims) return defaultDims;
+  
+  // Handle string format (from form submission)
+  if (typeof dims === 'string') {
+    try {
+      return { ...defaultDims, ...JSON.parse(dims) };
+    } catch (e) {
+      console.error('Error parsing dimensions from string:', e);
+      return defaultDims;
     }
-    extractedFormData.category_ids = selectedCategoryIds.join(',');
-    extractedFormData.manufacturer_parts = JSON.stringify(selectedManufacturerParts);
-
-    return extractedFormData;
   }
+  
+  // Handle object format but ensure it has the expected shape
+  if (typeof dims === 'object') {
+    return {
+      length: parseFloatOrNull(dims.length) as unknown as number,
+      width: parseFloatOrNull(dims.width) as unknown as number,
+      height: parseFloatOrNull(dims.height) as unknown as number
+    };
+  }
+  
+  return defaultDims;
+}
 
- // Initialize form on mount
-  onMount(() => {
-    const currentFormData = getData(form);
-    if (!isFormInitialized || !currentFormData.name) {
-      isFormInitialized = false;
+// Simple function to get the current form data
+function getData(): Record<string, any> {
+  try {
+    // Use formData as the source of truth
+    return { ...formData };
+  } catch (e) {
+    console.error('Error getting form data:', e);
+    return {};
+  }
+}
+
+// Define the toggleSection function
+function toggleSection(section: string): void {
+  console.log(`Toggle section ${section} called. Current active section: ${activeSection}`);
+  
+  // In dashboard context, don't allow closing the section completely
+  if (isDashboardContext && activeSection === section) {
+    // Don't close it - keep at least one section open
+    console.log('Dashboard context - keeping section open:', section);
+    return;
+  }
+  
+  // Toggle section visibility
+  activeSection = activeSection === section ? '' : section;
+  console.log(`Section ${section} is now ${activeSection === section ? 'open' : 'closed'}`);
+}
+
+// Update form data non-reactively
+function updateFormData(fieldName: string, value: unknown): void {
+  // Update the form store value with type-safety
+  try {
+    // Handle enum fields properly - convert empty strings to null
+    if (value === '') {
+      // Check if this is an enum field that should be nullable
+      const enumFields = ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'];
+      if (enumFields.includes(fieldName)) {
+        value = null;
+      }
     }
+    
+    // Update the SuperForm store if available
+    if ($form) {
+      ($form as Record<string, unknown>)[fieldName] = value;
+    }
+    
+    // Also update the local formData for consistency
+    (formData as Record<string, unknown>)[fieldName] = value;
+  } catch (e) {
+    console.error(`Error updating form field ${fieldName}:`, e);
+  }
+}
 
-    if (!isFormInitialized && Object.keys(currentFormData).length > 0) {
-      formData = { ...formData, ...currentFormData };
-      dimensions = formData.dimensions || { length: null, width: null, height: null };
-      dimensionsUnit = formData.dimensions_unit || null;
+// Initialize form on mount
+// Update dimensions when formData changes
+$: if (formData && formData.dimensions) {
+  dimensions = ensureDimensions(formData.dimensions);
+  dimensionsUnit = formData.dimensions_unit as DimensionUnitEnum | null;
+}
 
-      const jsonFields: (keyof z.infer<typeof createPartSchema>)[] = [
-        'technical_specifications',
-        'properties',
-        'electrical_properties',
-        'mechanical_properties',
-        'thermal_properties',
-        'material_composition',
-        'environmental_data',
-        'long_description'
-      ];
-      jsonFields.forEach((field) => {
-         const key = field as keyof typeof formData;
-         const value = currentFormData[key] || {};
-        formData[key] = typeof value === 'string' ? JSON.parse(value) || {} : value;
-        const editorKey = field.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-        jsonEditors[editorKey as keyof typeof jsonEditors] = JSON.stringify(formData[key], null, 2);
-      });
+// Prepare form submission
+function prepareFormSubmission(): Record<string, unknown> {
+  // Start with data from formData to ensure we have complete data
+  const extractedFormData: Record<string, unknown> = { ...getData() };
+  
+  // Handle dimensions specially - make sure we only include complete dimensions
+  if (isCompleteDimensions(dimensions)) {
+    extractedFormData.dimensions = dimensions;
+  } else {
+    extractedFormData.dimensions = null;
+  }
+  
+  // For required ID fields that should be part of the form submission
+  if (isEditMode && !extractedFormData.id && partData && 'id' in partData) {
+    extractedFormData.id = partData.id;
+  }
+  
+  // Handle special fields
+  extractedFormData.category_ids = selectedCategoryIds.join(',');
+  extractedFormData.manufacturer_parts = JSON.stringify(selectedManufacturerParts);
+  
+  // Ensure all enum fields are either valid enum values or null (not empty strings)
+  ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'].forEach(field => {
+    if (extractedFormData[field] === '') {
+      extractedFormData[field] = null;
+    }
+  });
+  
+  return extractedFormData;
+}
 
-     if (isEditMode && partData && versionData) {
+onMount(() => {
+  console.log('PartForm mounted - initializing with mode:', isEditMode ? 'EDIT' : 'ADD');
+  console.log('isDashboardContext:', isDashboardContext);
+  console.log('Part data:', partData);
+  console.log('Version data:', versionData);
+  console.log('Form prop:', form);
+  console.log('Server form data prop:', serverFormData);
+  
+  // Debug the current state of formData and formStore
+  console.log('🔄 Initial formData:', JSON.stringify(formData, null, 2));
+  console.log('🔄 Initial formStore:', JSON.stringify($formStore, null, 2));
+  
+  // CRITICAL FIX: When in edit mode and we have server data directly available, use it
+  if (isEditMode && serverFormData) {
+    console.log('🚨 Using direct server form data for initialization');
+    console.log('Server form data structure:', serverFormData);
+    
+    // SuperForm wraps the actual form data in a 'data' property
+    if (serverFormData.data && typeof serverFormData.data === 'object') {
+      // Use Record<string, any> type to avoid TypeScript errors with property access
+      const serverData = serverFormData.data as Record<string, any>;
+      console.log('Extracted server data:', serverData);
+      console.log('Field count in server data:', Object.keys(serverData).length);
+      
+      if (Object.keys(serverData).length > 0) {
+        try {
+          // Create a properly structured object that conforms to PartsFormData
+          const processedData: PartsFormData = {
+            // Start with existing defaults
+            ...formData,
+            
+            // Essential fields - using proper null checking and defaults
+            id: serverData.id ?? '',
+            part_id: serverData.part_id ?? '',
+            name: serverData.name ?? '',
+            version: serverData.version ?? '0.1.0',
+            
+            // Map the status correctly - server uses lifecycle_status but client uses status
+            // We're using type assertion to handle this field name mismatch
+            status: (serverData.status ?? (serverData as any).lifecycle_status ?? 'draft') as LifecycleStatusEnum,
+            part_status: (serverData.part_status ?? 'concept') as PartStatusEnum,
+            short_description: serverData.short_description ?? '',
+            is_public: !!serverData.is_public,
+            
+            // Map long_description (server) to full_description (client)
+            // Using type assertion to access server field
+            full_description: (serverData as any).long_description ?? '',
+            
+            // Object fields - ensure they're objects even if null
+            technical_specifications: serverData.technical_specifications ?? {},
+            properties: serverData.properties ?? {},
+            electrical_properties: serverData.electrical_properties ?? {},
+            mechanical_properties: serverData.mechanical_properties ?? {},
+            thermal_properties: serverData.thermal_properties ?? {},
+            material_composition: serverData.material_composition ?? {},
+            environmental_data: serverData.environmental_data ?? {},
+            
+            // Dimensions handling
+            dimensions: serverData.dimensions ?? { length: null, width: null, height: null },
+            dimensions_unit: serverData.dimensions_unit ?? '',
+            
+            // Physical properties
+            weight: serverData.weight ?? null,
+            weight_unit: serverData.weight_unit ?? '',
+            package_type: serverData.package_type ?? '',
+            pin_count: serverData.pin_count ?? null,
+            
+            // Electrical properties
+            voltage_rating_min: serverData.voltage_rating_min ?? null,
+            voltage_rating_max: serverData.voltage_rating_max ?? null,
+            
+            // Default values for remaining required fields
+            manufacturer_parts: '',
+            category_ids: '',
+          };
+          
+          // Update the form store and local data with properly typed data
+          $formStore = processedData;
+          formData = processedData;
+          console.log('Form initialized with properly typed data:', $formStore);
+          
+          // Log all form inputs to debug which fields are binding correctly
+          console.log('FORM FIELDS AFTER DATA MAPPING:');
+          console.log('- id:', formData.id);
+          console.log('- name:', formData.name);
+          console.log('- version:', formData.version);
+          console.log('- status:', formData.status);
+          console.log('- short_description:', formData.short_description);
+          console.log('- dimensions:', formData.dimensions);
+        } catch (error) {
+          console.error('Error processing form data:', error);
+        }
+      }
+    }
+  }
+  
+  // Debug dimensions if they exist
+  if (formData.dimensions) {
+    console.log('DIMENSIONS STATE:', {
+      type: typeof formData.dimensions,
+      value: formData.dimensions
+    });
+  }
+  
+  // SIMPLE DIRECT FIX: In edit mode, if we have server data and form is initializing, use it
+  if (isEditMode && isFormInitialized === false) {
+    // Priority order for initialization data:
+    // 1. serverFormData.data direct prop from edit page (most reliable)
+    // 2. data.form from component props
+    if (serverFormData?.data && Object.keys(serverFormData.data).length > 0) {
+      console.log('DIRECT INITIALIZATION: Using serverFormData.data prop');
+      // Use Record<string, any> to safely access properties that might not exist in PartsFormData
+      const serverData = serverFormData.data as Record<string, any>;
+      
+      // Create a complete PartsFormData object with all required fields
+      const updatedData: PartsFormData = {
+        // Start with existing defaults
+        ...formData,
+        
+        // Essential fields with fallbacks to current values
+        id: serverData.id ?? formData.id,
+        name: serverData.name ?? formData.name,
+        version: serverData.version ?? formData.version,
+        status: (serverData.status ?? (serverData as any).lifecycle_status ?? formData.status) as LifecycleStatusEnum,
+        part_status: (serverData.part_status ?? formData.part_status) as PartStatusEnum,
+        short_description: serverData.short_description ?? formData.short_description,
+        is_public: serverData.is_public ?? formData.is_public,
+        full_description: (serverData as any).long_description ?? formData.full_description,
+        
+        // Map object properties safely
+        technical_specifications: serverData.technical_specifications ?? formData.technical_specifications,
+        properties: serverData.properties ?? formData.properties,
+        electrical_properties: serverData.electrical_properties ?? formData.electrical_properties,
+        mechanical_properties: serverData.mechanical_properties ?? formData.mechanical_properties,
+        thermal_properties: serverData.thermal_properties ?? formData.thermal_properties,
+        material_composition: serverData.material_composition ?? formData.material_composition,
+        environmental_data: serverData.environmental_data ?? formData.environmental_data,
+        
+        // Physical properties
+        dimensions: serverData.dimensions ?? formData.dimensions,
+        dimensions_unit: serverData.dimensions_unit ?? formData.dimensions_unit,
+        weight: serverData.weight ?? formData.weight,
+        weight_unit: serverData.weight_unit ?? formData.weight_unit,
+        package_type: serverData.package_type ?? formData.package_type,
+        pin_count: serverData.pin_count ?? formData.pin_count,
+        
+        // Electrical properties
+        voltage_rating_min: serverData.voltage_rating_min ?? formData.voltage_rating_min,
+        voltage_rating_max: serverData.voltage_rating_max ?? formData.voltage_rating_max,
+        
+        // Other defaults
+        manufacturer_parts: serverData.manufacturer_parts ?? formData.manufacturer_parts,
+        category_ids: serverData.category_ids ?? formData.category_ids
+      };
+      
+      // Update the form data and store
+      formData = updatedData;
+      
+      // Log field values to verify data is properly loaded
+      console.log('UPDATED FORM FIELDS:');
+      console.log('- name:', formData.name);
+      console.log('- short_description:', formData.short_description);
+      console.log('- version:', formData.version);
+      $formStore = updatedData;
+    } else if (data?.form && Object.keys(data.form).length > 0) {
+      console.log('DIRECT INITIALIZATION: Using data.form');
+      formData = { ...formData, ...data.form };
+      // Update the form store with this data
+      $formStore = data.form;
+    }
+  }
+  
+  // Initialize form data and set section visibility based on mode and context
+  if (!isFormInitialized) {
+    // Always set the basic section as visible in dashboard context or edit mode
+    if (isDashboardContext || isEditMode) {
+      activeSection = 'basic';
+      console.log('🔍 SETTING ACTIVE SECTION:', activeSection);
+    }
+    
+    // Use different initialization behavior based on context
+    if (isDashboardContext && !isEditMode) {
+      // When in dashboard and adding a new part, use simple defaults
+      console.log('Dashboard context detected - initializing form with simple defaults');
+      // Set default values for required fields to ensure form works in dashboard context
+      formData = {
+        ...formData,
+        id: '',
+        name: '',
+        version: '0.1.0',
+        status: LifecycleStatusEnum.DRAFT,
+        part_status: PartStatusEnum.CONCEPT,
+        short_description: '',
+        is_public: false
+      };
+    }
+    
+    // In edit mode, make sure form data is initialized properly from the data prop
+    if (isEditMode) {
+      console.log('Edit mode initialization - checking data source');
+      
+      // IMPORTANT: We need to check multiple possible sources for our form data
+      // Priority: 1. Direct form prop, 2. data.form, 3. Part/version data
+      
+      // SIMPLE APPROACH: Just use the data we get from the server
+      // Use the most reliable data source for form initialization
+      if (serverFormData?.data && Object.keys(serverFormData.data).length > 0) {
+        console.log('Using serverFormData.data for edit mode - contains:', Object.keys(serverFormData.data).length, 'fields');
+        // Use Record<string, any> for flexibility with server data
+        const serverData = serverFormData.data as Record<string, any>;
+        
+        // Create a complete PartsFormData object with all required fields
+        const mappedData: PartsFormData = {
+          // Include defaults for missing fields
+          ...formData,
+          
+          // Essential fields
+          id: serverData.id ?? '',
+          name: serverData.name ?? '',
+          version: serverData.version ?? '0.1.0',
+          status: (serverData.status ?? serverData.lifecycle_status ?? 'draft') as LifecycleStatusEnum,
+          part_status: (serverData.part_status ?? 'concept') as PartStatusEnum,
+          short_description: serverData.short_description ?? '',
+          is_public: !!serverData.is_public,
+          
+          // Convert long_description to full_description
+          full_description: (serverData as any).long_description ?? '',
+          
+          // Physical properties
+          dimensions: serverData.dimensions ?? { length: null, width: null, height: null },
+          dimensions_unit: serverData.dimensions_unit ?? '',
+          weight: serverData.weight ?? null,
+          weight_unit: serverData.weight_unit ?? '',
+          package_type: serverData.package_type ?? '',
+          pin_count: serverData.pin_count ?? null,
+          
+          // Electrical properties
+          voltage_rating_min: serverData.voltage_rating_min ?? null,
+          voltage_rating_max: serverData.voltage_rating_max ?? null,
+          current_rating_min: serverData.current_rating_min ?? null,
+          current_rating_max: serverData.current_rating_max ?? null,
+          
+          // Object properties
+          technical_specifications: serverData.technical_specifications ?? {},
+          properties: serverData.properties ?? {},
+          electrical_properties: serverData.electrical_properties ?? {},
+          mechanical_properties: serverData.mechanical_properties ?? {},
+          thermal_properties: serverData.thermal_properties ?? {},
+          material_composition: serverData.material_composition ?? {},
+          environmental_data: serverData.environmental_data ?? {},
+          
+          // Other required fields
+          manufacturer_parts: serverData.manufacturer_parts ?? '',
+          category_ids: serverData.category_ids ?? '',
+        };
+        
+        // Update both the local form data and the store
+        formData = mappedData;
+        $formStore = mappedData;
+        console.log('Form updated with mapped data from server');
+        
+        // Detailed field logging for debugging
+        console.log('MAPPED FIELD VALUES:');
+        console.log('- name:', mappedData.name);
+        console.log('- short_description:', mappedData.short_description);
+        console.log('- version:', mappedData.version);
+        console.log('- dimensions:', mappedData.dimensions);
+        console.log('- weight:', mappedData.weight);
+        console.log('- package_type:', mappedData.package_type);
+      } else if (data?.form && Object.keys(data.form).length > 0) {
+        console.log('Using data.form for edit mode - contains:', Object.keys(data.form).length, 'fields');
+        formData = { ...formData, ...data.form };
+        // Make sure the form store has the data too
+        $formStore = data.form;
+        
+        // Parse dimensions if needed
+        if (form.dimensions) {
+          try {
+            if (typeof form.dimensions === 'string') {
+              formData.dimensions = JSON.parse(form.dimensions);
+            } else {
+              formData.dimensions = form.dimensions;
+            }
+          } catch (e) {
+            console.error('Error parsing dimensions:', e);
+          }
+        }
+        
+        // 🚨 CRITICAL FIX: Update the SuperForm store directly instead of local object
+        // This is necessary because the form inputs are bound to $formStore, not formData
+        $formStore = { ...$formStore, ...formData };
+        console.log('Updated formStore with direct form prop:', $formStore);
+        
+        // Set as initialized so we don't override it later
+        isFormInitialized = true;
+        console.log('Form initialization completed', {
+          formData, 
+          formStore: $formStore,
+          isFormInitialized,
+          formSize: Object.keys($formStore).length
+        });
+        
+        // FINAL VERIFICATION: After all initialization, verify data actually made it to the form
+        // Double check by logging key fields from the store to make debugging easier
+        console.log('FORM DATA VERIFICATION:', {
+          'name': $formStore.name,
+          'version': $formStore.version,
+          'short_description': $formStore.short_description,
+          'status': $formStore.status,
+          'part_status': $formStore.part_status,
+          'dimensions': $formStore.dimensions
+        });
+        
+        // SAFETY NET: If formStore is still empty after all initialization attempts,
+        // force the data one last time as a failsafe - but log this as critical
+        if (Object.keys($formStore).length <= 1) {
+          if (form !== undefined && Object.keys(form).length > 0) {
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from form prop');
+            $formStore = { ...$formStore, ...form };
+            console.log('Emergency form data recovery complete:', $formStore);
+          } else if (data?.form && Object.keys(data.form).length > 0) {
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from data.form');
+            $formStore = { ...$formStore, ...data.form };
+            console.log('Emergency data.form recovery complete:', $formStore);
+          }
+        }
+      }
+      // Second priority: data.form from the component props
+      else if (data?.form && Object.keys(data.form).length > 0) {
+        console.log('SECOND PRIORITY: Using data.form object:', data.form);
+        formData = {
+          ...formData,
+          ...data.form
+        };
+        
+        // Parse dimensions if needed
+        if (data.form.dimensions) {
+          try {
+            if (typeof data.form.dimensions === 'string') {
+              formData.dimensions = JSON.parse(data.form.dimensions);
+            } else {
+              formData.dimensions = data.form.dimensions;
+            }
+          } catch (e) {
+            console.error('Error parsing dimensions:', e);
+          }
+        }
+        
+        // 🚨 CRITICAL FIX: Update the SuperForm store directly with new property merging
+        // This ensures all properties are properly propagated to the form inputs
+        $formStore = { ...$formStore, ...formData };
+        console.log('Updated formStore with data.form:', $formStore);
+        
+        // Set as initialized so we don't override it later
+        isFormInitialized = true;
+        console.log('Form initialization completed', {
+          formData, 
+          formStore: $formStore,
+          isFormInitialized,
+          formSize: Object.keys($formStore).length
+        });
+        
+        // FINAL VERIFICATION: After all initialization, verify data actually made it to the form
+        // Double check by logging key fields from the store to make debugging easier
+        console.log('FORM DATA VERIFICATION:', {
+          'name': $formStore.name,
+          'version': $formStore.version,
+          'short_description': $formStore.short_description,
+          'status': $formStore.status,
+          'part_status': $formStore.part_status,
+          'dimensions': $formStore.dimensions
+        });
+        
+        // SAFETY NET: If formStore is still empty after all initialization attempts,
+        // force the data one last time as a failsafe - but log this as critical
+        if (Object.keys($formStore).length <= 1) {
+          if (form !== undefined && Object.keys(form).length > 0) {
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from form prop');
+            $formStore = { ...$formStore, ...form };
+            console.log('Emergency form data recovery complete:', $formStore);
+          } else if (data?.form && Object.keys(data.form).length > 0) {
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from data.form');
+            $formStore = { ...$formStore, ...data.form };
+            console.log('Emergency data.form recovery complete:', $formStore);
+          }
+        }
+      }
+      // Last priority: Manual mapping from partData and versionData
+      else if (partData && versionData && Object.keys(partData).length > 0) {
+        // Map part data to form fields
+        console.log('LOWEST PRIORITY: Using partData/versionData manual mapping');
+        console.log('Part data:', partData);
+        console.log('Version data:', versionData);
+        
+        // Helper function to properly process field values
+        const processField = (value: any, fieldName: string) => {
+          // Handle null/undefined
+          if (value === null || value === undefined) {
+            return null;
+          }
+          
+          // Handle boolean conversion (strings 'true'/'false' to actual booleans)
+          if (typeof value === 'string' && (value.toLowerCase() === 'true' || value.toLowerCase() === 'false')) {
+            return value.toLowerCase() === 'true';
+          }
+          
+          // Return unchanged value for other types
+          return value;
+        };
+        
+        // Make more form sections visible in edit mode
+        activeSection = 'basic'; // Always show basic section in edit mode
+      } else if (versionData && Object.keys(versionData).length > 0) {
+        // Fallback to version data if available
+        console.log('EDIT MODE: Using version data:', versionData);
+        
+        // Make a deep copy to avoid reference issues
+        formData = { 
+          ...formData,
+          ...JSON.parse(JSON.stringify(versionData))
+        };
+        
+        // Ensure core fields are properly set
+        if (versionData.status) formData.status = versionData.status as LifecycleStatusEnum;
+        if (versionData.part_status) formData.part_status = versionData.part_status as PartStatusEnum;
+        
+        // Handle dimensions specially
+        if (versionData.dimensions) {
+          dimensions = ensureDimensions(versionData.dimensions);
+          dimensionsUnit = versionData.dimensions_unit as DimensionUnitEnum || null;
+          console.log('Setting dimensions from version data:', dimensions, dimensionsUnit);
+        }
+        
+        // Make more form sections visible in edit mode
+        activeSection = 'basic'; // Always show basic section in edit mode
+      } else if (data.partForm && Object.keys(data.partForm).length > 0) {
+        // If no explicit part/version data but we have form data
+        console.log('EDIT MODE: Using form data:', data.partForm);
+        formData = { ...formData, ...data.partForm };
+      }
+    } else {
+      // Add mode: start with defaults and blend in any provided form data
+      console.log('Add mode: initializing with defaults and any provided form data');
+      
+      if (data.partForm && Object.keys(data.partForm).length > 0) {
+        formData = { ...formData, ...data.partForm };
+      }
+    }
+    
+    // Always ensure dimensions are properly initialized
+    dimensions = ensureDimensions(formData.dimensions);
+    dimensionsUnit = formData.dimensions_unit as DimensionUnitEnum | null;
+    
+    // Log the active section for debugging
+    console.log('🔍 ACTIVE SECTION AFTER INITIALIZATION:', activeSection, 'isDashboardContext:', isDashboardContext);
+    
+    // Ensure that at least the basic section is visible whenever we're in dashboard context
+    if (isDashboardContext) {
+      // Force the basic section to be visible regardless of other settings
+      activeSection = 'basic';
+      console.log('💡 DASHBOARD CONTEXT: Forcing basic section visibility', activeSection);
+    }
+    
+    // Extract nested fields safely for JSON editors
+    const nestedFields = ['technical_specifications', 'properties', 'electrical_properties', 'mechanical_properties', 'thermal_properties', 'material_composition', 'environmental_data', 'full_description'];
+    
+    nestedFields.forEach(field => {
+      const key = field;
+      if (!formData[key as keyof typeof formData]) return;
+      
+      // Convert snake_case to camelCase for the editor key
+      const editorKey = String(field).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      
+      // Safely stringify - handle null/undefined values
+      const fieldValue = formData[key as keyof typeof formData];
+      const jsonValue = fieldValue ? JSON.stringify(fieldValue, null, 2) : '{}';  
+      jsonEditors[editorKey as keyof typeof jsonEditors] = jsonValue;
+    });
+
+    // Handle special data fields for edit mode
+    if (isEditMode) {
+      // Ensure enum values are properly set from the data sources
       if (partData && 'part_status' in partData) {
         formData.part_status = partData.part_status as PartStatusEnum;
+      } else if (formData?.part_status) {
+        // Keep existing value
       } else {
         formData.part_status = PartStatusEnum.CONCEPT;
       }
-      if (versionData && 'category_ids' in versionData) {
-        selectedCategoryIds = String(versionData.category_ids).split(',');
+      
+      if (versionData && 'status' in versionData) {
+        formData.status = versionData.status as LifecycleStatusEnum;
+      } else if (formData?.status) {
+        // Keep existing value
       } else {
-        selectedCategoryIds = [];
+        formData.status = LifecycleStatusEnum.DRAFT;
       }
+      
+      // Initialize manufacturer parts - handle various formats
       if (versionData && 'manufacturer_parts' in versionData) {
-        selectedManufacturerParts = JSON.parse(String(versionData.manufacturer_parts));
+        if (typeof versionData.manufacturer_parts === 'string') {
+          try {
+            selectedManufacturerParts = JSON.parse(String(versionData.manufacturer_parts));
+          } catch (e) {
+            console.error('Error parsing manufacturer parts:', e);
+            selectedManufacturerParts = [];
+          }
+        } else if (Array.isArray(versionData.manufacturer_parts)) {
+          selectedManufacturerParts = [...versionData.manufacturer_parts];
+        } else {
+          selectedManufacturerParts = [];
+        }
       } else {
         selectedManufacturerParts = [];
+      }
+      
+      // Handle category IDs for edit mode
+      if (versionData && 'category_ids' in versionData) {
+        if (typeof versionData.category_ids === 'string') {
+          selectedCategoryIds = versionData.category_ids.split(',').filter(Boolean);
+        } else if (Array.isArray(versionData.category_ids)) {
+          selectedCategoryIds = [...versionData.category_ids];
+        }
       }
     }
 
@@ -294,39 +904,35 @@ function updateFormData(fieldName: string, value: any): void {
     }
   });
 
+// Log form data changes for debugging
+$: console.log('🔄 FORM DATA UPDATED:', formData);
 
-  // Log all form data changes for debugging
-  $: {
-    console.log('🔄 FORM DATA UPDATED:', form);
-
-    // Log specific information about dimensions for debugging
-    const formData = getData(form);
-    if (formData && formData.dimensions && typeof formData.dimensions === 'object') {
-      // Cast dimensions to proper type
-      const dims = formData.dimensions as Dimensions;
-      console.log('DIMENSIONS STATE:', {
-        type: typeof dims,
-        value: dims,
-        lengthType: typeof dims.length,
-        lengthValue: dims.length,
-        widthType: typeof dims.width,
-        widthValue: dims.width,
-        heightType: typeof dims.height,
-        heightValue: dims.height
-      });
-    }
-  }
+// Log dimensions state when it changes
+$: if (formData.dimensions && typeof formData.dimensions === 'object') {
+  // Cast dimensions to proper type
+  const dims = formData.dimensions as Dimensions;
+  console.log('DIMENSIONS STATE:', {
+    type: typeof dims,
+    value: dims,
+    lengthType: typeof dims.length,
+    lengthValue: dims.length,
+    widthType: typeof dims.width,
+    widthValue: dims.width,
+    heightType: typeof dims.height,
+    heightValue: dims.height
+  });
+}
 
   
 
 </script>
 
-<div class="part-form">
-  <!-- Hidden inputs -->
-  <input type="hidden" name="name" value={formData.name || ''} />
-  <input type="hidden" name="version" value={formData.version || '0.1.0'} />
-  <input type="hidden" name="lifecycle_status" value={formData.lifecycle_status || LifecycleStatusEnum.DRAFT} />
-  <input type="hidden" name="part_status" value={formData.part_status || PartStatusEnum.CONCEPT} />
+<form class="part-form {isDashboardContext ? 'dashboard-context' : ''}" method="POST" use:enhanceStore on:submit|preventDefault>  
+  <!-- Hidden inputs for form submission - bound to formStore for consistency -->
+  <input type="hidden" name="name" value={$formStore.name || ''} />
+  <input type="hidden" name="version" value={$formStore.version || '0.1.0'} />
+  <input type="hidden" name="status" value={$formStore.status || LifecycleStatusEnum.DRAFT} />
+  <input type="hidden" name="part_status" value={$formStore.part_status || PartStatusEnum.CONCEPT} />
 
   <!-- Basic Information -->
   <div class="form-section {activeSection === 'basic' ? 'active' : ''}">
@@ -338,40 +944,44 @@ function updateFormData(fieldName: string, value: any): void {
       <div class="form-grid">
         <div class="form-group">
           <label for="name">Name</label>
-          <input name="name" id="name" bind:value={formData.name} required />
-          {#if errors?.name}<span class="error">{errors.name}</span>{/if}
+          <input name="name" id="name" bind:value={$formStore.name} required />
+          {#if $formErrors?.name}<span class="error">{$formErrors.name}</span>{/if}
         </div>
         <div class="form-group">
           <label for="version">Version</label>
-          <input name="version" id="version" bind:value={formData.version} required pattern="\d+\.\d+\.\d+" />
-          {#if errors?.version}<span class="error">{errors.version}</span>{/if}
+          <input name="version" id="version" bind:value={$formStore.version} required pattern="\d+\.\d+\.\d+" />
+          {#if $formErrors?.version}<span class="error">{$formErrors.version}</span>{/if}
         </div>
         <div class="form-group">
-          <label for="lifecycle_status">Lifecycle Status</label>
-          <select name="lifecycle_status" id="lifecycle_status" bind:value={formData.lifecycle_status} required>
-            {#each options.statuses as status}
-              <option value={status}>{status}</option>
+          <label for="status">Lifecycle Status</label>
+          <select name="status" id="status" bind:value={$formStore.status} required>
+            {#each options.statuses as statusOption}
+              <option value={statusOption}>{statusOption}</option>
             {/each}
           </select>
-          {#if errors?.lifecycle_status}<span class="error">{errors.lifecycle_status}</span>{/if}
+          {#if $formErrors?.status}<span class="error">{$formErrors.status}</span>{/if}
         </div>
         <div class="form-group">
           <label for="part_status">Part Status</label>
-          <select name="part_status" id="part_status" bind:value={formData.part_status}>
+          <select name="part_status" id="part_status" bind:value={$formStore.part_status}>
             {#each options.partStatuses as status}
               <option value={status}>{status}</option>
             {/each}
           </select>
-          {#if errors?.part_status}<span class="error">{errors.part_status}</span>{/if}
+          {#if $formErrors?.part_status}<span class="error">{$formErrors.part_status}</span>{/if}
         </div>
       </div>
       <div class="form-group">
         <label for="short_description">Short Description</label>
-        <input name="short_description" id="short_description" bind:value={formData.short_description} />
+        <input name="short_description" id="short_description" bind:value={$formStore.short_description} />
+      </div>
+      <div class="form-group">
+        <label for="full_description">Description</label>
+        <textarea name="full_description" id="full_description" bind:value={$formStore.full_description} rows="3"></textarea>
       </div>
       <div class="form-group">
         <label for="functional_description">Functional Description</label>
-        <textarea name="functional_description" id="functional_description" bind:value={formData.functional_description} rows="3"></textarea>
+        <textarea name="functional_description" id="functional_description" bind:value={$formStore.functional_description} rows="3"></textarea>
       </div>
     </div>
   </div>
@@ -386,31 +996,31 @@ function updateFormData(fieldName: string, value: any): void {
       <div class="form-grid">
         <div class="form-group">
           <label for="voltage_rating_min">Min Voltage (V)</label>
-          <input type="number" name="voltage_rating_min" id="voltage_rating_min" bind:value={formData.voltage_rating_min} step="any" />
+          <input type="number" name="voltage_rating_min" id="voltage_rating_min" bind:value={$formStore.voltage_rating_min} step="any" />
         </div>
         <div class="form-group">
           <label for="voltage_rating_max">Max Voltage (V)</label>
-          <input type="number" name="voltage_rating_max" id="voltage_rating_max" bind:value={formData.voltage_rating_max} step="any" />
+          <input type="number" name="voltage_rating_max" id="voltage_rating_max" bind:value={$formStore.voltage_rating_max} step="any" />
         </div>
         <div class="form-group">
           <label for="current_rating_min">Min Current (A)</label>
-          <input type="number" name="current_rating_min" id="current_rating_min" bind:value={formData.current_rating_min} step="any" />
+          <input type="number" name="current_rating_min" id="current_rating_min" bind:value={$formStore.current_rating_min} step="any" />
         </div>
         <div class="form-group">
           <label for="current_rating_max">Max Current (A)</label>
-          <input type="number" name="current_rating_max" id="current_rating_max" bind:value={formData.current_rating_max} step="any" />
+          <input type="number" name="current_rating_max" id="current_rating_max" bind:value={$formStore.current_rating_max} step="any" />
         </div>
         <div class="form-group">
           <label for="power_rating_max">Max Power (W)</label>
-          <input type="number" name="power_rating_max" id="power_rating_max" bind:value={formData.power_rating_max} min="0" step="any" />
+          <input type="number" name="power_rating_max" id="power_rating_max" bind:value={$formStore.power_rating_max} min="0" step="any" />
         </div>
         <div class="form-group">
           <label for="tolerance">Tolerance</label>
-          <input type="number" name="tolerance" id="tolerance" bind:value={formData.tolerance} min="0" step="any" />
+          <input type="number" name="tolerance" id="tolerance" bind:value={$formStore.tolerance} min="0" step="any" />
         </div>
         <div class="form-group">
           <label for="tolerance_unit">Tolerance Unit</label>
-          <input name="tolerance_unit" id="tolerance_unit" bind:value={formData.tolerance_unit} />
+          <input name="tolerance_unit" id="tolerance_unit" bind:value={$formStore.tolerance_unit} />
         </div>
       </div>
       <div class="form-group">
@@ -432,15 +1042,15 @@ function updateFormData(fieldName: string, value: any): void {
         <div class="dimensions-container">
           <div class="dimension-field">
             <label for="dimensions_length">Length</label>
-            <input type="number" name="dimensions.length" id="dimensions_length" bind:value={dimensions.length} min="0" step="any" />
+            <input type="number" name="dimensions.length" id="dimensions_length" bind:value={dimensions.length} on:input={() => {$formStore.dimensions = dimensions}} min="0" step="any" />
           </div>
           <div class="dimension-field">
             <label for="dimensions_width">Width</label>
-            <input type="number" name="dimensions.width" id="dimensions_width" bind:value={dimensions.width} min="0" step="any" />
+            <input type="number" name="dimensions.width" id="dimensions_width" bind:value={dimensions.width} on:input={() => {$formStore.dimensions = dimensions}} min="0" step="any" />
           </div>
           <div class="dimension-field">
             <label for="dimensions_height">Height</label>
-            <input type="number" name="dimensions.height" id="dimensions_height" bind:value={dimensions.height} min="0" step="any" />
+            <input type="number" name="dimensions.height" id="dimensions_height" bind:value={dimensions.height} on:input={() => {$formStore.dimensions = dimensions}} min="0" step="any" />
           </div>
           <div class="dimension-field">
             <label for="dimensions_unit">Unit</label>
@@ -456,11 +1066,11 @@ function updateFormData(fieldName: string, value: any): void {
       <div class="form-grid">
         <div class="form-group">
           <label for="weight">Weight</label>
-          <input type="number" name="weight" id="weight" bind:value={formData.weight} min="0" step="any" />
+          <input type="number" name="weight" id="weight" bind:value={$formStore.weight} min="0" step="any" />
         </div>
         <div class="form-group">
           <label for="weight_unit">Weight Unit</label>
-          <select name="weight_unit" id="weight_unit" bind:value={formData.weight_unit}>
+          <select name="weight_unit" id="weight_unit" bind:value={$formStore.weight_unit}>
             <option value="">Select unit</option>
             {#each options.weightUnits as unit}
               <option value={unit}>{unit}</option>
@@ -469,7 +1079,7 @@ function updateFormData(fieldName: string, value: any): void {
         </div>
         <div class="form-group">
           <label for="package_type">Package Type</label>
-          <select name="package_type" id="package_type" bind:value={formData.package_type}>
+          <select name="package_type" id="package_type" bind:value={$formStore.package_type}>
             <option value="">Select package</option>
             {#each options.packageTypes as type}
               <option value={type}>{type}</option>
@@ -478,7 +1088,7 @@ function updateFormData(fieldName: string, value: any): void {
         </div>
         <div class="form-group">
           <label for="pin_count">Pin Count</label>
-          <input type="number" name="pin_count" id="pin_count" bind:value={formData.pin_count} min="0" step="1" />
+          <input type="number" name="pin_count" id="pin_count" bind:value={$formStore.pin_count} min="0" step="1" />
         </div>
       </div>
       <div class="form-group">
@@ -498,23 +1108,23 @@ function updateFormData(fieldName: string, value: any): void {
       <div class="form-grid">
         <div class="form-group">
           <label for="operating_temperature_min">Min Operating Temp</label>
-          <input type="number" name="operating_temperature_min" id="operating_temperature_min" bind:value={formData.operating_temperature_min} step="any" />
+          <input type="number" name="operating_temperature_min" id="operating_temperature_min" bind:value={$formStore.operating_temperature_min} step="any" />
         </div>
         <div class="form-group">
           <label for="operating_temperature_max">Max Operating Temp</label>
-          <input type="number" name="operating_temperature_max" id="operating_temperature_max" bind:value={formData.operating_temperature_max} step="any" />
+          <input type="number" name="operating_temperature_max" id="operating_temperature_max" bind:value={$formStore.operating_temperature_max} step="any" />
         </div>
         <div class="form-group">
           <label for="storage_temperature_min">Min Storage Temp</label>
-          <input type="number" name="storage_temperature_min" id="storage_temperature_min" bind:value={formData.storage_temperature_min} step="any" />
+          <input type="number" name="storage_temperature_min" id="storage_temperature_min" bind:value={$formStore.storage_temperature_min} step="any" />
         </div>
         <div class="form-group">
           <label for="storage_temperature_max">Max Storage Temp</label>
-          <input type="number" name="storage_temperature_max" id="storage_temperature_max" bind:value={formData.storage_temperature_max} step="any" />
+          <input type="number" name="storage_temperature_max" id="storage_temperature_max" bind:value={$formStore.storage_temperature_max} step="any" />
         </div>
         <div class="form-group">
           <label for="temperature_unit">Temperature Unit</label>
-          <select name="temperature_unit" id="temperature_unit" bind:value={formData.temperature_unit}>
+          <select name="temperature_unit" id="temperature_unit" bind:value={$formStore.temperature_unit}>
             <option value="">Select unit</option>
             {#each options.temperatureUnits as unit}
               <option value={unit}>{unit}</option>
@@ -564,12 +1174,12 @@ function updateFormData(fieldName: string, value: any): void {
       </div>
       <div class="form-group">
         <label for="revision_notes">Revision Notes</label>
-        <textarea name="revision_notes" id="revision_notes" bind:value={formData.revision_notes} rows="3"></textarea>
+        <textarea name="revision_notes" id="revision_notes" bind:value={$formStore.revision_notes} rows="3"></textarea>
       </div>
     </div>
   </div>
 
-  {#if !isEmbedded && !hideButtons}
+  {#if !hideButtons && !isDashboardContext}
     <div class="form-actions">
       <button type="submit" class="btn-primary">{isEditMode ? 'Update Part' : 'Create Part'}</button>
       {#if isEditMode}
@@ -577,7 +1187,7 @@ function updateFormData(fieldName: string, value: any): void {
       {/if}
     </div>
   {/if}
-</div>
+</form>
 
 <style>
   .part-form {
@@ -639,8 +1249,14 @@ function updateFormData(fieldName: string, value: any): void {
     transition: background-color 0.3s, color 0.3s;
   }
   
+  /* This class controls the visibility of form sections */
   .visible {
-    display: block;
+    display: block !important; /* Force display to ensure visibility */
+  }
+  
+  /* Dashboard context special styling to ensure form is visible */
+  :global(.dashboard-context) .form-section.active .section-content {
+    display: block !important;
   }
   
   .form-grid {
@@ -693,6 +1309,7 @@ function updateFormData(fieldName: string, value: any): void {
     min-height: 100px;
   }
   
+  /* Add field hints like this if needed in the future
   .hint {
     font-size: 0.8rem;
     color: hsl(var(--muted-foreground));
@@ -703,6 +1320,7 @@ function updateFormData(fieldName: string, value: any): void {
   :global(.dark) .hint {
     color: hsl(var(--muted-foreground) / 0.9);
   }
+  */
   
   .error {
     display: block;
