@@ -333,8 +333,143 @@ export async function getPartWithCurrentVersion(
 		// Log that we're adding default values
 		console.log(`[getPartWithCurrentVersion] Added default values for all fields not explicitly loaded from database`);
 		
-		// Log the mapped object for debugging
-		console.log(`[getPartWithCurrentVersion] Mapped part object with ID: ${part.id}`)
+		// CRITICAL FIX: Load relationship data (categories and manufacturers), but make it fault-tolerant
+		// Don't crash the app if relationship data can't be loaded
+		
+		// Create a type-safe extended version that includes relationship data
+		const extendedVersion = currentVersion as PartVersion & {
+			categoryIds: string;
+			categories: Array<{id: string; name: string}>;
+			manufacturerParts: Array<{id: string; manufacturerId: string; manufacturerName: string; partNumber: string}>;
+		};
+		
+		// Initialize empty relationship data
+		extendedVersion.categoryIds = '';
+		extendedVersion.categories = [];
+		extendedVersion.manufacturerParts = [];
+		
+		try {
+			// Check for categories table first
+			console.log(`[getPartWithCurrentVersion] Checking for category relationship tables...`);
+			
+			// First check if the tables exist by trying to count rows (safer approach)
+			const categoryTableCheck = await sql`
+				SELECT EXISTS (
+					SELECT FROM information_schema.tables 
+					WHERE table_schema = 'public' AND table_name = 'Category'
+				) as exists
+			`;
+			
+			const hasCategoryTable = categoryTableCheck[0]?.exists === true;
+			
+			if (hasCategoryTable) {
+				// 1. Try loading categories for this part version
+				console.log(`[getPartWithCurrentVersion] Loading categories for part version ${currentVersion.id}`);
+				
+				try {
+					const categoryTableCheck = await sql`
+						SELECT EXISTS (
+							SELECT FROM information_schema.tables 
+							WHERE table_schema = 'public' AND table_name = 'PartCategory'
+						) as exists
+					`;
+					
+					// Look for either PartVersionCategory or PartCategory table
+					const hasPartCategoryTable = categoryTableCheck[0]?.exists === true;
+					
+					let categoriesResult: Array<{category_id: string; category_name: string}> = [];
+					if (hasPartCategoryTable) {
+						// Try with PartCategory table
+						categoriesResult = await sql`
+							SELECT 
+								pc.id::TEXT AS id, 
+								pc.part_id::TEXT AS part_version_id, 
+								pc.category_id::TEXT AS category_id,
+								c.name::TEXT AS category_name
+							FROM "PartCategory" pc
+							JOIN "Category" c ON pc.category_id = c.id
+							WHERE pc.part_id = ${part.id}
+						`;
+					} else {
+						// Try with the original table name as a fallback
+						try {
+							categoriesResult = await sql`
+								SELECT 
+									pvc.id::TEXT AS id, 
+									pvc.part_version_id::TEXT AS part_version_id, 
+									pvc.category_id::TEXT AS category_id,
+									c.name::TEXT AS category_name
+								FROM "PartVersionCategory" pvc
+								JOIN "Category" c ON pvc.category_id = c.id
+								WHERE pvc.part_version_id = ${currentVersion.id}
+							`;
+						} catch (catErr: unknown) {
+							const errorMessage = catErr instanceof Error ? catErr.message : String(catErr);
+							console.log(`[getPartWithCurrentVersion] PartVersionCategory table not found, skipping category loading: ${errorMessage}`);
+						}
+					}
+					
+					console.log(`[getPartWithCurrentVersion] Found ${categoriesResult.length} categories for part version`);
+					
+					// Map category IDs to string format for the form
+					if (categoriesResult && categoriesResult.length > 0) {
+						const categoryIds = categoriesResult.map(cat => cat.category_id).join(',');
+						
+						// Add category data to the extended version for form use
+						extendedVersion.categoryIds = categoryIds;
+						extendedVersion.categories = categoriesResult.map(cat => ({
+							id: cat.category_id,
+							name: cat.category_name
+						}));
+					}
+				} catch (categoryErr: unknown) {
+					const errorMessage = categoryErr instanceof Error ? categoryErr.message : String(categoryErr);
+					console.log(`[getPartWithCurrentVersion] Error loading categories: ${errorMessage}`);
+				}
+			}
+			
+			// 2. Try loading manufacturer parts - also resilient to errors
+			try {
+				console.log(`[getPartWithCurrentVersion] Loading manufacturers for part ${part.id}`);
+				// Check if ManufacturerPart table exists
+				const mfgTableCheck = await sql`
+					SELECT EXISTS (
+						SELECT FROM information_schema.tables 
+						WHERE table_schema = 'public' AND table_name = 'ManufacturerPart'
+					) as exists
+				`;
+				
+				if (mfgTableCheck[0]?.exists === true) {
+					const manufacturersResult = await sql`
+						SELECT 
+							mp.id::TEXT AS id, 
+							mp.part_id::TEXT AS part_id, 
+							mp.manufacturer_id::TEXT AS manufacturer_id,
+							m.name::TEXT AS manufacturer_name,
+							mp.part_number::TEXT AS part_number
+						FROM "ManufacturerPart" mp
+						JOIN "Manufacturer" m ON mp.manufacturer_id = m.id
+						WHERE mp.part_id = ${part.id}
+					`
+				} else {
+					console.log(`[getPartWithCurrentVersion] ManufacturerPart table doesn't exist, skipping manufacturer loading`);
+				}
+			} catch (mfgErr: unknown) {
+				const errorMessage = mfgErr instanceof Error ? mfgErr.message : String(mfgErr);
+				console.log(`[getPartWithCurrentVersion] Error loading manufacturers: ${errorMessage}`);
+			}
+			
+			// Log the mapped object with any relationship data for debugging
+			console.log(`[getPartWithCurrentVersion] Mapped part object with ID: ${part.id} including relationship data`);
+			console.log(`[getPartWithCurrentVersion] Categories (count):`, extendedVersion.categories.length);
+			console.log(`[getPartWithCurrentVersion] Manufacturers (count):`, extendedVersion.manufacturerParts.length);
+			
+		} catch (relationErr: unknown) {
+			// Don't let relationship errors break the entire part retrieval
+			const errorMessage = relationErr instanceof Error ? relationErr.message : String(relationErr);
+			console.error(`[getPartWithCurrentVersion] Could not load relationship data: ${errorMessage}`);
+			console.log('[getPartWithCurrentVersion] Continuing with basic part data only');
+		}
 
 		return { part, currentVersion };
 	} catch (error) {
@@ -904,6 +1039,59 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
         
         // Detailed logging to see ALL properties - NO CHERRY PICKING
         console.log('[createPartVersion] 100% COMPLETE INCOMING DATA:', JSON.stringify(partVersion, null, 2));
+        
+        // Add corrected field mapping to ensure part form values align with database fields
+        // Map form data from SvelteKit form to database field names
+        let partData: any = { ...partVersion };
+        if (partVersion.dimensions && !partVersion.dimensionsUnit) {
+            partData.dimensions = null; // Clear dimensions to satisfy constraint
+        }
+        
+        console.log('[createPartVersion] 🛠️ ENFORCING DATABASE CONSTRAINTS');
+        console.log('[createPartVersion] 🔍 Before constraint enforcement:', {
+            dimensions: partVersion.dimensions ? 'present' : 'null',
+            dimensionsUnit: partVersion.dimensionsUnit,
+            weight: partVersion.weight,
+            weightUnit: partVersion.weightUnit,
+            tolerance: partVersion.tolerance,
+            toleranceUnit: partVersion.toleranceUnit
+        });
+        
+        // 1. Dimensions constraint
+        if (partVersion.dimensions && !partVersion.dimensionsUnit) {
+            console.log('[createPartVersion] ⚠️ Clearing dimensions because dimensionsUnit is missing');
+            partVersion.dimensions = undefined;
+        } else if (!partVersion.dimensions && partVersion.dimensionsUnit) {
+            console.log('[createPartVersion] ⚠️ Clearing dimensionsUnit because dimensions is missing');
+            partVersion.dimensionsUnit = undefined;
+        }
+        
+        // 2. Weight constraint
+        if (partVersion.weight && !partVersion.weightUnit) {
+            console.log('[createPartVersion] ⚠️ Clearing weight because weightUnit is missing');
+            partVersion.weight = undefined;
+        } else if (!partVersion.weight && partVersion.weightUnit) {
+            console.log('[createPartVersion] ⚠️ Clearing weightUnit because weight is missing');
+            partVersion.weightUnit = undefined;
+        }
+        
+        // 3. Tolerance constraint
+        if (partVersion.tolerance && !partVersion.toleranceUnit) {
+            console.log('[createPartVersion] ⚠️ Clearing tolerance because toleranceUnit is missing');
+            partVersion.tolerance = undefined;
+        } else if (!partVersion.tolerance && partVersion.toleranceUnit) {
+            console.log('[createPartVersion] ⚠️ Clearing toleranceUnit because tolerance is missing');
+            partVersion.toleranceUnit = undefined;
+        }
+        
+        console.log('[createPartVersion] 🔍 After constraint enforcement:', {
+            dimensions: partVersion.dimensions ? 'present' : 'null',
+            dimensionsUnit: partVersion.dimensionsUnit,
+            weight: partVersion.weight,
+            weightUnit: partVersion.weightUnit,
+            tolerance: partVersion.tolerance,
+            toleranceUnit: partVersion.toleranceUnit
+        });
         
         // Get the database client
         // Using the sql client imported at the top of the file

@@ -10,14 +10,14 @@ import { superForm } from 'sveltekit-superforms/client';
 import type { z } from 'zod';
 import ManufacturerSelector from './ManufacturerSelector.svelte';
 import MultiCategorySelector from './MultiCategorySelector.svelte';
-import { prepareFormDataForValidation } from '../utils/formUtils';
 
 // Event dispatcher to send form updates to parent component
 const dispatch = createEventDispatcher<{
   formUpdate: Record<string, any>;
 }>();
 
-// DECLARATION OF TYPES 
+
+//DECLARATION OF TYPES 
 type SnakeCasePartSchema = z.infer<typeof createPartSchema>;
 // Define Category and Manufacturer types based on schema
 type Category = z.infer<typeof categorySchema>;
@@ -108,7 +108,7 @@ type FormDataType = {
 type ErrorsType = Record<string, string | string[] | undefined> | Record<string, any> | undefined;
 
 
-// REACTIVE DATAS
+//REACTIVE DATAS
 // These are input props provided to the component
 // Allow form data to be passed directly or via a data object
 export let data: FormDataType = {};
@@ -153,7 +153,7 @@ const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm
     ...(enhance ? enhance : {}),
     // Log all form update events to trace data flow
     onUpdated: (event) => {
-      console.log(' FORM DATA UPDATED:', event.form);
+      console.log('🔄 FORM DATA UPDATED:', event.form);
       // Keep formData in sync with the form store
       formData = { ...formData, ...event.form };
       console.log('DIMENSIONS STATE:', formData.dimensions);
@@ -170,8 +170,7 @@ const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm
 );
 
 // Form variables - initialize to empty string by default, will be set during initialization
-// Default all sections to be active in edit mode
-
+let activeSection = '';
 
 // Options for enum fields
 export const options = {
@@ -182,36 +181,24 @@ export const options = {
   partStatuses: Object.values(PartStatusEnum),
   temperatureUnits: Object.values(TemperatureUnitEnum)
 }; 
-export let isEditMode: boolean = false;
-export let hideButtons: boolean = false;
-// Flag to indicate if this form is being used in dashboard context - affects initialization behavior
-export let isDashboardContext: boolean = false;
-// Track if form has been initialized
-let isFormInitialized = false;
-// Start with basic section open in edit mode, otherwise all sections collapsed
-let activeSection = isEditMode ? 'basic' : '';
 
-// Reactive dimensions - ensure they're properly initialized with safe defaults
-let dimensions: Dimensions = { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number };
-let dimensionsUnit: DimensionUnitEnum | null = null;
 // Component props
 export let partData: ServerPartData | undefined = undefined;
 export let versionData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined;
 export let categories: Category[] = [];
 export let manufacturers: Manufacturer[] = [];
 export let selectedCategoryIds: string[] = [];
-// Define ManufacturerPart type to match what's expected by ManufacturerSelector
-export let selectedManufacturerParts: Array<{
-  id?: string;
-  manufacturer_id: string;
-  manufacturer_part_number: string;
-  manufacturer_name?: string;
-  is_recommended: boolean; // Making this required and always boolean
-  description?: string;
-  datasheet_url?: string;
-  product_url?: string;
-}> = [];
+export let selectedManufacturerParts: any[] = [];
+export let isEditMode: boolean = false;
+export let hideButtons: boolean = false;
+// Flag to indicate if this form is being used in dashboard context - affects initialization behavior
+export let isDashboardContext: boolean = false;
+// Track if form has been initialized
+let isFormInitialized = false;
 
+// Reactive dimensions - ensure they're properly initialized with safe defaults
+let dimensions: Dimensions = { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number };
+let dimensionsUnit: DimensionUnitEnum | null = null;
 
 // Safe parsing helper for dimensions and other numeric fields
 function parseFloatOrNull(value: string | number | null | undefined): number | null {
@@ -319,15 +306,9 @@ function toggleSection(section: string): void {
     return;
   }
   
-  // Simple toggle - if section is active, close it, otherwise open it
-  if (activeSection === section) {
-    // We're closing this section
-    activeSection = '';
-  } else {
-    // We're opening this section
-    activeSection = section;
-  }
-  console.log(`Section ${section} toggle - active section is now: ${activeSection}`);
+  // Toggle section visibility
+  activeSection = activeSection === section ? '' : section;
+  console.log(`Section ${section} is now ${activeSection === section ? 'open' : 'closed'}`);
 }
 
 // Update form data non-reactively
@@ -362,65 +343,26 @@ $: if (formData && formData.dimensions) {
   dimensionsUnit = formData.dimensions_unit as DimensionUnitEnum | null;
 }
 
-// Prepare form submission with enhanced validation and constraint handling
+// Prepare form submission
 function prepareFormSubmission(): Record<string, unknown> {
   // Start with data from formData to ensure we have complete data
   const extractedFormData: Record<string, unknown> = { ...getData() };
   
-  // CRITICAL FIX: Handle dimensions specially - enforce paired fields constraint
-  if (isCompleteDimensions(dimensions) && dimensionsUnit) {
-    // Both dimensions and dimensions_unit must be present together
+  // Handle dimensions specially - make sure we only include complete dimensions
+  if (isCompleteDimensions(dimensions)) {
     extractedFormData.dimensions = dimensions;
-    extractedFormData.dimensions_unit = dimensionsUnit;
-  } else if (!isCompleteDimensions(dimensions) && !dimensionsUnit) {
-    // Neither dimensions nor dimensions_unit are present - valid state
-    extractedFormData.dimensions = null;
-    extractedFormData.dimensions_unit = null;
   } else {
-    // One is present but not the other - enforce both being null to avoid constraint violation
-    console.warn('Dimensions data is incomplete, nullifying both dimensions and unit');
     extractedFormData.dimensions = null;
-    extractedFormData.dimensions_unit = null;
   }
-  
-  // CRITICAL FIX: Check other paired fields to avoid database constraint violations
-  const pairedFields = [
-    ['weight', 'weight_unit'],
-    ['tolerance', 'tolerance_unit'],
-    ['operating_temperature_min', 'temperature_unit'],
-    ['operating_temperature_max', 'temperature_unit'],
-    ['storage_temperature_min', 'temperature_unit'],
-    ['storage_temperature_max', 'temperature_unit']
-  ];
-  
-  pairedFields.forEach(([valueField, unitField]) => {
-    const hasValue = extractedFormData[valueField] !== null && 
-                    extractedFormData[valueField] !== undefined && 
-                    extractedFormData[valueField] !== '';
-    const hasUnit = extractedFormData[unitField] !== null && 
-                   extractedFormData[unitField] !== undefined && 
-                   extractedFormData[unitField] !== '';
-    
-    if (hasValue && !hasUnit) {
-      console.warn(`Field ${valueField} has value but ${unitField} is missing, nullifying both`);
-      extractedFormData[valueField] = null;
-    } else if (!hasValue && hasUnit) {
-      console.warn(`Field ${unitField} has value but ${valueField} is missing, keeping unit`);
-      // Keep the unit as it might be used for other paired fields
-    }
-  });
   
   // For required ID fields that should be part of the form submission
   if (isEditMode && !extractedFormData.id && partData && 'id' in partData) {
     extractedFormData.id = partData.id;
   }
   
-  // CRITICAL FIX: Ensure relationship data is properly formatted
+  // Handle special fields
   extractedFormData.category_ids = selectedCategoryIds.join(',');
-  extractedFormData.manufacturer_parts = JSON.stringify(selectedManufacturerParts.map(part => ({
-    ...part,
-    is_recommended: !!part.is_recommended // Ensure boolean
-  })));
+  extractedFormData.manufacturer_parts = JSON.stringify(selectedManufacturerParts);
   
   // Ensure all enum fields are either valid enum values or null (not empty strings)
   ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'].forEach(field => {
@@ -428,39 +370,6 @@ function prepareFormSubmission(): Record<string, unknown> {
       extractedFormData[field] = null;
     }
   });
-  
-  // Enhanced JSON field handling with validation
-  const parseJsonField = (val: any, field: string) => {
-    // Already an object, just return it
-    if (val && typeof val === 'object') return val;
-    
-    // If null or empty, return empty object
-    if (!val) return {};
-    
-    // If it's a string, try to parse it
-    if (typeof val === 'string') {
-      try {
-        // Handle special case of empty string
-        if (val.trim() === '') return {};
-        return JSON.parse(val);
-      } catch (e) {
-        console.error(`Error parsing ${field}:`, e);
-        // For fields that should be strings but might be handled as JSON
-        if (['full_description', 'functional_description', 'long_description'].includes(field)) {
-          return val; // Keep as string
-        }
-        return {}; // For actual JSON fields, return empty object
-      }
-    }
-    
-    // For any other type, convert to string
-    return {};
-  };
-  
-  // Apply our validation utility to ensure all fields have the right types
-  const validatedData = prepareFormDataForValidation(extractedFormData);
-  Object.assign(extractedFormData, validatedData);
-  console.log('Form data validated for submission:', extractedFormData);
   
   return extractedFormData;
 }
@@ -474,12 +383,12 @@ onMount(() => {
   console.log('Server form data prop:', serverFormData);
   
   // Debug the current state of formData and formStore
-  console.log(' Initial formData:', JSON.stringify(formData, null, 2));
-  console.log(' Initial formStore:', JSON.stringify($formStore, null, 2));
+  console.log('🔄 Initial formData:', JSON.stringify(formData, null, 2));
+  console.log('🔄 Initial formStore:', JSON.stringify($formStore, null, 2));
   
   // CRITICAL FIX: When in edit mode and we have server data directly available, use it
   if (isEditMode && serverFormData) {
-    console.log(' Using direct server form data for initialization');
+    console.log('🚨 Using direct server form data for initialization');
     console.log('Server form data structure:', serverFormData);
     
     // SuperForm wraps the actual form data in a 'data' property
@@ -499,6 +408,9 @@ onMount(() => {
             // Essential fields - using proper null checking and defaults
             id: serverData.id ?? '',
             part_id: serverData.part_id ?? '',
+            name: serverData.name ?? '',
+            version: serverData.version ?? '0.1.0',
+            
             // Map the status correctly - server uses lifecycle_status but client uses status
             // We're using type assertion to handle this field name mismatch
             status: (serverData.status ?? (serverData as any).lifecycle_status ?? 'draft') as LifecycleStatusEnum,
@@ -564,11 +476,6 @@ onMount(() => {
       type: typeof formData.dimensions,
       value: formData.dimensions
     });
-  }
-  
-  // In edit mode, start with basic section open
-  if (isEditMode) {
-    activeSection = 'basic';
   }
   
   // SIMPLE DIRECT FIX: In edit mode, if we have server data and form is initializing, use it
@@ -641,14 +548,11 @@ onMount(() => {
   
   // Initialize form data and set section visibility based on mode and context
   if (!isFormInitialized) {
-    // Only open the basic section in edit mode initially
-    if (isEditMode) {
+    // Always set the basic section as visible in dashboard context or edit mode
+    if (isDashboardContext || isEditMode) {
       activeSection = 'basic';
-    } else {
-      // Start with all sections collapsed in add mode
-      activeSection = '';
+      console.log('🔍 SETTING ACTIVE SECTION:', activeSection);
     }
-    console.log(' SETTING ACTIVE SECTION:', activeSection);
     
     // Use different initialization behavior based on context
     if (isDashboardContext && !isEditMode) {
@@ -758,7 +662,7 @@ onMount(() => {
           }
         }
         
-        // CRITICAL FIX: Update the SuperForm store directly instead of local object
+        // 🚨 CRITICAL FIX: Update the SuperForm store directly instead of local object
         // This is necessary because the form inputs are bound to $formStore, not formData
         $formStore = { ...$formStore, ...formData };
         console.log('Updated formStore with direct form prop:', $formStore);
@@ -787,11 +691,11 @@ onMount(() => {
         // force the data one last time as a failsafe - but log this as critical
         if (Object.keys($formStore).length <= 1) {
           if (form !== undefined && Object.keys(form).length > 0) {
-            console.error(' CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from form prop');
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from form prop');
             $formStore = { ...$formStore, ...form };
             console.log('Emergency form data recovery complete:', $formStore);
           } else if (data?.form && Object.keys(data.form).length > 0) {
-            console.error(' CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from data.form');
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from data.form');
             $formStore = { ...$formStore, ...data.form };
             console.log('Emergency data.form recovery complete:', $formStore);
           }
@@ -818,7 +722,7 @@ onMount(() => {
           }
         }
         
-        // CRITICAL FIX: Update the SuperForm store directly with new property merging
+        // 🚨 CRITICAL FIX: Update the SuperForm store directly with new property merging
         // This ensures all properties are properly propagated to the form inputs
         $formStore = { ...$formStore, ...formData };
         console.log('Updated formStore with data.form:', $formStore);
@@ -847,11 +751,11 @@ onMount(() => {
         // force the data one last time as a failsafe - but log this as critical
         if (Object.keys($formStore).length <= 1) {
           if (form !== undefined && Object.keys(form).length > 0) {
-            console.error(' CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from form prop');
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from form prop');
             $formStore = { ...$formStore, ...form };
             console.log('Emergency form data recovery complete:', $formStore);
           } else if (data?.form && Object.keys(data.form).length > 0) {
-            console.error(' CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from data.form');
+            console.error('🚨 CRITICAL DATA FAILURE: FormStore still empty after all init attempts. Emergency recovery from data.form');
             $formStore = { ...$formStore, ...data.form };
             console.log('Emergency data.form recovery complete:', $formStore);
           }
@@ -906,147 +810,124 @@ onMount(() => {
         // Make more form sections visible in edit mode
         activeSection = 'basic'; // Always show basic section in edit mode
       } else if (data.partForm && Object.keys(data.partForm).length > 0) {
-        // Handle form submission with proper JSON field validation
-        function handleSubmit() {
-          console.log('Form submitted, preparing data...');
-          
-          // Skip if formStore is undefined or null
-          if (!$formStore) {
-            console.error('Form store is not available for submission');
-            return;
-          }
-  
-          // Log current relationship data for debugging
-          console.log('Form submission - current relationships:', {
-            categories: {
-              count: selectedCategoryIds.length,
-              ids: selectedCategoryIds
-            },
-            manufacturerParts: {
-              count: selectedManufacturerParts.length
-            }
-          });
-        }
-      }
-    }
-  }
-}
-)
-  // Define initializeForm function - called onMount to set up the form data
-  function initializeForm() {
-    if (!isFormInitialized) {
-      console.log('Running form initialization');
-      try {
-        isFormInitialized = true;
-        
-        // Initialize category IDs
-        if (isEditMode && categories?.length) {
-          const formCategories = $formStore.category_ids || [];
-          console.log('Form categories:', formCategories);
-          
-          // Handle different formats of category_ids
-          if (Array.isArray(formCategories)) {
-            selectedCategoryIds = formCategories;
-          } else if (typeof formCategories === 'string') {
-            try {
-              selectedCategoryIds = JSON.parse(formCategories);
-            } catch(e) {
-              console.error('Could not parse category_ids string:', e);
-              selectedCategoryIds = [];
-            }
-          } else {
-            // Explicitly set as string array to avoid 'never[]' type error
-            selectedCategoryIds = [] as string[];
-          }
-          
-          console.log('Selected categories after init:', selectedCategoryIds);
-        } else {
-          console.log('No category IDs data in form');
-        }
-        
-        // Initialize manufacturer parts from form data
-        if (isEditMode && $formStore?.manufacturer_parts) {
-          let manParts = $formStore.manufacturer_parts;
-          
-          // Convert from string if necessary
-          if (typeof manParts === 'string') {
-            try {
-              manParts = JSON.parse(manParts);
-            } catch (e) {
-              console.error('Error parsing manufacturer parts:', e);
-              manParts = [];
-            }
-          }
-          
-          // Ensure it's an array and map to match our expected type
-          if (Array.isArray(manParts)) {
-            selectedManufacturerParts = manParts.map(part => ({
-              id: part.id,
-              manufacturer_id: part.manufacturer_id,
-              manufacturer_part_number: part.manufacturer_part_number,
-              manufacturer_name: part.manufacturer_name,
-              is_recommended: part.is_recommended === true ? true : false, // Force boolean
-              description: part.description,
-              datasheet_url: part.datasheet_url,
-              product_url: part.product_url
-            }));
-            console.log('Selected manufacturer parts after init:', selectedManufacturerParts);
-          } else {
-            console.warn('manufacturer_parts is not an array:', manParts);
-            selectedManufacturerParts = [];
-          }
-        } else {
-          console.log('No manufacturer parts data in form');
-        }
-      } catch (err) {
-        console.error('Error in form initialization:', err);
+        // If no explicit part/version data but we have form data
+        console.log('EDIT MODE: Using form data:', data.partForm);
+        formData = { ...formData, ...data.partForm };
       }
     } else {
-      console.log('Form already initialized, skipping initialization');
+      // Add mode: start with defaults and blend in any provided form data
+      console.log('Add mode: initializing with defaults and any provided form data');
+      
+      if (data.partForm && Object.keys(data.partForm).length > 0) {
+        formData = { ...formData, ...data.partForm };
+      }
     }
-  }
-
-  // Define handleSubmit function - called when the form is submitted
-  function handleSubmit() {
-    try {
-      console.log('Form submitted with values:', $formStore);
-      
-      // CRITICAL FIX: Properly prepare all data for submission to avoid constraint violations
-      const validatedFormData = prepareFormSubmission();
-      
-      // Apply all validated data to the form store
-      Object.entries(validatedFormData).forEach(([key, value]) => {
-        ($formStore as any)[key] = value;
-      });
-      
-      console.log('Form fully prepared for submission:', {
-        categoryIds: $formStore.category_ids,
-        manufacturerParts: typeof $formStore.manufacturer_parts === 'string' 
-          ? `JSON string of length ${$formStore.manufacturer_parts.length}` 
-          : $formStore.manufacturer_parts,
-        // Log paired fields to verify they follow constraints
-        dimensions: $formStore.dimensions,
-        dimensions_unit: $formStore.dimensions_unit,
-        weight: $formStore.weight,
-        weight_unit: $formStore.weight_unit,
-        tolerance: $formStore.tolerance,
-        tolerance_unit: $formStore.tolerance_unit
-      });
-      
-      // Form will be submitted via SuperForm enhance action
-    } catch (error) {
-      console.error('Error in form submission:', error);
+    
+    // Always ensure dimensions are properly initialized
+    dimensions = ensureDimensions(formData.dimensions);
+    dimensionsUnit = formData.dimensions_unit as DimensionUnitEnum | null;
+    
+    // Log the active section for debugging
+    console.log('🔍 ACTIVE SECTION AFTER INITIALIZATION:', activeSection, 'isDashboardContext:', isDashboardContext);
+    
+    // Ensure that at least the basic section is visible whenever we're in dashboard context
+    if (isDashboardContext) {
+      // Force the basic section to be visible regardless of other settings
+      activeSection = 'basic';
+      console.log('💡 DASHBOARD CONTEXT: Forcing basic section visibility', activeSection);
     }
-  }
+    
+    // Extract nested fields safely for JSON editors
+    const nestedFields = ['technical_specifications', 'properties', 'electrical_properties', 'mechanical_properties', 'thermal_properties', 'material_composition', 'environmental_data', 'full_description'];
+    
+    nestedFields.forEach(field => {
+      const key = field;
+      if (!formData[key as keyof typeof formData]) return;
+      
+      // Convert snake_case to camelCase for the editor key
+      const editorKey = String(field).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      
+      // Safely stringify - handle null/undefined values
+      const fieldValue = formData[key as keyof typeof formData];
+      const jsonValue = fieldValue ? JSON.stringify(fieldValue, null, 2) : '{}';  
+      jsonEditors[editorKey as keyof typeof jsonEditors] = jsonValue;
+    });
 
-  // Initialize form on mount
-  onMount(() => {
-    initializeForm();
+    // Handle special data fields for edit mode
+    if (isEditMode) {
+      // Ensure enum values are properly set from the data sources
+      if (partData && 'part_status' in partData) {
+        formData.part_status = partData.part_status as PartStatusEnum;
+      } else if (formData?.part_status) {
+        // Keep existing value
+      } else {
+        formData.part_status = PartStatusEnum.CONCEPT;
+      }
+      
+      if (versionData && 'status' in versionData) {
+        formData.status = versionData.status as LifecycleStatusEnum;
+      } else if (formData?.status) {
+        // Keep existing value
+      } else {
+        formData.status = LifecycleStatusEnum.DRAFT;
+      }
+      
+      // Initialize manufacturer parts - handle various formats
+      if (versionData && 'manufacturer_parts' in versionData) {
+        if (typeof versionData.manufacturer_parts === 'string') {
+          try {
+            selectedManufacturerParts = JSON.parse(String(versionData.manufacturer_parts));
+          } catch (e) {
+            console.error('Error parsing manufacturer parts:', e);
+            selectedManufacturerParts = [];
+          }
+        } else if (Array.isArray(versionData.manufacturer_parts)) {
+          selectedManufacturerParts = [...versionData.manufacturer_parts];
+        } else {
+          selectedManufacturerParts = [];
+        }
+      } else {
+        selectedManufacturerParts = [];
+      }
+      
+      // Handle category IDs for edit mode
+      if (versionData && 'category_ids' in versionData) {
+        if (typeof versionData.category_ids === 'string') {
+          selectedCategoryIds = versionData.category_ids.split(',').filter(Boolean);
+        } else if (Array.isArray(versionData.category_ids)) {
+          selectedCategoryIds = [...versionData.category_ids];
+        }
+      }
+    }
+
+      isFormInitialized = true;
+    }
   });
+
+// Log form data changes for debugging
+$: console.log('🔄 FORM DATA UPDATED:', formData);
+
+// Log dimensions state when it changes
+$: if (formData.dimensions && typeof formData.dimensions === 'object') {
+  // Cast dimensions to proper type
+  const dims = formData.dimensions as Dimensions;
+  console.log('DIMENSIONS STATE:', {
+    type: typeof dims,
+    value: dims,
+    lengthType: typeof dims.length,
+    lengthValue: dims.length,
+    widthType: typeof dims.width,
+    widthValue: dims.width,
+    heightType: typeof dims.height,
+    heightValue: dims.height
+  });
+}
+
+  
+
 </script>
 
-
-<form class="part-form" method="POST" use:enhance={enhanceStore} on:submit={handleSubmit} data-section-all={activeSection === 'all' ? 'true' : 'false'}>  
+<form class="part-form {isDashboardContext ? 'dashboard-context' : ''}" method="POST" use:enhanceStore on:submit|preventDefault>  
   <!-- Hidden inputs for form submission - bound to formStore for consistency -->
   <input type="hidden" name="name" value={$formStore.name || ''} />
   <input type="hidden" name="version" value={$formStore.version || '0.1.0'} />
@@ -1059,7 +940,7 @@ onMount(() => {
       <h2>Basic Information</h2>
       <span class="toggle-icon">{activeSection === 'basic' ? '−' : '+'}</span>
     </div>
-    <div class="section-content" class:visible={activeSection === 'basic' || activeSection === 'all'}>
+    <div class="section-content" class:visible={activeSection === 'basic'}>
       <div class="form-grid">
         <div class="form-group">
           <label for="name">Name</label>
@@ -1104,280 +985,199 @@ onMount(() => {
       </div>
     </div>
   </div>
-  
-  <!-- Electrical Properties Section -->
+
+  <!-- Electrical Properties -->
   <div class="form-section {activeSection === 'electrical' ? 'active' : ''}">
     <div class="section-header" on:click={() => toggleSection('electrical')} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleSection('electrical')}>
       <h2>Electrical Properties</h2>
       <span class="toggle-icon">{activeSection === 'electrical' ? '−' : '+'}</span>
     </div>
-    <div class="section-content" class:visible={activeSection === 'electrical' || activeSection === 'all'}>
+    <div class="section-content" class:visible={activeSection === 'electrical'}>
       <div class="form-grid">
         <div class="form-group">
           <label for="voltage_rating_min">Min Voltage (V)</label>
-          <input type="number" name="voltage_rating_min" id="voltage_rating_min" 
-                 bind:value={formData.voltage_rating_min} min="0" step="any">
+          <input type="number" name="voltage_rating_min" id="voltage_rating_min" bind:value={$formStore.voltage_rating_min} step="any" />
         </div>
-
         <div class="form-group">
           <label for="voltage_rating_max">Max Voltage (V)</label>
-          <input type="number" name="voltage_rating_max" id="voltage_rating_max" 
-                 bind:value={formData.voltage_rating_max} min="0" step="any">
+          <input type="number" name="voltage_rating_max" id="voltage_rating_max" bind:value={$formStore.voltage_rating_max} step="any" />
         </div>
-
         <div class="form-group">
           <label for="current_rating_min">Min Current (A)</label>
-          <input type="number" name="current_rating_min" id="current_rating_min" 
-                 bind:value={formData.current_rating_min} min="0" step="any">
+          <input type="number" name="current_rating_min" id="current_rating_min" bind:value={$formStore.current_rating_min} step="any" />
         </div>
-
         <div class="form-group">
           <label for="current_rating_max">Max Current (A)</label>
-          <input type="number" name="current_rating_max" id="current_rating_max" 
-                 bind:value={formData.current_rating_max} min="0" step="any">
+          <input type="number" name="current_rating_max" id="current_rating_max" bind:value={$formStore.current_rating_max} step="any" />
         </div>
-
         <div class="form-group">
-          <label for="power_rating_max">Max Power Rating (W)</label>
-          <input type="number" name="power_rating_max" id="power_rating_max" 
-                 bind:value={formData.power_rating_max} min="0" step="any">
+          <label for="power_rating_max">Max Power (W)</label>
+          <input type="number" name="power_rating_max" id="power_rating_max" bind:value={$formStore.power_rating_max} min="0" step="any" />
         </div>
-
         <div class="form-group">
           <label for="tolerance">Tolerance</label>
-          <input type="number" name="tolerance" id="tolerance" 
-                 bind:value={formData.tolerance} min="0" step="any">
+          <input type="number" name="tolerance" id="tolerance" bind:value={$formStore.tolerance} min="0" step="any" />
         </div>
-
         <div class="form-group">
           <label for="tolerance_unit">Tolerance Unit</label>
-          <input name="tolerance_unit" id="tolerance_unit" bind:value={formData.tolerance_unit}>
+          <input name="tolerance_unit" id="tolerance_unit" bind:value={$formStore.tolerance_unit} />
         </div>
       </div>
-
       <div class="form-group">
         <label for="electrical_properties">Additional Electrical Properties (JSON)</label>
-        <textarea name="electrical_properties" id="electrical_properties" 
-                  value={jsonEditors.electricalProperties || '{}'}
-                  on:input={(e) => onJsonEditorChange('electricalProperties', e.currentTarget.value)} rows="5"></textarea>
-        <p class="hint">Enter properties in JSON format, e.g. {`{"resistance": "10 ohm"}`}</p>
+        <textarea name="electrical_properties" id="electrical_properties" value={jsonEditors.electricalProperties} on:input={(e) => onJsonEditorChange('electricalProperties', e.currentTarget.value)} rows="5"></textarea>
       </div>
     </div>
   </div>
 
-  
-  <!-- Mechanical Properties Section -->
+  <!-- Mechanical Properties -->
   <div class="form-section {activeSection === 'mechanical' ? 'active' : ''}">
     <div class="section-header" on:click={() => toggleSection('mechanical')} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleSection('mechanical')}>
       <h2>Mechanical Properties</h2>
       <span class="toggle-icon">{activeSection === 'mechanical' ? '−' : '+'}</span>
     </div>
-    <div class="section-content" class:visible={activeSection === 'mechanical' || activeSection === 'all'}>
+    <div class="section-content" class:visible={activeSection === 'mechanical'}>
       <div class="form-group">
         <label for="dimensions">Dimensions</label>
         <div class="dimensions-container">
           <div class="dimension-field">
             <label for="dimensions_length">Length</label>
-            <input type="number" name="dimensions.length" id="dimensions_length" 
-                   on:focus={ensureDimensions}
-                   bind:value={dimensions.length} min="0" step="any">
+            <input type="number" name="dimensions.length" id="dimensions_length" bind:value={dimensions.length} on:input={() => {$formStore.dimensions = dimensions}} min="0" step="any" />
           </div>
           <div class="dimension-field">
             <label for="dimensions_width">Width</label>
-            <input type="number" name="dimensions.width" id="dimensions_width" 
-                   on:focus={ensureDimensions}
-                   bind:value={dimensions.width} min="0" step="any">
+            <input type="number" name="dimensions.width" id="dimensions_width" bind:value={dimensions.width} on:input={() => {$formStore.dimensions = dimensions}} min="0" step="any" />
           </div>
           <div class="dimension-field">
             <label for="dimensions_height">Height</label>
-            <input type="number" name="dimensions.height" id="dimensions_height" 
-                   on:focus={ensureDimensions}
-                   bind:value={dimensions.height} min="0" step="any">
+            <input type="number" name="dimensions.height" id="dimensions_height" bind:value={dimensions.height} on:input={() => {$formStore.dimensions = dimensions}} min="0" step="any" />
           </div>
           <div class="dimension-field">
             <label for="dimensions_unit">Unit</label>
             <select name="dimensions_unit" id="dimensions_unit" bind:value={dimensionsUnit}>
-              <option value="">Select unit (optional)</option>
-              {#each options.dimensionUnits as dimUnit}
-                <option value={dimUnit} selected={dimensionsUnit === dimUnit}>{dimUnit}</option>
+              <option value="">Select unit</option>
+              {#each options.dimensionUnits as unit}
+                <option value={unit}>{unit}</option>
               {/each}
             </select>
           </div>
         </div>
       </div>
-
       <div class="form-grid">
         <div class="form-group">
           <label for="weight">Weight</label>
-          <input type="number" name="weight" id="weight" bind:value={formData.weight} min="0" step="any">
+          <input type="number" name="weight" id="weight" bind:value={$formStore.weight} min="0" step="any" />
         </div>
-
         <div class="form-group">
           <label for="weight_unit">Weight Unit</label>
-          <select name="weight_unit" id="weight_unit" bind:value={formData.weight_unit}>
-            <option value="">Select unit (optional)</option>
-            {#each options.weightUnits as weightUnit}
-              <option value={weightUnit} selected={formData.weight_unit === weightUnit}>{weightUnit}</option>
+          <select name="weight_unit" id="weight_unit" bind:value={$formStore.weight_unit}>
+            <option value="">Select unit</option>
+            {#each options.weightUnits as unit}
+              <option value={unit}>{unit}</option>
             {/each}
           </select>
         </div>
-
         <div class="form-group">
           <label for="package_type">Package Type</label>
-          <select name="package_type" id="package_type" bind:value={formData.package_type}>
-            <option value="">Select packaging (optional)</option>
-            {#each options.packageTypes as packageType}
-              <option value={packageType} selected={formData.package_type === packageType}>{packageType}</option>
+          <select name="package_type" id="package_type" bind:value={$formStore.package_type}>
+            <option value="">Select package</option>
+            {#each options.packageTypes as type}
+              <option value={type}>{type}</option>
             {/each}
           </select>
         </div>
-
         <div class="form-group">
           <label for="pin_count">Pin Count</label>
-          <input type="number" name="pin_count" id="pin_count" bind:value={formData.pin_count} min="0" step="1">
+          <input type="number" name="pin_count" id="pin_count" bind:value={$formStore.pin_count} min="0" step="1" />
         </div>
       </div>
-
       <div class="form-group">
         <label for="mechanical_properties">Additional Mechanical Properties (JSON)</label>
-        <textarea name="mechanical_properties" id="mechanical_properties" 
-                  value={jsonEditors.mechanicalProperties || '{}'}
-                  on:input={(e) => onJsonEditorChange('mechanicalProperties', e.currentTarget.value)} rows="5"></textarea>
-        <p class="hint">Enter properties in JSON format, e.g. {`{"tensile_strength": "500 MPa"}`}</p>
-      </div>
-
-      <div class="form-group">
-        <label for="material_composition">Material Composition (JSON)</label>
-        <textarea name="material_composition" id="material_composition" 
-                  value={jsonEditors.materialComposition || '{}'}
-                  on:input={(e) => onJsonEditorChange('materialComposition', e.currentTarget.value)} rows="5"></textarea>
-        <p class="hint">Enter material details in JSON format, e.g. {`{"metals": ["copper", "gold"]}`}</p>
+        <textarea name="mechanical_properties" id="mechanical_properties" value={jsonEditors.mechanicalProperties} on:input={(e) => onJsonEditorChange('mechanicalProperties', e.currentTarget.value)} rows="5"></textarea>
       </div>
     </div>
   </div>
 
-  <!-- Thermal Properties Section -->
+  <!-- Thermal Properties -->
   <div class="form-section {activeSection === 'thermal' ? 'active' : ''}">
     <div class="section-header" on:click={() => toggleSection('thermal')} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleSection('thermal')}>
       <h2>Thermal Properties</h2>
       <span class="toggle-icon">{activeSection === 'thermal' ? '−' : '+'}</span>
     </div>
-    <div class="section-content" class:visible={activeSection === 'thermal' || activeSection === 'all'}>
+    <div class="section-content" class:visible={activeSection === 'thermal'}>
       <div class="form-grid">
         <div class="form-group">
-          <label for="operating_temperature_min">Min Operating Temperature</label>
-          <input type="number" name="operating_temperature_min" id="operating_temperature_min" 
-                  bind:value={formData.operating_temperature_min} step="any">
+          <label for="operating_temperature_min">Min Operating Temp</label>
+          <input type="number" name="operating_temperature_min" id="operating_temperature_min" bind:value={$formStore.operating_temperature_min} step="any" />
         </div>
-
         <div class="form-group">
-          <label for="operating_temperature_max">Max Operating Temperature</label>
-          <input type="number" name="operating_temperature_max" id="operating_temperature_max" 
-                  bind:value={formData.operating_temperature_max} step="any">
+          <label for="operating_temperature_max">Max Operating Temp</label>
+          <input type="number" name="operating_temperature_max" id="operating_temperature_max" bind:value={$formStore.operating_temperature_max} step="any" />
         </div>
-
         <div class="form-group">
-          <label for="storage_temperature_min">Min Storage Temperature</label>
-          <input type="number" name="storage_temperature_min" id="storage_temperature_min" 
-                  bind:value={formData.storage_temperature_min} step="any">
+          <label for="storage_temperature_min">Min Storage Temp</label>
+          <input type="number" name="storage_temperature_min" id="storage_temperature_min" bind:value={$formStore.storage_temperature_min} step="any" />
         </div>
-
         <div class="form-group">
-          <label for="storage_temperature_max">Max Storage Temperature</label>
-          <input type="number" name="storage_temperature_max" id="storage_temperature_max" 
-                  bind:value={formData.storage_temperature_max} step="any">
+          <label for="storage_temperature_max">Max Storage Temp</label>
+          <input type="number" name="storage_temperature_max" id="storage_temperature_max" bind:value={$formStore.storage_temperature_max} step="any" />
         </div>
-
         <div class="form-group">
           <label for="temperature_unit">Temperature Unit</label>
-          <select name="temperature_unit" id="temperature_unit" bind:value={formData.temperature_unit}>
-            <option value="">Select unit (optional)</option>
-            {#each options.temperatureUnits as tempUnit}
-              <option value={tempUnit} selected={formData.temperature_unit === tempUnit}>{tempUnit}</option>
+          <select name="temperature_unit" id="temperature_unit" bind:value={$formStore.temperature_unit}>
+            <option value="">Select unit</option>
+            {#each options.temperatureUnits as unit}
+              <option value={unit}>{unit}</option>
             {/each}
           </select>
         </div>
       </div>
-      
       <div class="form-group">
         <label for="thermal_properties">Additional Thermal Properties (JSON)</label>
-        <textarea name="thermal_properties" id="thermal_properties" 
-                  value={jsonEditors.thermalProperties || '{}'}
-                  on:input={(e) => onJsonEditorChange('thermalProperties', e.currentTarget.value)} rows="5"></textarea>
-        <p class="hint">Enter properties in JSON format, e.g. {`{"thermal_conductivity": "2.5 W/mK"}`}</p>
+        <textarea name="thermal_properties" id="thermal_properties" value={jsonEditors.thermalProperties} on:input={(e) => onJsonEditorChange('thermalProperties', e.currentTarget.value)} rows="5"></textarea>
       </div>
     </div>
   </div>
-  
+
   <!-- Relationships -->
   <div class="form-section {activeSection === 'relationships' ? 'active' : ''}">
     <div class="section-header" on:click={() => toggleSection('relationships')} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleSection('relationships')}>
       <h2>Categories & Manufacturers</h2>
       <span class="toggle-icon">{activeSection === 'relationships' ? '−' : '+'}</span>
     </div>
-    <div class="section-content" class:visible={activeSection === 'relationships' || activeSection === 'all'}>
+    <div class="section-content" class:visible={activeSection === 'relationships'}>
       <div class="form-group">
         <label for="part-categories">Part Categories</label>
-        <MultiCategorySelector 
-          id="part-categories" 
-          {categories} 
-          bind:selectedCategoryIds 
-          name="category_ids" 
-          required={false} 
-        />
-        {#if isEditMode}
-          <div class="debug-info">
-            <small>Selected categories: {selectedCategoryIds.length}</small>
-          </div>
-        {/if}
+        <MultiCategorySelector id="part-categories" {categories} bind:selectedCategoryIds name="category_ids" />
       </div>
       <div class="form-group">
         <label for="manufacturers">Manufacturers</label>
-        <ManufacturerSelector 
-          {manufacturers} 
-          bind:selectedManufacturerParts 
-        />
-        {#if isEditMode}
-          <div class="debug-info">
-            <small>Selected manufacturer parts: {selectedManufacturerParts.length}</small>
-          </div>
-        {/if}
+        <ManufacturerSelector {manufacturers} bind:selectedManufacturerParts />
       </div>
     </div>
   </div>
 
-    <!-- Additional Properties Section -->
-    <div class="form-section {activeSection === 'additional' ? 'active' : ''}">
-      <div class="section-header" on:click={() => toggleSection('additional')} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleSection('additional')}>
-        <h2>Additional Properties</h2>
-        <span class="toggle-icon">{activeSection === 'additional' ? '−' : '+'}</span>
+  <!-- Additional Properties -->
+  <div class="form-section {activeSection === 'additional' ? 'active' : ''}">
+    <div class="section-header" on:click={() => toggleSection('additional')} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && toggleSection('additional')}>
+      <h2>Additional Properties</h2>
+      <span class="toggle-icon">{activeSection === 'additional' ? '−' : '+'}</span>
+    </div>
+    <div class="section-content" class:visible={activeSection === 'additional'}>
+      <div class="form-group">
+        <label for="properties">General Properties (JSON)</label>
+        <textarea name="properties" id="properties" value={jsonEditors.properties} on:input={(e) => onJsonEditorChange('properties', e.currentTarget.value)} rows="5"></textarea>
       </div>
-      <div class="section-content" class:visible={activeSection === 'additional' || activeSection === 'all'}>
-        <div class="form-group">
-          <label for="properties">General Properties (JSON)</label>
-          <textarea name="properties" id="properties" 
-                    value={jsonEditors.properties || '{}'} 
-                    on:input={(e) => onJsonEditorChange('properties', e.currentTarget.value)} rows="5"></textarea>
-          <p class="hint">Enter properties in JSON format, e.g. {`{"property": "value"}`}</p>
-          {#if errors && errors.properties}<span class="error">{errors.properties}</span>{/if}
-        </div>
-        
-        <div class="form-group">
-          <label for="environmental_data">Environmental Data (JSON)</label>
-          <textarea name="environmental_data" id="environmental_data" 
-                    value={jsonEditors.environmentalData || '{}'}
-                    on:input={(e) => onJsonEditorChange('environmentalData', e.currentTarget.value)} rows="5"></textarea>
-          <p class="hint">Enter environmental data in JSON format, e.g. {`{"RoHS_compliant": true}`}</p>
-          {#if errors && errors.environmental_data}<span class="error">{errors.environmental_data}</span>{/if}
-        </div>
-  
-        <div class="form-group">
-          <label for="revision_notes">Revision Notes</label>
-          <textarea name="revision_notes" id="revision_notes" 
-                   bind:value={formData.revision_notes} rows="3"></textarea>
-        </div>
+      <div class="form-group">
+        <label for="environmental_data">Environmental Data (JSON)</label>
+        <textarea name="environmental_data" id="environmental_data" value={jsonEditors.environmentalData} on:input={(e) => onJsonEditorChange('environmentalData', e.currentTarget.value)} rows="5"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="revision_notes">Revision Notes</label>
+        <textarea name="revision_notes" id="revision_notes" bind:value={$formStore.revision_notes} rows="3"></textarea>
       </div>
     </div>
+  </div>
 
   {#if !hideButtons && !isDashboardContext}
     <div class="form-actions">
@@ -1452,11 +1252,6 @@ onMount(() => {
   /* This class controls the visibility of form sections */
   .visible {
     display: block !important; /* Force display to ensure visibility */
-  }
-  
-  /* When activeSection is 'all', show all sections */
-  :global([data-section-all="true"]) .section-content {
-    display: block !important; /* Always show all sections */
   }
   
   /* Dashboard context special styling to ensure form is visible */
@@ -1596,13 +1391,5 @@ onMount(() => {
   
   .section-header:hover {
     background-color: hsl(var(--accent) / 0.1);
-  }
-  .debug-info {
-    margin-top: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    background-color: hsl(var(--muted) / 0.1);
-    border-radius: 4px;
-    font-size: 0.75rem;
-    color: hsl(var(--muted-foreground));
   }
 </style>

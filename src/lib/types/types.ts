@@ -236,6 +236,9 @@ export interface PartVersion {
 	createdAt: Date;
 	updatedBy?: string;
 	updatedAt: Date;
+	categoryIds?: string; // CSV list of category IDs
+	categories?: Array<{id: string; name: string}>;
+	manufacturerParts?: Array<{id: string; manufacturerId: string; manufacturerName: string; partNumber: string}>;
 }
 
 export interface PartVersionCategory {

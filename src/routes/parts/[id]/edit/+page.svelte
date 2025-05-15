@@ -1,23 +1,110 @@
 <!-- src/routes/parts/[id]/edit/+page.svelte -->
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms/client';
-	import { PartForm } from '$lib/components';
+	import PartForm from '$lib/components/PartForm.svelte';
+	import { prepareFormDataForValidation } from '$lib/utils/formUtils';
+	import { LifecycleStatusEnum } from '$lib/types/types';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
 
+	// Access categories and manufacturers from data with type safety
+	type Manufacturer = { id: string; name: string; [key: string]: any };
+	type Category = { id: string; name: string; [key: string]: any };
+	
+	// Get manufacturers and categories properly from the data
+	const categoriesData = data.currentVersion?.categories || [];
+	const manufacturersData = data.currentVersion?.manufacturerParts?.map(mp => {
+		return {
+			id: mp.manufacturerId,
+			name: mp.manufacturerName || 'Unknown'
+		};
+	}) || [];
+	
+	// Convert to proper arrays with type assertions
+	const categories = categoriesData as Category[];
+	const manufacturers = manufacturersData as Manufacturer[];
+	
 	// Debug the data being passed to the form component
 	console.log('Edit page loaded with part data:', {
 		part: data.part,
 		currentVersion: data.currentVersion,
-		formData: data.form
+		formData: data.form,
+		categoriesCount: categories.length,
+		manufacturersCount: manufacturers.length
 	});
+
+	// CRITICAL FIX: Ensure relationship data is properly logged
+	if (data.currentVersion?.categories) {
+		console.log('Categories from currentVersion:', data.currentVersion.categories);
+	}
+	
+	if (data.currentVersion?.manufacturerParts) {
+		console.log('Manufacturer parts from currentVersion:', data.currentVersion.manufacturerParts);
+	}
+
+	// Pre-process form data to ensure JSON fields are correctly formatted before validation
+	if (data.form?.data) {
+		// Fix JSON fields that should be strings (like full_description/long_description)
+		console.log('Pre-processing form data for validation');
+		
+		// Create a properly typed clone of the data to avoid TypeScript errors
+		// This preserves all the original properties while ensuring type safety
+		const processedData = prepareFormDataForValidation(data.form.data);
+		
+		// Apply the processed data back to the form data while preserving the original type
+		Object.assign(data.form.data, processedData);
+		
+		console.log('Processed form data:', data.form.data);
+	}
 
 	// Initialize SuperForm with server-provided data
 	const { form, errors, enhance } = superForm(data.form, {
 		dataType: 'json',
 		onUpdated: ({ form }) => {
 			console.log('Form updated in edit page:', form);
+		},
+		onSubmit: (event) => {
+			// Get the form data from the event
+			const formData = event.formData as Record<string, any>;
+			
+			// Ensure JSON fields are properly formatted before submission
+			console.log('FORM BEFORE VALIDATION:', formData);
+			
+			// Apply validation fixes
+			const validatedData = prepareFormDataForValidation(formData);
+			
+			// Explicitly handle enum fields with empty strings
+			const enumFields = [
+				'weight_unit', 
+				'dimensions_unit', 
+				'temperature_unit', 
+				'tolerance_unit',
+				'package_type',
+				'package_case',
+				'mounting_style',
+				'termination_style'
+			];
+			
+			enumFields.forEach(field => {
+				if (field in validatedData && (validatedData[field] === '' || validatedData[field] === undefined)) {
+					console.log(`Converting empty enum field ${field} to null in submit handler`);
+					validatedData[field] = null;
+				}
+			});
+			
+			// Log validation details
+			console.log('FORM VALIDATION FIXES APPLIED:', validatedData);
+			console.log('full_description type:', typeof validatedData.full_description);
+			
+			// Ensure manufacturer parts and categories are included
+			console.log('Category IDs and manufacturer parts check:',
+				formData.category_ids || 'none',
+				formData.manufacturer_parts || 'none'
+			);
+			
+			// Replace the data with the validated version
+			Object.assign(formData, validatedData);
 		}
 	});
 
@@ -26,33 +113,52 @@
 	console.log('Form fields count:', Object.keys($form).length);
 </script>
 
-<div class="container">
-	<h1>Edit Part Version</h1>
-	<p>Part ID: {data.part.id}</p>
-	
+<div class="edit-part-container">
+	<h1>Edit Part - {data.currentVersion?.name}</h1>
+	<!-- Pass all relationship data explicitly to ensure it's available for display -->
 	<PartForm 
-		{form} 
-		{errors} 
-		{enhance} 
-		statuses={data.lifecycleStatuses}
-		packageTypes={data.packageTypes}
-		weightUnits={data.weightUnits}
-		isEditMode={true}
-		dimensionUnits={data.dimensionUnits}
-		partStatuses={data.partStatuses}
-		
-		{/* Add type assertions to fix TypeScript errors */}
-		partData={{ ...data.part, status: data.part.status as any }}
-		versionData={{ ...data.currentVersion, dimensions: data.currentVersion.dimensions as any }}
-		
-		{/* Pass the form data directly for SuperForm */}
-		data={{ form: data.form.data }} 
+		form={form} 
+		enhance={enhance} 
+		errors={errors} 
+		partData={{
+			...data.part, 
+			status: data.part.status as unknown as LifecycleStatusEnum
+		}} 
+		versionData={{
+			...data.currentVersion, 
+			// Handle all JSON fields with proper typing
+			dimensions: typeof data.currentVersion?.dimensions === 'string' 
+				? JSON.parse(data.currentVersion.dimensions as string) 
+				: data.currentVersion?.dimensions,
+			properties: {},
+			technical_specifications: {}, 
+			electrical_properties: {},
+			mechanical_properties: {},
+			thermal_properties: {},
+			material_composition: {},
+			environmental_data: {}
+		}} 
+		isEditMode={true} 
+		manufacturers={manufacturers.map((m: Manufacturer) => ({
+			...m, 
+			created_at: new Date(),
+			updated_at: new Date()
+		}))} 
+		categories={categories}
+		selectedCategoryIds={data.currentVersion?.categories?.map((cat: any) => cat.id) || []}
+		selectedManufacturerParts={data.currentVersion?.manufacturerParts?.map((mp: any) => ({
+			id: mp.id,
+			manufacturer_id: mp.manufacturerId,
+			manufacturer_part_number: mp.partNumber,
+			manufacturer_name: manufacturers.find((m: any) => m.id === mp.manufacturerId)?.name || 'Unknown',
+			is_recommended: true
+		})) || []}
 		serverFormData={data.form} 
 	/>
 </div>
 
 <style>
-	.container {
+	.edit-part-container {
 		padding: 1rem;
 		max-width: 1200px;
 		margin: 0 auto;
@@ -63,10 +169,5 @@
 	h1 {
 		margin-bottom: 0.5rem;
 		color: hsl(var(--foreground));
-	}
-	
-	p {
-		margin-bottom: 1.5rem;
-		color: hsl(var(--muted-foreground));
 	}
 </style>

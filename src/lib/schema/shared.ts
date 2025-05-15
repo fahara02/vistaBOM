@@ -17,9 +17,36 @@ import { z } from 'zod';
 const literalSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 type Literal = z.infer<typeof literalSchema>;
 type Json = Literal | { [key: string]: Json } | Json[];
+
+// Create a more flexible JSON schema that can handle empty objects, strings, and nulls
 export const jsonSchema: z.ZodType<Json> = z.lazy(() =>
-    z.union([literalSchema, z.array(jsonSchema), z.record(jsonSchema)])
+    z.union([
+        literalSchema, 
+        z.array(jsonSchema), 
+        z.record(jsonSchema)
+    ])
 );
+
+// Separate schema specifically for handling empty objects in form data
+export const formJsonSchema = z.union([
+    jsonSchema,
+    z.object({}).passthrough() // Allow empty objects for form data
+]);
+
+// Special schema for text fields that might be stored as JSON objects but should be strings in forms
+export const jsonStringSchema = z.union([
+    z.string().optional(),
+    z.null(),
+    z.object({}).transform(() => ""), // Transform empty objects to empty strings
+    jsonSchema.transform(val => 
+        // If it's a complex object, stringify it for form display
+        typeof val === 'object' && val !== null ? JSON.stringify(val) : 
+        // If null, return empty string
+        val === null ? "" : 
+        // Otherwise return as is (should be string)
+        String(val)
+    )
+]);
 
 // Helper function to create enum schemas that handle empty strings correctly
 export function createEnumSchema<T>(enumSchema: T) {
@@ -60,7 +87,7 @@ export const partFormBaseSchema = z.object({
     
     // Basic info
     short_description: z.string().optional().nullable(),
-    full_description: z.string().optional().nullable(),
+    full_description: jsonStringSchema.optional().nullable(),
     functional_description: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     global_part_number: z.string().optional().nullable(),
@@ -85,15 +112,15 @@ export const partFormBaseSchema = z.object({
     current_rating_max: z.number().optional().nullable(),
     power_rating_max: z.number().optional().nullable(),
     tolerance: z.number().optional().nullable(),
-    tolerance_unit: z.string().optional().nullable(),
+    tolerance_unit: createEnumSchema(z.string()),
     
     // Mechanical properties
-    mounting_style: z.string().optional().nullable(),
-    package_case: z.string().optional().nullable(),
+    mounting_style: createEnumSchema(z.string()),
+    package_case: createEnumSchema(z.string()),
     package_type: createEnumSchema(z.nativeEnum(PackageTypeEnum)),
     pin_count: z.number().optional().nullable(),
-    termination_style: z.string().optional().nullable(),
-    material: z.string().optional().nullable(),
+    termination_style: createEnumSchema(z.string()),
+    material: createEnumSchema(z.string()),
     
     // Thermal properties
     operating_temperature_min: z.number().optional().nullable(),
@@ -107,13 +134,20 @@ export const partFormBaseSchema = z.object({
     released_at: z.date().optional().nullable(),
     
     // JSON fields for complex properties
-    technical_specifications: jsonSchema.optional().nullable(),
-    properties: jsonSchema.optional().nullable(),
-    electrical_properties: jsonSchema.optional().nullable(),
-    mechanical_properties: jsonSchema.optional().nullable(),
-    thermal_properties: jsonSchema.optional().nullable(),
-    material_composition: jsonSchema.optional().nullable(),
-    environmental_data: jsonSchema.optional().nullable(),
+    technical_specifications: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
+    properties: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
+    electrical_properties: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
+    mechanical_properties: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
+    thermal_properties: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
+    material_composition: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
+    environmental_data: formJsonSchema.optional().nullable()
+        .transform(val => val === null ? {} : val),
     
     // System fields
     is_public: z.boolean().default(false),
