@@ -5,6 +5,17 @@ import type {
   MechanicalProperties, 
   ThermalProperties 
 } from "./schemaTypes";
+import type {
+  LifecycleStatusEnum,
+  PartStatusEnum,
+  ComplianceTypeEnum,
+  StructuralRelationTypeEnum,
+  WeightUnitEnum,
+  DimensionUnitEnum,
+  TemperatureUnitEnum,
+  PackageTypeEnum,
+  MountingTypeEnum
+} from "./enums";
 
 /**
  * Form data types specifically designed for handling form submissions
@@ -18,6 +29,123 @@ export interface BaseFormData {
   updated_at?: string | Date;
   created_by?: string;
   updated_by?: string;
+}
+
+// Revision form data
+export interface RevisionRecordFormData {
+  part_revision_id?: string;
+  change_description: string;
+  changed_by?: string;
+  changed_fields: Record<string, any> | string;
+  revision_date?: string | Date;
+}
+
+// Family link form data
+export interface PartFamilyFormData {
+  family_id: string;
+  family_name?: string;
+  family_code?: string;
+  notes?: string;
+}
+
+// Group link form data
+export interface PartGroupFormData {
+  group_id: string;
+  group_name?: string;
+  group_type?: string;
+  position_index?: number;
+  notes?: string;
+}
+
+// Compliance info form data
+export interface ComplianceFormData {
+  compliance_type?: ComplianceTypeEnum;
+  certificate_url?: string;
+  certified_at?: string | Date;
+  expires_at?: string | Date;
+  notes?: string;
+}
+
+// Attachment form data
+export interface AttachmentFormData {
+  file_url?: string;
+  file_name?: string;
+  file_type?: string;
+  file_size_bytes?: number;
+  file_path?: string;
+  description?: string;
+  attachment_description?: string; // For backwards compatibility
+  attachment_type?: string;
+  attachment_checksum?: string;
+  is_primary?: boolean;
+  thumbnail_url?: string;
+  uploaded_by?: string;
+  additional_data?: Record<string, any>;
+}
+
+// Representation form data
+export interface RepresentationFormData {
+  representation_type?: string;
+  format?: string;
+  file_url?: string;
+  file_name?: string;
+  file_size_bytes?: number;
+  metadata?: Record<string, any>;
+  is_primary?: boolean;
+  additional_data?: Record<string, any>;
+}
+
+// Structure form data
+export interface StructureFormData {
+  parent_part_id?: string;
+  child_part_id?: string;
+  relation_type?: StructuralRelationTypeEnum;
+  quantity?: number;
+  notes?: string;
+}
+
+// Manufacturer part form data
+export interface ManufacturerPartFormData {
+  manufacturer_id: string;
+  manufacturer_name?: string;
+  part_number?: string;
+  manufacturer_part_number?: string;
+  description?: string;
+  status?: string;
+  datasheet_url?: string;
+  product_url?: string;
+  is_recommended?: boolean;
+}
+
+// Supplier part form data
+export interface SupplierPartFormData {
+  supplier_id: string;
+  supplier_name?: string;
+  part_number?: string;
+  supplier_part_number?: string;
+  manufacturer_part_id?: string;
+  description?: string;
+  status?: string;
+  product_url?: string;
+  supplier_url?: string; // For backwards compatibility
+  unit_price?: number;
+  currency?: string;
+  price_breaks?: Record<string, any>;
+  stock_quantity?: number;
+  lead_time_days?: number;
+  minimum_order_quantity?: number;
+  is_preferred?: boolean;
+  packaging_info?: Record<string, any>;
+  pricing_info?: string;
+}
+
+// Validation record form data
+export interface ValidationRecordFormData {
+  validated_by?: string;
+  validation_date?: string | Date;
+  test_results?: Record<string, any> | string;
+  certification_info?: Record<string, any> | string;
+  is_compliant?: boolean;
 }
 
 // Manufacturer form data
@@ -48,9 +176,12 @@ export interface PartFormData extends BaseFormData {
   part_id?: string;
   part_name: string;
   part_version: string;
-  status_in_bom: string;
-  lifecycle_status?: string;
-  is_public?: boolean;
+  status_in_bom: PartStatusEnum;
+  lifecycle_status: LifecycleStatusEnum; // Required with DEFAULT 'draft' in DB
+  is_public: boolean; // Required with DEFAULT TRUE in DB
+  global_part_number?: string;
+  current_version_id?: string;
+  released_at?: string | Date;
   
   // Part descriptions
   short_description?: string;
@@ -69,61 +200,75 @@ export interface PartFormData extends BaseFormData {
   // Relationships
   category_ids?: string; // Comma-separated
   manufacturer_id?: string;
+  
+  // Complex relationship objects
+  part_families?: string | PartFamilyFormData[];
+  part_groups?: string | PartGroupFormData[];
+  compliance_info?: string | ComplianceFormData[];
+  attachments?: string | AttachmentFormData[];
+  representations?: string | RepresentationFormData[];
+  structure?: string | StructureFormData[];
+  manufacturer_parts?: string | ManufacturerPartFormData[];
+  supplier_parts?: string | SupplierPartFormData[];
+  revision_records?: string | RevisionRecordFormData[];
+  validation_records?: string | ValidationRecordFormData[];
+  
+  // Legacy relationship fields (for backward compatibility)
   family_ids?: string; // Comma-separated
   group_ids?: string; // Comma-separated
   tag_ids?: string; // Comma-separated
   
   // Physical properties
-  part_weight?: number | string | null;
-  weight_unit?: string | null;
-  dimensions?: Dimensions | string | null;
-  dimensions_unit?: string | null;
-  material_composition?: string | MaterialComposition | null;
+  part_weight?: number | string;
+  weight_unit?: WeightUnitEnum;
+  dimensions?: Dimensions | string;
+  dimensions_unit?: DimensionUnitEnum;
+  material_composition?: string | MaterialComposition;
   
   // Electrical properties
-  voltage_rating_min?: number | string | null;
-  voltage_rating_max?: number | string | null;
-  current_rating_min?: number | string | null;
-  current_rating_max?: number | string | null;
-  power_rating_max?: number | string | null;
-  tolerance?: number | string | null;
-  tolerance_unit?: string | null;
-  electrical_properties?: string | ElectricalProperties | null;
+  voltage_rating_min?: number | string;
+  voltage_rating_max?: number | string;
+  current_rating_min?: number | string;
+  current_rating_max?: number | string;
+  power_rating_max?: number | string;
+  tolerance?: number | string;
+  tolerance_unit?: string;
+  electrical_properties?: string | ElectricalProperties;
   
   // Mechanical properties
-  mounting_type?: string | null;
-  package_type?: string | null;
-  mounting_style?: string | null;
-  package_case?: string | null;
-  pin_count?: number | string | null;
-  termination_style?: string | null;
-  material?: string | null;
-  mechanical_properties?: string | MechanicalProperties | null;
+  mounting_type?: MountingTypeEnum;
+  package_type?: PackageTypeEnum;
+  mounting_style?: string;
+  package_case?: string;
+  pin_count?: number | string;
+  termination_style?: string;
+  material?: string;
+  mechanical_properties?: string | MechanicalProperties;
   
   // Thermal properties
-  operating_temperature_min?: number | string | null;
-  operating_temperature_max?: number | string | null;
-  storage_temperature_min?: number | string | null;
-  storage_temperature_max?: number | string | null;
-  temperature_unit?: string | null;
-  thermal_properties?: string | ThermalProperties | null;
+  operating_temperature_min?: number | string;
+  operating_temperature_max?: number | string;
+  storage_temperature_min?: number | string;
+  storage_temperature_max?: number | string;
+  temperature_unit?: TemperatureUnitEnum;
+  thermal_properties?: string | ThermalProperties;
   
   // Environmental data
-  environmental_data?: string | EnvironmentalData | null;
+  environmental_data?: string | EnvironmentalData;
   
   // Version-specific fields
   previous_version_id?: string;
   change_description?: string;
   changed_fields?: string | Record<string, JsonValue>;
   
-  // Arrays as stringified JSON for form submission
-  compliance_info?: string; // Stringified array
-  attachments?: string; // Stringified array
-  representations?: string; // Stringified array
-  structure?: string; // Stringified array
-  manufacturer_parts?: string; // Stringified array
-  supplier_parts?: string; // Stringified array
-  custom_fields?: string; // Stringified record
+  // Custom fields
+  custom_fields?: string | Record<string, JsonValue>;
+  
+  // Field to match the SQL properties column
+  properties?: string | Record<string, JsonValue>;
+  
+  // For form handling
+  version_status?: LifecycleStatusEnum;
 }
 
 // Part version form data for creating new versions

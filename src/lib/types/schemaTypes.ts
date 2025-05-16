@@ -15,6 +15,7 @@ import {
   partAttachmentSchema,
   partRepresentationSchema,
   partSchema,
+  partVersionEditSchema,
   partVersionSchema,
   partVersionSchemaBase,
   permissionSchema,
@@ -23,7 +24,11 @@ import {
   sessionSchema,
   supplierSchema,
   userSchema,
+  categoryClientSchema
+
 } from '../schema/schema';
+
+import type { LifecycleStatusEnum } from './enums';
 
 // Core entity types
 export type User = z.infer<typeof userSchema>;
@@ -52,6 +57,22 @@ export type Supplier = z.infer<typeof supplierSchema>;
 export type Dimensions = z.infer<typeof dimensionSchema>;
 export type EditableDimensions = z.infer<typeof editDimensionSchema>;
 export type JsonValue = z.infer<typeof jsonSchema>;
+
+// Export types
+export type PartFormData = z.infer<typeof createPartSchema>;
+export type PartVersionEditData = z.infer<typeof partVersionEditSchema>;
+export type CategoryClientData = z.infer<typeof categoryClientSchema>;
+export type ManufacturerData = z.infer<typeof manufacturerSchema>;
+export type CategoryData = z.infer<typeof categorySchema>;
+
+// We need a simpler type for snake case conversion without complex mapped types
+export type SnakeCasePartSchema = PartFormData & {
+    // Add any specific snake_case properties that might be needed
+    lifecycle_status?: LifecycleStatusEnum;  // Instead of status in some contexts
+};
+
+
+
 
 // Types for combined data fetching operations
 export interface PartWithCurrentVersion extends Part {

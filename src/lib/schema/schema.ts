@@ -2098,15 +2098,3 @@ export const categoryClientSchema = z.object({
 });
 
 
-// Export types
-export type PartFormData = z.infer<typeof createPartSchema>;
-export type PartVersionEditData = z.infer<typeof partVersionEditSchema>;
-export type CategoryClientData = z.infer<typeof categoryClientSchema>;
-export type ManufacturerData = z.infer<typeof manufacturerSchema>;
-export type CategoryData = z.infer<typeof categorySchema>;
-
-// We need a simpler type for snake case conversion without complex mapped types
-export type SnakeCasePartSchema = PartFormData & {
-    // Add any specific snake_case properties that might be needed
-    lifecycle_status?: LifecycleStatusEnum;  // Instead of status in some contexts
-};
