@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import type { Actions, PageServerLoad } from './$types';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
-import { createPartSchema, manufacturerSchema, categorySchema } from '$lib/server/db/schema';
+import { createPartSchema, manufacturerSchema, categorySchema } from '@/schema/schema';
 import { createPart, getPartWithCurrentVersion } from '@/core/parts';
 import type { CreatePartInput } from '@/core/parts';
 

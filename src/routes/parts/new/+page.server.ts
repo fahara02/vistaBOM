@@ -6,14 +6,17 @@ import type { PageServerLoad, Actions } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
-import { createPartSchema } from '$lib/server/db/schema';
+import { createPartSchema } from '@/schema/schema';
 // Server-side code should import directly from server types
 import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum } from '@/types/types';
+import sql from '$lib/server/db';
+import { listManufacturers } from '@/core/manufacturer';
 
 /**
  * Load function - initializes the form and loads lifecycle statuses
  */
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async (event) => {
+  const user = event.locals.user;
   // Create an empty form based on the schema
   const form = await superValidate(zod(createPartSchema));
   
@@ -27,8 +30,78 @@ export const load: PageServerLoad = async () => {
     form.data.status = LifecycleStatusEnum.DRAFT;
   }
   
+  // Initialize dimensions_unit property with a safer type approach
+  // Using properly typed interface to avoid any/unknown but still fix the issue
+  interface PartFormData extends Record<string, any> {
+    dimensions_unit?: DimensionUnitEnum;
+  }
+  const formData = form.data as PartFormData;
+  formData.dimensions_unit = formData.dimensions_unit || DimensionUnitEnum.MM;
+  
+  // Fetch manufacturers from API endpoint instead of direct SQL query
+  let manufacturers: any[] = [];
+  
+  try {
+    console.log('Fetching manufacturers from API endpoint');
+    
+    // Use relative URL to avoid hardcoding domains - works with SvelteKit's server-side fetch
+    const response = await fetch('/api/manufacturers', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+    
+    manufacturers = await response.json();
+    console.log(`API returned ${manufacturers.length} manufacturers`);
+    
+    // No need to transform - API already returns data in the format expected by ManufacturerSelector
+  } catch (error) {
+    console.error('Error fetching manufacturers from API:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    // Empty array on error
+    manufacturers = [];
+  }
+  
+  // Also load all categories for the form
+  // Using EXACTLY the same working query from getChildCategories() function
+  let categories: any[] = [];
+  try {
+    console.log('Using EXACT query from working getChildCategories() function');
+    
+    // Get all categories - using the exact SQL pattern from getChildCategories
+    categories = await sql`
+      SELECT * FROM Category 
+      WHERE is_deleted = false 
+      ORDER BY name
+    `;
+
+    // If that didn't work, try a fallback approach with lowercase
+    if (categories.length === 0) {
+      console.log('No categories found with PascalCase, trying lowercase');
+      categories = await sql`
+        SELECT * FROM category 
+        WHERE is_deleted = false 
+        ORDER BY name
+      `;
+    }
+    console.log(`Loaded ${categories.length} categories for part form`);
+  } catch (error) {
+    console.error('Error loading categories:', error);
+    // categories will remain an empty array on error
+  }
+  
   return {
     form,
+    manufacturers,
+    categories,
     statuses: Object.values(LifecycleStatusEnum),
     packageTypes: Object.values(PackageTypeEnum),
     weightUnits: Object.values(WeightUnitEnum),

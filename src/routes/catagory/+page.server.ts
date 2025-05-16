@@ -2,7 +2,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
 import { getCategoryTree, createCategory } from '@/core/category';
-import { categorySchema } from '$lib/server/db/schema';
+import { categorySchema } from '@/schema/schema';
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { fail, redirect } from '@sveltejs/kit';

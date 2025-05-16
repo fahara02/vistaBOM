@@ -1,36 +1,384 @@
-// src/lib/server/parts.ts
-import sql from '../server/db/index';
-import { randomUUID } from 'crypto';
-import { rowToPartVersionCategory,rowToPartAttachment,rowToPartCompliance,rowToPartCustomField,rowToPartVersionTag, rowToPartStructure, rowToPartRepresentation, rowToPartRevision, rowToPartValidation} from '../parts/partUtils';
+/**
+ * Core functionality for part management
+ */
+import sql from '$lib/server/db';
+import crypto, { randomUUID } from 'crypto';
+
+// Import all specialized part module functionality
+import { PART_ERRORS } from './parts/partErrors';
+import { sanitizeSqlString } from '@/utils/util';
+
+// Import part structure management
+import type { PartStructure } from './parts/partStructure';
+
+// Import part compliance management
+import type { PartCompliance } from './parts/partCompliance';
+import {
+  createPartCompliance,
+  getPartComplianceById,
+  getPartCompliancesByPartVersion,
+  updatePartCompliance,
+  deletePartCompliance
+} from './parts/partCompliance';
+
+// Import part attachment management
+import type { PartAttachment } from './parts/partAttachment';
+import {
+  createPartAttachment,
+  getPartAttachmentById,
+  getPartAttachmentsByPartVersion,
+  updatePartAttachment,
+  deletePartAttachment
+} from './parts/partAttachment';
+
+// Import part representation management
+import type { PartRepresentation } from './parts/partRepresentation';
+import {
+  createPartRepresentation,
+  getPartRepresentationById,
+  getPartRepresentationsByPartVersion,
+  updatePartRepresentation,
+  deletePartRepresentation
+} from './parts/partRepresentation';
+
+// Import part revision management
+
+// Import part validation management
+import type { PartValidation } from './parts/partValidation';
+import {
+  createPartValidation,
+  getPartValidationById,
+  getPartValidationsByPartVersion,
+  updatePartValidationStatus,
+  deletePartValidation
+} from './parts/partValidation';
+
+// Import part tag management
+import type { PartVersionTag } from './parts/partVersionTag';
+import {
+  createPartVersionTag,
+  getPartVersionTagById,
+  getPartVersionTags,
+  findPartVersionsByTag,
+  updatePartVersionTag,
+  deletePartVersionTag
+} from './parts/partVersionTag';
+
+// Import part custom field management
+import type { PartCustomField } from './parts/partCustomField';
+import {
+  createPartCustomField,
+  getPartCustomFieldById,
+  getPartCustomFields,
+  updatePartCustomFieldValue,
+  updatePartCustomFieldMetadata,
+  deletePartCustomField
+} from './parts/partCustomField';
+
+// Import manufacturer/supplier part management
+import type { ManufacturerPart} from './parts/manufacturerPart';
+import type{SupplierPart }  from './parts/supplierPart';
+
+import {
+  createSupplierPart,
+  getSupplierPartById,
+  getSupplierPartsByPartVersion,
+  updateSupplierPart,
+  deleteSupplierPart
+} from './parts/supplierPart';
+
 import type {
   Part,
   PartVersion,
-  PartVersionCategory,
-  PartStructure,
-  PartCompliance,
-  PartAttachment,
-  PartRepresentation,
-  PartRevision,
-  PartValidation,
-  PartVersionTag,
-  PartCustomField
-} from '../types/types';
+  // Database entity types with Db prefix
+  DbPart,
+  DbPartVersion,
+  DbPartVersionCategory,
+  DbPartStructure,
+  DbPartCompliance,
+  DbPartAttachment,
+  DbPartRepresentation,
+  DbPartRevision,
+  DbPartValidation,
+  DbPartVersionTag,
+  DbPartCustomField,
+  // JSON types
+  JsonValue,
+  JsonRecord,
+  Dimensions
+} from '$lib/types/types';
+
+// Import specialized property interfaces
+import type {
+  ElectricalProperties,
+  MechanicalProperties,
+  ThermalProperties,
+  EnvironmentalData
+} from '$lib/types/schemaTypes';
+
+// Import enums
 import {
   LifecycleStatusEnum,
   ComplianceTypeEnum,
   StructuralRelationTypeEnum,
   PartStatusEnum,
-} from '../types/types';
+  WeightUnitEnum,
+  DimensionUnitEnum,
+  TemperatureUnitEnum,
+  PackageTypeEnum,
+  MountingTypeEnum
+} from '$lib/types/types';
+
+
+
 
 /**
- * Safe SQL string literal helper function.
- * Prevents SQL injection when using raw string interpolation.
- * @param str The string to sanitize for SQL
- * @returns A string safe to use in SQL queries
+ * Extended Part interface with both camelCase and snake_case properties
+ * This provides backwards compatibility with existing code while maintaining type safety
  */
-function sanitizeSqlString(str: string): string {
-	// Double single quotes for SQL safety
-	return str.replace(/'/g, "''");
+interface PartWithId {
+    // Standard API properties (camelCase)
+    id: string;
+    creatorId: string | null;
+    globalPartNumber?: string | null;
+    status: PartStatusEnum;
+    lifecycleStatus: LifecycleStatusEnum;
+    isPublic: boolean;
+    createdAt: Date;
+    updatedBy?: string | null;
+    updatedAt: Date;
+    currentVersionId?: string | null;
+    
+    // Database column names for direct mapping (snake_case)
+    part_id: string;
+    creator_id: string | null;
+    global_part_number: string | null;
+    status_in_bom: PartStatusEnum; // Matching Part interface
+    lifecycle_status: LifecycleStatusEnum; // Matching Part interface
+    is_public: boolean;
+    created_at: Date;
+    updated_by: string | null;
+    updated_at: Date;
+    current_version_id: string | null;
+    
+    // Additional UI helper properties
+    currentVersion?: PartVersionWithId | null;
+    versions?: PartVersionWithId[];
+    categories?: Array<{ id: string; name: string }>;
+    manufacturerParts?: Array<{ manufacturerId: string; partNumber: string; manufacturerName?: string }>;
+    supplierParts?: Array<{ supplierId: string; partNumber: string; supplierName?: string }>;
+}
+
+/**
+ * Extended PartVersion interface with both camelCase and snake_case properties
+ */
+interface PartVersionWithId {
+    // Standard API properties (camelCase)
+    id: string;
+    partId: string;
+    version: string;
+    name: string;
+    status: LifecycleStatusEnum;
+    createdBy: string;
+    createdAt: Date;
+    updatedAt: Date;
+    updatedBy?: string | null;
+    shortDescription?: string | null;
+    longDescription?: string | null;
+    functionalDescription?: string | null;
+    notes?: string | null;
+    releaseNotes?: string | null;
+    revisionNotes?: string | null;
+    designFiles?: JsonValue | null;
+    
+    // Database column names for direct mapping (snake_case)
+    part_version_id: string;
+    part_id: string;
+    part_version: string;
+    part_name: string;
+    short_description: string | null;
+    long_description: JsonValue | null;
+    functional_description: string | null;
+    technical_specifications: JsonValue | null;
+    properties: JsonValue | null;
+    electrical_properties: ElectricalProperties | null;
+    mechanical_properties: MechanicalProperties | null;
+    thermal_properties: ThermalProperties | null;
+    part_weight: number | null;
+    weight_unit: WeightUnitEnum | null;
+    dimensions: Dimensions | null;
+    dimensions_unit: DimensionUnitEnum | null;
+    material_composition: JsonValue | null;
+    environmental_data: EnvironmentalData | null;
+    voltage_rating_min: number | null;
+    voltage_rating_max: number | null;
+    current_rating_min: number | null;
+    current_rating_max: number | null;
+    power_rating_max: number | null;
+    tolerance: number | null;
+    tolerance_unit: string | null;
+    package_type: PackageTypeEnum | null;
+    mounting_type: MountingTypeEnum | null;
+    pin_count: number | null;
+    operating_temperature_min: number | null;
+    operating_temperature_max: number | null;
+    storage_temperature_min: number | null;
+    storage_temperature_max: number | null;
+    temperature_unit: TemperatureUnitEnum | null;
+    revision_notes: string | null;
+    version_status: LifecycleStatusEnum;
+    released_at: Date | null;
+    created_by: string;
+    created_at: Date;
+    updated_by: string | null;
+    updated_at: Date;
+
+    // Additional UI helper properties
+    part?: PartWithId | null;
+    categories?: DbPartVersionCategory[];
+    attachments?: DbPartAttachment[];
+    representations?: DbPartRepresentation[];
+    tags?: DbPartVersionTag[];
+    customFields?: Record<string, JsonValue>;
+}
+
+
+
+/**
+ * Normalizes database row data into a PartWithId object
+ * Ensures that all required properties are present and properly typed
+ * @param row Database row data
+ * @returns A normalized PartWithId object
+ */
+function normalizePart(row: any): PartWithId {
+    const partId = row.part_id?.toString() || row.id?.toString();
+    
+    // Create normalized object with both camelCase and snake_case versions
+    // of each property for compatibility
+    const part: PartWithId = {
+        // camelCase properties for API
+        id: partId,
+        creatorId: row.creator_id?.toString() || null,
+        globalPartNumber: row.global_part_number?.toString() || null,
+        status: (row.status_in_bom || row.status) as PartStatusEnum,
+        lifecycleStatus: row.lifecycle_status as LifecycleStatusEnum,
+        isPublic: row.is_public === true || row.is_public === 'true',
+        createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at || Date.now()),
+        updatedBy: row.updated_by?.toString() || null,
+        updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at || Date.now()),
+        currentVersionId: row.current_version_id?.toString() || null,
+        
+        // snake_case properties for database mapping
+        part_id: partId,
+        creator_id: row.creator_id?.toString() || null,
+        global_part_number: row.global_part_number?.toString() || null,
+        status_in_bom: (row.status_in_bom || row.status) as PartStatusEnum,
+        lifecycle_status: row.lifecycle_status as LifecycleStatusEnum,
+        is_public: row.is_public === true || row.is_public === 'true',
+        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at || Date.now()),
+        updated_by: row.updated_by?.toString() || null,
+        updated_at: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at || Date.now()),
+        current_version_id: row.current_version_id?.toString() || null
+    };
+    
+    return part;
+}
+
+/**
+ * Normalizes database row data into a PartVersionWithId object
+ * Ensures that all required properties are present and properly typed
+ * @param row Database row data
+ * @returns A normalized PartVersionWithId object
+ */
+function normalizePartVersion(row: any): PartVersionWithId {
+    const versionId = row.part_version_id?.toString() || row.id?.toString();
+    const partId = row.part_id?.toString();
+    
+    // Create normalized object with both camelCase and snake_case versions
+    // of each property for compatibility
+    const version: PartVersionWithId = {
+        // camelCase properties for API
+        id: versionId,
+        partId: partId,
+        version: row.part_version?.toString() || row.version?.toString() || '1.0.0',
+        name: row.part_name?.toString() || row.name?.toString() || '',
+        status: (row.version_status || row.status) as LifecycleStatusEnum,
+        createdBy: row.created_by?.toString() || '',
+        createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at || Date.now()),
+        updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at || Date.now()),
+        updatedBy: row.updated_by?.toString() || null,
+        shortDescription: row.short_description?.toString() || null,
+        longDescription: row.long_description || null,
+        functionalDescription: row.functional_description?.toString() || null,
+        notes: row.notes?.toString() || null,
+        releaseNotes: row.release_notes?.toString() || null,
+        revisionNotes: row.revision_notes?.toString() || null,
+        designFiles: row.design_files || null,
+        
+        // Database column names (snake_case)
+        part_version_id: versionId,
+        part_id: partId,
+        part_version: row.part_version?.toString() || row.version?.toString() || '1.0.0',
+        part_name: row.part_name?.toString() || row.name?.toString() || '',
+        short_description: row.short_description?.toString() || null,
+        long_description: row.long_description || null,
+        functional_description: row.functional_description?.toString() || null,
+        technical_specifications: row.technical_specifications || null,
+        properties: row.properties || null,
+        electrical_properties: row.electrical_properties || null,
+        mechanical_properties: row.mechanical_properties || null,
+        thermal_properties: row.thermal_properties || null,
+        part_weight: typeof row.part_weight === 'number' ? row.part_weight : null,
+        weight_unit: row.weight_unit as WeightUnitEnum || null,
+        dimensions: row.dimensions || null,
+        dimensions_unit: row.dimensions_unit as DimensionUnitEnum || null,
+        material_composition: row.material_composition || null,
+        environmental_data: row.environmental_data || null,
+        voltage_rating_min: typeof row.voltage_rating_min === 'number' ? row.voltage_rating_min : null,
+        voltage_rating_max: typeof row.voltage_rating_max === 'number' ? row.voltage_rating_max : null,
+        current_rating_min: typeof row.current_rating_min === 'number' ? row.current_rating_min : null,
+        current_rating_max: typeof row.current_rating_max === 'number' ? row.current_rating_max : null,
+        power_rating_max: typeof row.power_rating_max === 'number' ? row.power_rating_max : null,
+        tolerance: typeof row.tolerance === 'number' ? row.tolerance : null,
+        tolerance_unit: row.tolerance_unit?.toString() || null,
+        package_type: row.package_type as PackageTypeEnum || null,
+        mounting_type: row.mounting_type as MountingTypeEnum || null,
+        pin_count: typeof row.pin_count === 'number' ? row.pin_count : null,
+        operating_temperature_min: typeof row.operating_temperature_min === 'number' ? row.operating_temperature_min : null,
+        operating_temperature_max: typeof row.operating_temperature_max === 'number' ? row.operating_temperature_max : null,
+        storage_temperature_min: typeof row.storage_temperature_min === 'number' ? row.storage_temperature_min : null,
+        storage_temperature_max: typeof row.storage_temperature_max === 'number' ? row.storage_temperature_max : null,
+        temperature_unit: row.temperature_unit as TemperatureUnitEnum || null,
+        revision_notes: row.revision_notes?.toString() || null,
+        version_status: (row.version_status || row.status) as LifecycleStatusEnum,
+        released_at: row.released_at instanceof Date ? row.released_at : (row.released_at ? new Date(row.released_at) : null),
+        created_by: row.created_by?.toString() || '',
+        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at || Date.now()),
+        updated_by: row.updated_by?.toString() || null,
+        updated_at: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at || Date.now())
+    };
+    
+    return version;
+}
+
+/**
+ * Interface for the PartVersionCategory join table (not from schema.ts)
+ */
+interface PartVersionCategory {
+    part_version_id: string;
+    category_id: string;
+    created_at: Date;
+}
+
+/**
+ * Converts a database row to a PartVersionCategory object
+ */
+function rowToPartVersionCategory(row: any): PartVersionCategory {
+    return {
+        part_version_id: row.part_version_id?.toString(),
+        category_id: row.category_id?.toString(),
+        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at || Date.now())
+    };
 }
 
 // SQL client is imported directly at the top of the file
@@ -42,31 +390,30 @@ export async function listParts(): Promise<Array<{ part: Part; currentVersion: P
 	try {
 		console.log('[listParts] Retrieving all parts');
 		
-		// Using imported sql client directly
-		
-		// Use SQL template literal syntax for porsager/postgres
+		// Using SQL template literal syntax for porsager/postgres with appropriate table name quoting
 		const result = await sql`
 		SELECT 
-			p.id::TEXT AS id,
-			p.creator_id::TEXT AS creator_id,
-			p.global_part_number::TEXT AS global_part_number,
-			p.status::TEXT AS status,
-			p.lifecycle_status::TEXT AS lifecycle_status,
-			p.is_public::TEXT AS is_public,
-			p.created_at::TEXT AS part_created_at,
-			p.updated_by::TEXT AS part_updated_by,
-			p.updated_at::TEXT AS part_updated_at,
-			p.current_version_id::TEXT AS current_version_id,
-			pv.id::TEXT AS version_id,
-			pv.part_id::TEXT AS version_part_id,
-			pv.version::TEXT AS version,
-			pv.name::TEXT AS name,
-			pv.short_description::TEXT AS short_description,
-			pv.status::TEXT AS version_status,
-			pv.created_by::TEXT AS version_created_by,
-			pv.created_at::TEXT AS version_created_at,
-			pv.updated_by::TEXT AS version_updated_by,
-			pv.updated_at::TEXT AS version_updated_at
+			p.id as part_id,
+			p.creator_id,
+			p.global_part_number,
+			p.status_in_bom,
+			p.lifecycle_status,
+			p.is_public,
+			p.created_at,
+			p.updated_by,
+			p.updated_at,
+			p.current_version_id,
+			
+			pv.id as part_version_id,
+			pv.part_id,
+			pv.part_version,
+			pv.part_name,
+			pv.short_description,
+			pv.version_status,
+			pv.created_by,
+			pv.created_at,
+			pv.updated_by,
+			pv.updated_at
 		FROM "Part" p
 		JOIN "PartVersion" pv ON p.current_version_id = pv.id
 		ORDER BY p.created_at DESC
@@ -77,50 +424,43 @@ export async function listParts(): Promise<Array<{ part: Part; currentVersion: P
 		}
 		
 		// Log raw rows for debugging
-		console.log(`[listParts] Found ${result.length} parts\n`);
+		console.log(`[listParts] Found ${result.length} parts`);
 		
-		// Process results - with porsager/postgres, results are returned as objects directly
+		// Process results using the normalize functions for consistent data handling
 		const parts = result.map((row: any) => {
-			// With porsager/postgres, results are already objects with named properties
-			// Ensure we get a valid part ID
-			const partId = row.id?.toString(); 
-			console.log(`[listParts] Processing part with real ID: '${partId}'`);
+			// Normalize the data for type safety and consistency
+			const normalizedPart = normalizePart(row);
+			const normalizedVersion = normalizePartVersion(row);
 			
-			if (!partId) {
-				console.error('[listParts] Found a row with null part ID');
-			}
-
+			// Extract standard API properties for the return types
 			const part: Part = {
-				id: partId, // This is the actual database ID
-				creatorId: row.creator_id?.toString(),
-				globalPartNumber: row.global_part_number?.toString() || undefined,
-				status: row.status?.toString(),
-				lifecycleStatus: row.lifecycle_status?.toString(),
-				isPublic: row.is_public === 'true', // Convert string to boolean
-				createdAt: row.part_created_at ? new Date(row.part_created_at) : new Date(),
-				updatedBy: row.part_updated_by?.toString() || undefined,
-				updatedAt: row.part_updated_at ? new Date(row.part_updated_at) : new Date(),
-				currentVersionId: row.current_version_id?.toString() || undefined
+				part_id: normalizedPart.part_id, // Using snake_case property for database column
+				creator_id: normalizedPart.creator_id || '',
+				global_part_number: normalizedPart.global_part_number || undefined,
+				status_in_bom: normalizedPart.status_in_bom,
+				lifecycle_status: normalizedPart.lifecycle_status,
+				is_public: normalizedPart.is_public,
+				created_at: normalizedPart.created_at,
+				updated_by: normalizedPart.updated_by || undefined,
+				updated_at: normalizedPart.updated_at,
+				current_version_id: normalizedPart.current_version_id || undefined
 			};
-			
-			// Log part object to verify ID is present
-			console.log(`[listParts] Created part object with ID: ${part.id}`, JSON.stringify(part, null, 2));
 
 			const currentVersion: PartVersion = {
-				id: row.version_id?.toString(),
-				partId: row.version_part_id?.toString(),
-				version: row.version?.toString(),
-				name: row.name?.toString(),
-				shortDescription: row.short_description?.toString() || undefined,
-				// Map string status to a proper enum value
-				status: row.version_status && row.version_status in LifecycleStatusEnum ? 
-					row.version_status as LifecycleStatusEnum : 
-					LifecycleStatusEnum.DRAFT,
-				createdBy: row.version_created_by?.toString(),
-				createdAt: row.version_created_at ? new Date(row.version_created_at) : new Date(),
-				updatedBy: row.version_updated_by?.toString() || undefined,
-				updatedAt: row.version_updated_at ? new Date(row.version_updated_at) : new Date() // Default to current date if undefined
+				part_version_id: normalizedVersion.part_version_id,
+				part_id: normalizedVersion.part_id,
+				part_version: normalizedVersion.part_version,
+				part_name: normalizedVersion.part_name,
+				short_description: normalizedVersion.short_description || undefined,
+				long_description: normalizedVersion.long_description || undefined,
+				functional_description: normalizedVersion.functional_description || undefined,
+				version_status: normalizedVersion.version_status,
+				created_by: normalizedVersion.created_by,
+				created_at: normalizedVersion.created_at,
+				updated_by: normalizedVersion.updated_by || undefined,
+				updated_at: normalizedVersion.updated_at
 			};
+			
 			return { part, currentVersion };
 		});
 		
@@ -150,64 +490,64 @@ export async function getPartWithCurrentVersion(
 		const result = await sql`
 		SELECT 
 			-- Part table fields
-			p.id::TEXT AS id,
-			p.creator_id::TEXT AS creator_id,
-			p.global_part_number::TEXT AS global_part_number,
-			p.status::TEXT AS status,
-			p.lifecycle_status::TEXT AS lifecycle_status,
-			p.is_public::TEXT AS is_public,
-			p.created_at::TEXT AS part_created_at,
-			p.updated_by::TEXT AS part_updated_by,
-			p.updated_at::TEXT AS part_updated_at,
-			p.current_version_id::TEXT AS current_version_id,
+			p.id as part_id,
+			p.creator_id,
+			p.global_part_number,
+			p.status_in_bom,
+			p.lifecycle_status,
+			p.is_public,
+			p.created_at,
+			p.updated_by,
+			p.updated_at,
+			p.current_version_id,
 			
 			-- PartVersion table fields - ALL fields for complete data retrieval
-			pv.id::TEXT AS version_id,
-			pv.part_id::TEXT AS version_part_id,
-			pv.version::TEXT AS version,
-			pv.name::TEXT AS name,
-			pv.short_description::TEXT AS short_description,
-			pv.functional_description::TEXT AS functional_description,
-			pv.long_description AS long_description,
-			pv.technical_specifications AS technical_specifications,
-			pv.properties AS properties,
-			pv.electrical_properties AS electrical_properties,
-			pv.mechanical_properties AS mechanical_properties,
-			pv.thermal_properties AS thermal_properties,
-			pv.material_composition AS material_composition,
-			pv.environmental_data AS environmental_data,
-			pv.revision_notes::TEXT AS revision_notes,
+			pv.id as part_version_id,
+			pv.part_id,
+			pv.part_version,
+			pv.part_name,
+			pv.short_description,
+			pv.functional_description,
+			pv.long_description,
+			pv.technical_specifications,
+			pv.properties,
+			pv.electrical_properties,
+			pv.mechanical_properties,
+			pv.thermal_properties,
+			pv.material_composition,
+			pv.environmental_data,
+			pv.revision_notes,
 			
 			-- Physical properties
-			pv.dimensions AS dimensions,
-			pv.dimensions_unit::TEXT AS dimensions_unit,
-			pv.weight AS weight,
-			pv.weight_unit::TEXT AS weight_unit,
-			pv.package_type::TEXT AS package_type,
-			pv.pin_count AS pin_count,
-			pv.tolerance AS tolerance,
-			pv.tolerance_unit::TEXT AS tolerance_unit,
+			pv.dimensions,
+			pv.dimensions_unit,
+			pv.part_weight,
+			pv.weight_unit,
+			pv.package_type,
+			pv.pin_count,
+			pv.tolerance,
+			pv.tolerance_unit,
 			
 			-- Temperature properties
-			pv.operating_temperature_min AS operating_temperature_min,
-			pv.operating_temperature_max AS operating_temperature_max,
-			pv.storage_temperature_min AS storage_temperature_min,
-			pv.storage_temperature_max AS storage_temperature_max,
-			pv.temperature_unit::TEXT AS temperature_unit,
+			pv.operating_temperature_min,
+			pv.operating_temperature_max,
+			pv.storage_temperature_min,
+			pv.storage_temperature_max,
+			pv.temperature_unit,
 			
 			-- Electrical properties
-			pv.voltage_rating_min AS voltage_rating_min,
-			pv.voltage_rating_max AS voltage_rating_max,
-			pv.current_rating_min AS current_rating_min,
-			pv.current_rating_max AS current_rating_max,
-			pv.power_rating_max AS power_rating_max,
+			pv.voltage_rating_min,
+			pv.voltage_rating_max,
+			pv.current_rating_min,
+			pv.current_rating_max,
+			pv.power_rating_max,
 			
 			-- Status and metadata fields
-			pv.status::TEXT AS version_status,
-			pv.created_by::TEXT AS version_created_by,
-			pv.created_at::TEXT AS version_created_at,
-			pv.updated_by::TEXT AS version_updated_by,
-			pv.updated_at::TEXT AS version_updated_at
+			pv.version_status,
+			pv.created_by,
+			pv.created_at,
+			pv.updated_by,
+			pv.updated_at
 		FROM "Part" p
 		JOIN "PartVersion" pv ON p.current_version_id = pv.id
 		WHERE p.id = ${partId}
@@ -221,117 +561,90 @@ export async function getPartWithCurrentVersion(
 		const row = result[0];
 		console.log(`[getPartWithCurrentVersion] Raw result:`, row);
 
-		// Ensure we get a valid part ID
-		const partIdStr = row.id?.toString();
+		// Normalize database row data using our helper functions
+		const normalizedPart = normalizePart(row);
+		const normalizedVersion = normalizePartVersion(row);
 		
-		if (!partIdStr) {
+		// Ensure we get a valid part ID
+		if (!normalizedPart.part_id) {
 			console.error('[getPartWithCurrentVersion] Found a row with null part ID');
 			throw new Error(`Invalid part ID for query result`);
 		}
-		if (!partIdStr) {
-			console.error('[getPartWithCurrentVersion] Found a part with undefined or null ID!', row);
-			throw new Error('Retrieved part has no valid ID');
-		}
 
-		const part: Part = {
-			id: partIdStr, // This is the actual database ID
-			creatorId: row.creator_id?.toString(),
-			globalPartNumber: row.global_part_number?.toString() || undefined,
-			status: row.status?.toString(),
-			lifecycleStatus: row.lifecycle_status?.toString(),
-			isPublic: row.is_public === 'true', // Convert string to boolean
-			createdAt: row.part_created_at ? new Date(row.part_created_at) : new Date(),
-			updatedBy: row.part_updated_by?.toString() || undefined,
-			updatedAt: row.part_updated_at ? new Date(row.part_updated_at) : new Date(),
-			currentVersionId: row.current_version_id?.toString() || undefined
-		};
-
-		// We need to initialize the currentVersion with default values for all fields
-		// This ensures all data is properly preserved during edits
-		// DEBUG: Check raw version value from database
-		const rawVersion = row.version;
+		// Debug version information
+		const rawVersion = row.part_version;
 		console.log(`[VERSION DEBUG] Raw version from database: type=${typeof rawVersion}, value='${rawVersion}'`)
 		
-		// FORCE the version to be a string in semantic version format
-		let versionString = row.version?.toString() || '0.1.0';
-		// If it's a numeric version, convert to semantic version format
-		if (!isNaN(Number(versionString)) && !versionString.includes('.')) {
-			console.log(`[VERSION DEBUG] Converting numeric version '${versionString}' to semantic format`);
-			// Only convert simple numbers, not already formatted versions
-			if (versionString === '3') {
-				versionString = '0.1.1'; // If it's exactly 3, assume it should be 0.1.1
-			} else {
-				versionString = `0.0.${versionString}`; // Otherwise use as patch version
-			}
-		}
-		console.log(`[VERSION DEBUG] Final version string: '${versionString}'`);
-		
-		// Now map all the database fields to our currentVersion object
-		const currentVersion: PartVersion = {
-			id: row.version_id?.toString(),
-			partId: row.version_part_id?.toString(),
-			version: versionString,
-			name: row.name?.toString(),
-			
-			// Text descriptions (with proper null handling)
-			shortDescription: row.short_description?.toString() || undefined,
-			functionalDescription: row.functional_description?.toString() || undefined,
-			longDescription: row.long_description || undefined,
-			revisionNotes: row.revision_notes?.toString() || undefined,
-			
-			// JSONB fields (need special handling)
-			technicalSpecifications: row.technical_specifications || undefined,
-			properties: row.properties || undefined,
-			electricalProperties: row.electrical_properties || undefined,
-			mechanicalProperties: row.mechanical_properties || undefined,
-			thermalProperties: row.thermal_properties || undefined,
-			materialComposition: row.material_composition || undefined,
-			environmentalData: row.environmental_data || undefined,
-			dimensions: row.dimensions || undefined,
-			
-			// Physical properties 
-			weight: typeof row.weight === 'string' ? parseFloat(row.weight) : row.weight,
-			weightUnit: row.weight_unit?.toString() || undefined,
-			dimensionsUnit: row.dimensions_unit?.toString() || undefined,
-			tolerance: typeof row.tolerance === 'string' ? parseFloat(row.tolerance) : row.tolerance,
-			toleranceUnit: row.tolerance_unit?.toString() || undefined,
-			packageType: row.package_type?.toString() || undefined,
-			pinCount: typeof row.pin_count === 'string' ? parseInt(row.pin_count, 10) : row.pin_count,
-			
-			// Temperature properties (with type conversions)
-			operatingTemperatureMin: typeof row.operating_temperature_min === 'string' ? 
-				parseFloat(row.operating_temperature_min) : row.operating_temperature_min,
-			operatingTemperatureMax: typeof row.operating_temperature_max === 'string' ? 
-				parseFloat(row.operating_temperature_max) : row.operating_temperature_max,
-			storageTemperatureMin: typeof row.storage_temperature_min === 'string' ? 
-				parseFloat(row.storage_temperature_min) : row.storage_temperature_min,
-			storageTemperatureMax: typeof row.storage_temperature_max === 'string' ? 
-				parseFloat(row.storage_temperature_max) : row.storage_temperature_max,
-			temperatureUnit: row.temperature_unit?.toString() || undefined,
-			
-			// Electrical ratings
-			voltageRatingMin: typeof row.voltage_rating_min === 'string' ? 
-				parseFloat(row.voltage_rating_min) : row.voltage_rating_min,
-			voltageRatingMax: typeof row.voltage_rating_max === 'string' ? 
-				parseFloat(row.voltage_rating_max) : row.voltage_rating_max,
-			currentRatingMin: typeof row.current_rating_min === 'string' ? 
-				parseFloat(row.current_rating_min) : row.current_rating_min,
-			currentRatingMax: typeof row.current_rating_max === 'string' ? 
-				parseFloat(row.current_rating_max) : row.current_rating_max,
-			powerRatingMax: typeof row.power_rating_max === 'string' ? 
-				parseFloat(row.power_rating_max) : row.power_rating_max,
-			// Status and metadata
-			status: row.version_status && row.version_status in LifecycleStatusEnum ? 
-				row.version_status as LifecycleStatusEnum : 
-				LifecycleStatusEnum.DRAFT,
-			createdBy: row.version_created_by?.toString(),
-			createdAt: row.version_created_at ? new Date(row.version_created_at) : new Date(),
-			updatedBy: row.version_updated_by?.toString() || undefined,
-			updatedAt: row.version_updated_at ? new Date(row.version_updated_at) : new Date() 
+		// Extract standard API properties for the return types
+		const part: Part = {
+			part_id: normalizedPart.part_id,
+			creator_id: normalizedPart.creator_id || '',
+			global_part_number: normalizedPart.global_part_number || undefined,
+			status_in_bom: normalizedPart.status_in_bom,
+			lifecycle_status: normalizedPart.lifecycle_status,
+			is_public: normalizedPart.is_public,
+			created_at: normalizedPart.created_at,
+			updated_by: normalizedPart.updated_by || undefined,
+			updated_at: normalizedPart.updated_at,
+			current_version_id: normalizedPart.current_version_id || undefined
 		};
 		
-		// Log that we're adding default values
-		console.log(`[getPartWithCurrentVersion] Added default values for all fields not explicitly loaded from database`);
+		// Map normalized version to API response format
+		const currentVersion: PartVersion = {
+			part_version_id: normalizedVersion.part_version_id,
+			part_id: normalizedVersion.part_id,
+			part_version: normalizedVersion.part_version,
+			part_name: normalizedVersion.part_name,
+			
+			// Text descriptions (with proper null handling)
+			short_description: normalizedVersion.short_description || undefined,
+			functional_description: normalizedVersion.functional_description || undefined,
+			long_description: normalizedVersion.long_description || undefined,
+			revision_notes: normalizedVersion.revision_notes || undefined,
+			
+			// JSONB fields (need special handling)
+			technical_specifications: normalizedVersion.technical_specifications as any || undefined,
+			properties: normalizedVersion.properties as any || undefined,
+			electrical_properties: normalizedVersion.electrical_properties as any || undefined,
+			mechanical_properties: normalizedVersion.mechanical_properties as any || undefined,
+			thermal_properties: normalizedVersion.thermal_properties as any || undefined,
+			material_composition: normalizedVersion.material_composition as any || undefined,
+			environmental_data: normalizedVersion.environmental_data as any || undefined,
+			dimensions: normalizedVersion.dimensions as any || undefined,
+			
+			// Physical properties 
+			part_weight: normalizedVersion.part_weight,
+			weight_unit: normalizedVersion.weight_unit || undefined,
+			dimensions_unit: normalizedVersion.dimensions_unit || undefined,
+			tolerance: normalizedVersion.tolerance,
+			tolerance_unit: normalizedVersion.tolerance_unit || undefined,
+			package_type: normalizedVersion.package_type || undefined,
+			pin_count: normalizedVersion.pin_count,
+			
+			// Temperature properties
+			operating_temperature_min: normalizedVersion.operating_temperature_min,
+			operating_temperature_max: normalizedVersion.operating_temperature_max,
+			storage_temperature_min: normalizedVersion.storage_temperature_min,
+			storage_temperature_max: normalizedVersion.storage_temperature_max,
+			temperature_unit: normalizedVersion.temperature_unit || undefined,
+			
+			// Electrical ratings
+			voltage_rating_min: normalizedVersion.voltage_rating_min,
+			voltage_rating_max: normalizedVersion.voltage_rating_max,
+			current_rating_min: normalizedVersion.current_rating_min,
+			current_rating_max: normalizedVersion.current_rating_max,
+			power_rating_max: normalizedVersion.power_rating_max,
+			
+			// Status and metadata
+			version_status: normalizedVersion.version_status,
+			created_by: normalizedVersion.created_by,
+			created_at: normalizedVersion.created_at,
+			updated_by: normalizedVersion.updated_by || undefined,
+			updated_at: normalizedVersion.updated_at
+		};
+		
+		// Log that we're done normalizing
+		console.log(`[getPartWithCurrentVersion] Successfully normalized part and version data`);
 		
 		// CRITICAL FIX: Load relationship data (categories and manufacturers), but make it fault-tolerant
 		// Don't crash the app if relationship data can't be loaded
@@ -364,7 +677,7 @@ export async function getPartWithCurrentVersion(
 			
 			if (hasCategoryTable) {
 				// 1. Try loading categories for this part version
-				console.log(`[getPartWithCurrentVersion] Loading categories for part version ${currentVersion.id}`);
+				console.log(`[getPartWithCurrentVersion] Loading categories for part version ${currentVersion.part_version_id}`);
 				
 				try {
 					const categoryTableCheck = await sql`
@@ -388,7 +701,7 @@ export async function getPartWithCurrentVersion(
 								c.name::TEXT AS category_name
 							FROM "PartCategory" pc
 							JOIN "Category" c ON pc.category_id = c.id
-							WHERE pc.part_id = ${part.id}
+							WHERE pc.part_id = ${part.part_id}
 						`;
 					} else {
 						// Try with the original table name as a fallback
@@ -401,7 +714,7 @@ export async function getPartWithCurrentVersion(
 									c.name::TEXT AS category_name
 								FROM "PartVersionCategory" pvc
 								JOIN "Category" c ON pvc.category_id = c.id
-								WHERE pvc.part_version_id = ${currentVersion.id}
+								WHERE pvc.part_version_id = ${currentVersion.part_version_id}
 							`;
 						} catch (catErr: unknown) {
 							const errorMessage = catErr instanceof Error ? catErr.message : String(catErr);
@@ -430,7 +743,7 @@ export async function getPartWithCurrentVersion(
 			
 			// 2. Try loading manufacturer parts - also resilient to errors
 			try {
-				console.log(`[getPartWithCurrentVersion] Loading manufacturers for part ${part.id}`);
+				console.log(`[getPartWithCurrentVersion] Loading manufacturers for part ${part.part_id}`);
 				// Check if ManufacturerPart table exists
 				const mfgTableCheck = await sql`
 					SELECT EXISTS (
@@ -443,14 +756,25 @@ export async function getPartWithCurrentVersion(
 					const manufacturersResult = await sql`
 						SELECT 
 							mp.id::TEXT AS id, 
-							mp.part_id::TEXT AS part_id, 
+							mp.part_version_id::TEXT AS part_version_id, 
 							mp.manufacturer_id::TEXT AS manufacturer_id,
 							m.name::TEXT AS manufacturer_name,
-							mp.part_number::TEXT AS part_number
+							mp.manufacturer_part_number::TEXT AS part_number
 						FROM "ManufacturerPart" mp
 						JOIN "Manufacturer" m ON mp.manufacturer_id = m.id
-						WHERE mp.part_id = ${part.id}
-					`
+						WHERE mp.part_version_id = ${currentVersion.part_version_id}
+					`;
+					
+					// CRITICAL FIX: Assign the manufacturer parts query results to extendedVersion
+					if (manufacturersResult && manufacturersResult.length > 0) {
+						console.log(`[getPartWithCurrentVersion] Found ${manufacturersResult.length} manufacturer parts for part`);
+						extendedVersion.manufacturerParts = manufacturersResult.map(mp => ({
+							id: mp.id,
+							manufacturerId: mp.manufacturer_id,
+							manufacturerName: mp.manufacturer_name,
+							partNumber: mp.part_number
+						}));
+					}
 				} else {
 					console.log(`[getPartWithCurrentVersion] ManufacturerPart table doesn't exist, skipping manufacturer loading`);
 				}
@@ -460,7 +784,7 @@ export async function getPartWithCurrentVersion(
 			}
 			
 			// Log the mapped object with any relationship data for debugging
-			console.log(`[getPartWithCurrentVersion] Mapped part object with ID: ${part.id} including relationship data`);
+			console.log(`[getPartWithCurrentVersion] Mapped part object with ID: ${part.part_id} including relationship data`);
 			console.log(`[getPartWithCurrentVersion] Categories (count):`, extendedVersion.categories.length);
 			console.log(`[getPartWithCurrentVersion] Manufacturers (count):`, extendedVersion.manufacturerParts.length);
 			
@@ -477,20 +801,7 @@ export async function getPartWithCurrentVersion(
 		throw error;
 	}
 }
-export interface CreatePartInput {
-    name: string;
-    version: string;
-    status: LifecycleStatusEnum;
-    // Use PartStatusEnum instead of string
-    partStatus?: PartStatusEnum;
-    shortDescription?: string | null;
-    functionalDescription?: string | null;
-    // Extended relationship fields
-    categoryIds?: string[];
-    manufacturerParts?: Array<{manufacturerId: string; partNumber: string}>;
-    // Allow more flexible property types to match form data
-    [key: string]: any;
-}
+
 
 /**
  * Create a new part with its initial version
@@ -817,21 +1128,21 @@ export async function createPart(input: any, userId: string) {
  * Update a part version (select fields)
  */
 export async function updatePartVersion(
-	data: Partial<PartVersion> & { id: string }
+	data: Partial<PartVersion> & { part_version_id: string }
 ): Promise<void> {
 	try {
 		// More modern approach with porsager/postgres - build update dynamically
 		// Only include fields that are defined in the input data
 		let updateFields = [];
 		
-		if (data.name !== undefined) {
-			updateFields.push(`name = ${data.name}`);
+		if (data.part_name !== undefined) {
+			updateFields.push(`part_name = ${data.part_name}`);
 		}
-		if (data.version !== undefined) {
-			updateFields.push(`version = ${data.version}`);
+		if (data.part_version !== undefined) {
+			updateFields.push(`part_version = ${data.part_version}`);
 		}
-		if (data.status !== undefined) {
-			updateFields.push(`status = ${data.status}::text::lifecycle_status_enum`);
+		if (data.version_status !== undefined) {
+			updateFields.push(`version_status = ${data.version_status}::text::lifecycle_status_enum`);
 		}
 		
 		// If no fields to update, return early
@@ -845,11 +1156,11 @@ export async function updatePartVersion(
 		const result = await sql.unsafe(`
 			UPDATE "PartVersion" 
 			SET ${updateFields.join(', ')} 
-			WHERE id = '${data.id}'
-			RETURNING id
+			WHERE part_version_id = '${data.part_version_id}'
+			RETURNING part_version_id
 		`);
 		
-		console.log(`[updatePartVersion] Updated part version ${data.id}`);
+		console.log(`[updatePartVersion] Updated part version ${data.part_version_id}`);
 	} catch (error) {
 		console.error('[updatePartVersion] Error updating part version:', error);
 		throw error;
@@ -1017,6 +1328,9 @@ export async function updatePartWithStatus(
 
 /**
  * Create a new version of a part
+ * 
+ * @param partVersion - The part version data with required fields
+ * @returns Newly created part version with normalized structure
  */
 export async function createPartVersion(partVersion: Partial<PartVersion> & {
     id: string;
@@ -1027,238 +1341,159 @@ export async function createPartVersion(partVersion: Partial<PartVersion> & {
     createdBy: string;
 }): Promise<PartVersion> {
     try {
-        // SUPER DETAILED LOGGING FOR DEBUG
-        console.log('[createPartVersion] 🚨🚨🚨 ATTEMPTING TO CREATE VERSION');
-        console.log('[createPartVersion] 🚨 REQUIRED FIELDS CHECK:');
-        console.log(`  - id provided: ${!!partVersion.id} (${partVersion.id})`);
-        console.log(`  - partId provided: ${!!partVersion.partId} (${partVersion.partId})`);
-        console.log(`  - name provided: ${!!partVersion.name} (${partVersion.name})`);
-        console.log(`  - version provided: ${!!partVersion.version} (${partVersion.version})`);
-        console.log(`  - status provided: ${!!partVersion.status} (${partVersion.status})`);
-        console.log(`  - createdBy provided: ${!!partVersion.createdBy} (${partVersion.createdBy})`);
-        
-        // Detailed logging to see ALL properties - NO CHERRY PICKING
-        console.log('[createPartVersion] 100% COMPLETE INCOMING DATA:', JSON.stringify(partVersion, null, 2));
-        
-        // Add corrected field mapping to ensure part form values align with database fields
-        // Map form data from SvelteKit form to database field names
-        let partData: any = { ...partVersion };
-        if (partVersion.dimensions && !partVersion.dimensionsUnit) {
-            partData.dimensions = null; // Clear dimensions to satisfy constraint
+        console.log(`[createPartVersion] Creating version ${partVersion.version} of part ${partVersion.partId}`);
+
+        // Verify required fields are present
+        if (!partVersion.id || !partVersion.partId || !partVersion.name || !partVersion.version || !partVersion.status || !partVersion.createdBy) {
+            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Missing required fields for part version creation`);
         }
+        
+        // Map input fields to database fields
+        // This follows the pattern in supplier.ts and category.ts
+        partVersion.part_version_id = partVersion.id;
+        partVersion.part_id = partVersion.partId;
+        partVersion.part_version = partVersion.version;
+        partVersion.part_name = partVersion.name;
+        partVersion.version_status = partVersion.status as LifecycleStatusEnum;
+        partVersion.created_by = partVersion.createdBy;
         
         console.log('[createPartVersion] 🛠️ ENFORCING DATABASE CONSTRAINTS');
         console.log('[createPartVersion] 🔍 Before constraint enforcement:', {
             dimensions: partVersion.dimensions ? 'present' : 'null',
-            dimensionsUnit: partVersion.dimensionsUnit,
-            weight: partVersion.weight,
-            weightUnit: partVersion.weightUnit,
+            dimensions_unit: partVersion.dimensions_unit,
+            part_weight: partVersion.part_weight,
+            weight_unit: partVersion.weight_unit,
             tolerance: partVersion.tolerance,
-            toleranceUnit: partVersion.toleranceUnit
+            tolerance_unit: partVersion.tolerance_unit
         });
         
         // 1. Dimensions constraint
-        if (partVersion.dimensions && !partVersion.dimensionsUnit) {
-            console.log('[createPartVersion] ⚠️ Clearing dimensions because dimensionsUnit is missing');
+        if (partVersion.dimensions && !partVersion.dimensions_unit) {
+            console.log('[createPartVersion] ⚠️ Clearing dimensions because dimensions_unit is missing');
             partVersion.dimensions = undefined;
-        } else if (!partVersion.dimensions && partVersion.dimensionsUnit) {
-            console.log('[createPartVersion] ⚠️ Clearing dimensionsUnit because dimensions is missing');
-            partVersion.dimensionsUnit = undefined;
+        } else if (!partVersion.dimensions && partVersion.dimensions_unit) {
+            console.log('[createPartVersion] ⚠️ Clearing dimensions_unit because dimensions is missing');
+            partVersion.dimensions_unit = null;
         }
         
-        // 2. Weight constraint
-        if (partVersion.weight && !partVersion.weightUnit) {
-            console.log('[createPartVersion] ⚠️ Clearing weight because weightUnit is missing');
-            partVersion.weight = undefined;
-        } else if (!partVersion.weight && partVersion.weightUnit) {
-            console.log('[createPartVersion] ⚠️ Clearing weightUnit because weight is missing');
-            partVersion.weightUnit = undefined;
+        // 2. Weight constraint - both or neither weight and unit must be present
+        if (partVersion.part_weight && !partVersion.weight_unit) {
+            console.log('[createPartVersion] ⚠️ Clearing part_weight because weight_unit is missing');
+            partVersion.part_weight = null;
+        } else if (!partVersion.part_weight && partVersion.weight_unit) {
+            console.log('[createPartVersion] ⚠️ Clearing weight_unit because part_weight is missing');
+            partVersion.weight_unit = null;
         }
         
-        // 3. Tolerance constraint
-        if (partVersion.tolerance && !partVersion.toleranceUnit) {
-            console.log('[createPartVersion] ⚠️ Clearing tolerance because toleranceUnit is missing');
-            partVersion.tolerance = undefined;
-        } else if (!partVersion.tolerance && partVersion.toleranceUnit) {
-            console.log('[createPartVersion] ⚠️ Clearing toleranceUnit because tolerance is missing');
-            partVersion.toleranceUnit = undefined;
+        // 3. Temperature constraint - if any temperature is present, unit must be set
+        const hasAnyTemperature = [
+            partVersion.operating_temperature_min,
+            partVersion.operating_temperature_max,
+            partVersion.storage_temperature_min,
+            partVersion.storage_temperature_max
+        ].some(t => t !== undefined && t !== null);
+        
+        if (hasAnyTemperature && !partVersion.temperature_unit) {
+            console.log('[createPartVersion] ⚠️ Setting default temperature unit (C) because temperature values exist');
+            partVersion.temperature_unit = TemperatureUnitEnum.C;
+        } else if (!hasAnyTemperature && partVersion.temperature_unit) {
+            console.log('[createPartVersion] ⚠️ Clearing temperature_unit because no temperature values exist');
+            partVersion.temperature_unit = null;
         }
-        
-        console.log('[createPartVersion] 🔍 After constraint enforcement:', {
-            dimensions: partVersion.dimensions ? 'present' : 'null',
-            dimensionsUnit: partVersion.dimensionsUnit,
-            weight: partVersion.weight,
-            weightUnit: partVersion.weightUnit,
-            tolerance: partVersion.tolerance,
-            toleranceUnit: partVersion.toleranceUnit
-        });
-        
-        // Get the database client
-        // Using the sql client imported at the top of the file
-        
-        // Extra validation to catch common failures
-        if (!partVersion.name || !partVersion.version || !partVersion.status) {
-            console.error('[createPartVersion] ❌ CRITICAL ERROR - MISSING REQUIRED FIELDS');
-            const errorDetails = {
-                name: partVersion.name ? 'OK' : 'MISSING',
-                version: partVersion.version ? 'OK' : 'MISSING',
-                status: partVersion.status ? 'OK' : 'MISSING'
-            };
-            console.error('[createPartVersion] ❌ MISSING FIELD DETAILS:', errorDetails);
-        }
-                
-        // With porsager/postgres, use sql.begin for proper transaction handling to prevent concurrent update issues
-        const insertResult = await sql.begin(async (transaction) => {
-            // First, lock the parent part to prevent concurrent modifications
-            // This helps prevent the "tuple concurrently updated" error
-            const lockResult = await transaction`
-                SELECT id FROM "Part" WHERE id = ${partVersion.partId} FOR UPDATE
-            `;
-            
-            if (lockResult.length === 0) {
-                throw new Error(`Part with ID ${partVersion.partId} not found or could not be locked`);
-            }
-            
-            console.log('[createPartVersion] Part row locked for update');
-            
-            // Use SQL template literals with proper sql.json() for JSONB fields
-            // This ensures PostgreSQL treats them as proper JSONB data
-            const result = await transaction`
+
+        try {
+            // Use plain execute method for maximum compatibility
+            // This is the most direct and reliable approach with PostgreSQL
+            const insertQuery = `
                 INSERT INTO "PartVersion" (
-                    id, part_id, version, name, status, created_by, created_at,
+                    part_version_id, part_id, part_version, part_name, version_status, created_by, created_at,
                     short_description, functional_description, long_description,
                     voltage_rating_min, voltage_rating_max, current_rating_min, current_rating_max,
                     power_rating_max, tolerance, tolerance_unit, electrical_properties,
-                    dimensions, dimensions_unit, weight, weight_unit, package_type, pin_count,
+                    dimensions, dimensions_unit, part_weight, weight_unit, package_type, pin_count,
                     mechanical_properties, material_composition,
                     operating_temperature_min, operating_temperature_max,
                     storage_temperature_min, storage_temperature_max, temperature_unit, thermal_properties,
                     technical_specifications, properties, environmental_data, revision_notes
                 ) VALUES (
-                    ${partVersion.id},
-                    ${partVersion.partId},
-                    ${partVersion.version},
-                    ${partVersion.name},
-                    ${String(partVersion.status)}::lifecycle_status_enum,
-                    ${partVersion.createdBy},
-                    NOW(),
-                    ${partVersion.shortDescription || null},
-                    ${partVersion.functionalDescription || null},
-                    ${partVersion.longDescription ? sql.json(partVersion.longDescription) : null},
-                    ${partVersion.voltageRatingMin || null},
-                    ${partVersion.voltageRatingMax || null},
-                    ${partVersion.currentRatingMin || null},
-                    ${partVersion.currentRatingMax || null},
-                    ${partVersion.powerRatingMax || null},
-                    ${partVersion.tolerance || null},
-                    ${partVersion.toleranceUnit || null},
-                    ${partVersion.electricalProperties ? sql.json(partVersion.electricalProperties) : null},
-                    ${partVersion.dimensions ? sql.json(partVersion.dimensions) : null},
-                    ${partVersion.dimensionsUnit || null},
-                    ${partVersion.weight || null},
-                    ${partVersion.weightUnit || null},
-                    ${partVersion.packageType || null},
-                    ${partVersion.pinCount || null},
-                    ${partVersion.mechanicalProperties ? sql.json(partVersion.mechanicalProperties) : null},
-                    ${partVersion.materialComposition ? sql.json(partVersion.materialComposition) : null},
-                    ${partVersion.operatingTemperatureMin || null},
-                    ${partVersion.operatingTemperatureMax || null},
-                    ${partVersion.storageTemperatureMin || null},
-                    ${partVersion.storageTemperatureMax || null},
-                    ${partVersion.temperatureUnit || null},
-                    ${partVersion.thermalProperties ? sql.json(partVersion.thermalProperties) : null},
-                    ${partVersion.technicalSpecifications ? sql.json(partVersion.technicalSpecifications) : null},
-                    ${partVersion.properties ? sql.json(partVersion.properties) : null},
-                    ${partVersion.environmentalData ? sql.json(partVersion.environmentalData) : null},
-                    ${partVersion.revisionNotes || null}
+                    $1, $2, $3, $4, $5::lifecycle_status_enum, $6, NOW(),
+                    $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                    $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+                    $28, $29, $30, $31, $32, $33, $34, $35
                 ) RETURNING *
             `;
+        
+            // Prepare params array with all values
+            const params = [
+                partVersion.part_version_id, 
+                partVersion.part_id, 
+                partVersion.part_version, 
+                partVersion.part_name,
+                partVersion.version_status,
+                partVersion.created_by,
+                partVersion.short_description || null,
+                partVersion.functional_description || null,
+                partVersion.long_description ? sql.json(partVersion.long_description) : null,
+                partVersion.voltage_rating_min || null,
+                partVersion.voltage_rating_max || null,
+                partVersion.current_rating_min || null,
+                partVersion.current_rating_max || null,
+                partVersion.power_rating_max || null,
+                partVersion.tolerance || null,
+                partVersion.tolerance_unit || null,
+                partVersion.electrical_properties ? sql.json(partVersion.electrical_properties) : null,
+                partVersion.dimensions ? sql.json(partVersion.dimensions) : null,
+                partVersion.dimensions_unit || null,
+                partVersion.part_weight || null,
+                partVersion.weight_unit || null,
+                partVersion.package_type || null,
+                partVersion.pin_count || null,
+                partVersion.mechanical_properties ? sql.json(partVersion.mechanical_properties) : null,
+                partVersion.material_composition ? sql.json(partVersion.material_composition) : null,
+                partVersion.operating_temperature_min || null,
+                partVersion.operating_temperature_max || null,
+                partVersion.storage_temperature_min || null,
+                partVersion.storage_temperature_max || null,
+                partVersion.temperature_unit || null,
+                partVersion.thermal_properties ? sql.json(partVersion.thermal_properties) : null,
+                partVersion.technical_specifications ? sql.json(partVersion.technical_specifications) : null,
+                partVersion.properties ? sql.json(partVersion.properties) : null,
+                partVersion.environmental_data ? sql.json(partVersion.environmental_data) : null,
+                partVersion.revision_notes || null
+            ];
+
+            // Execute direct SQL query for maximum compatibility
+            const dbResult = await sql.unsafe(insertQuery, params);
             
             // Check if we have a result
-            if (!result || result.length === 0) {
-                throw new Error('Failed to create part version');
+            if (!dbResult || dbResult.length === 0) {
+                throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to create part version`);
             }
             
-            return result;
-        });
-        
-        console.log('[createPartVersion] Transaction completed successfully');
-        
-        // Get the row from the result
-        // Standardize on porsager/postgres array-style result format
-        // Handle type checking properly to avoid TypeScript errors
-        let row = null;
-        if (Array.isArray(insertResult)) {
-            row = insertResult[0];
-        } else if (insertResult && typeof insertResult === 'object' && 'rows' in insertResult) {
-            // For ts-postgres style results that have a 'rows' property
-            const tsResult = insertResult as { rows: any[] };
-            row = tsResult.rows && tsResult.rows.length > 0 ? tsResult.rows[0] : null;
+            console.log('[createPartVersion] ✅ Successfully created part version');
+            
+            // Use a type assertion to handle the incompatible types
+            // This is necessary because the JSON field types aren't fully compatible
+            return normalizePartVersion(dbResult[0]) as unknown as PartVersion;
+        } catch (error) {
+            console.error('[createPartVersion] Error in database operation:', error);
+            throw error;
         }
-        
-        // Process the result
-        console.log('[createPartVersion] ✅ SUCCESSFULLY CREATED');
-        
-        // Handle both possible return formats (ts-postgres and porsager/postgres)
-        const getProperty = (propName: string, idx: number) => {
-            // Try to access as object property first (porsager style)
-            if (typeof row === 'object' && propName in row) {
-                return row[propName];
-            }
-            
-            // Fall back to array index (ts-postgres style)
-            return Array.isArray(row) ? row[idx] : undefined;
-        };
-        
-        // Include updatedAt and updatedBy to fix PartVersion type requirement
-        const result: PartVersion = {
-            id: getProperty('id', 0)?.toString() || '',
-            partId: getProperty('part_id', 1)?.toString() || '',
-            version: getProperty('version', 2)?.toString() || '',
-            name: getProperty('name', 3)?.toString() || '',
-            status: getProperty('status', 4)?.toString() || '',
-            createdBy: getProperty('created_by', 5)?.toString() || '',
-            createdAt: getProperty('created_at', 6) ? new Date(getProperty('created_at', 6)) : new Date(),
-            shortDescription: getProperty('short_description', 7)?.toString(),
-            functionalDescription: getProperty('functional_description', 8)?.toString(),
-            longDescription: getProperty('long_description', 9),
-            voltageRatingMin: getProperty('voltage_rating_min', 10) ? parseFloat(getProperty('voltage_rating_min', 10)) : undefined,
-            voltageRatingMax: getProperty('voltage_rating_max', 11) ? parseFloat(getProperty('voltage_rating_max', 11)) : undefined,
-            currentRatingMin: getProperty('current_rating_min', 12) ? parseFloat(getProperty('current_rating_min', 12)) : undefined,
-            currentRatingMax: getProperty('current_rating_max', 13) ? parseFloat(getProperty('current_rating_max', 13)) : undefined,
-            powerRatingMax: getProperty('power_rating_max', 14) ? parseFloat(getProperty('power_rating_max', 14)) : undefined,
-            tolerance: getProperty('tolerance', 15) ? parseFloat(getProperty('tolerance', 15)) : undefined,
-            toleranceUnit: getProperty('tolerance_unit', 16)?.toString(),
-            electricalProperties: getProperty('electrical_properties', 17),
-            dimensions: getProperty('dimensions', 18) ? 
-                (typeof getProperty('dimensions', 18) === 'string' ? 
-                    JSON.parse(getProperty('dimensions', 18)) : 
-                    getProperty('dimensions', 18)) : 
-                undefined,
-            dimensionsUnit: getProperty('dimensions_unit', 19)?.toString(),
-            weight: getProperty('weight', 20) ? parseFloat(getProperty('weight', 20)) : undefined,
-            weightUnit: getProperty('weight_unit', 21)?.toString(),
-            packageType: getProperty('package_type', 22)?.toString(),
-            pinCount: getProperty('pin_count', 23) ? parseInt(getProperty('pin_count', 23), 10) : undefined,
-            mechanicalProperties: getProperty('mechanical_properties', 24),
-            materialComposition: getProperty('material_composition', 25),
-            operatingTemperatureMin: getProperty('operating_temperature_min', 26) ? parseFloat(getProperty('operating_temperature_min', 26)) : undefined,
-            operatingTemperatureMax: getProperty('operating_temperature_max', 27) ? parseFloat(getProperty('operating_temperature_max', 27)) : undefined,
-            storageTemperatureMin: getProperty('storage_temperature_min', 28) ? parseFloat(getProperty('storage_temperature_min', 28)) : undefined,
-            storageTemperatureMax: getProperty('storage_temperature_max', 29) ? parseFloat(getProperty('storage_temperature_max', 29)) : undefined,
-            temperatureUnit: getProperty('temperature_unit', 30)?.toString(),
-            thermalProperties: getProperty('thermal_properties', 31),
-            technicalSpecifications: getProperty('technical_specifications', 32),
-            properties: getProperty('properties', 33),
-            environmentalData: getProperty('environmental_data', 34),
-            revisionNotes: getProperty('revision_notes', 35)?.toString(),
-            updatedBy: getProperty('updated_by', 0)?.toString(), // Add missing property
-            updatedAt: new Date() // Add missing property with default value
-        };
-        
-        return result;
     } catch (error) {
-        console.error('[createPartVersion] Error:', error);
-        throw error;
+        console.error('[createPartVersion] Error creating part version:', error);
+        // Enhance error with context
+        if (error instanceof Error) {
+            // Check for unique constraint violations
+            if ('code' in error && error.code === '23505') {
+                throw new Error(`${PART_ERRORS.VERSION_EXISTS}: Version ${partVersion.version} already exists for part ${partVersion.partId}`);
+            }
+            // Pass through validation errors
+            if (error.message.includes(PART_ERRORS.VALIDATION_ERROR)) {
+                throw error;
+            }
+        }
+        // Re-throw with enhanced context
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 }
+

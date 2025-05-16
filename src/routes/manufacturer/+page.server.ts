@@ -2,7 +2,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
 import { listManufacturers, createManufacturer } from '@/core/manufacturer';
-import { manufacturerSchema } from '$lib/server/db/schema';
+import { manufacturerSchema } from '@/schema/schema';
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { fail, redirect } from '@sveltejs/kit';

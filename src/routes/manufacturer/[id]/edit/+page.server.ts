@@ -6,7 +6,7 @@ import { zod } from 'sveltekit-superforms/adapters';
 import * as z from 'zod';
 import sql from '$lib/server/db/index';
 import { getManufacturer, deleteManufacturer } from '@/core/manufacturer';
-import { manufacturerSchema } from '$lib/server/db/schema';
+import { manufacturerSchema } from '@/schema/schema';
 
 // Create a schema for manufacturer updates, omitting fields that shouldn't be in the form
 const updateManufacturerSchema = z.object({

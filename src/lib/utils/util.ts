@@ -1,5 +1,5 @@
 //src/lib/utils/util.ts
-import type { ContactInfo } from '@/types/types';
+import type { ContactInfo } from '@/types/contact';
 
 
 
@@ -524,5 +524,18 @@ export  function formatUsername(userId: string | null | undefined): string {
       return [];
     }
   }
+
+
+
+  /**
+ * Safe SQL string literal helper function.
+ * Prevents SQL injection when using raw string interpolation.
+ * @param str The string to sanitize for SQL
+ * @returns A string safe to use in SQL queries
+ */
+export function sanitizeSqlString(str: string): string {
+	// Double single quotes for SQL safety
+	return str.replace(/'/g, "''");
+}
 
 

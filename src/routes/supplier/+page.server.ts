@@ -2,7 +2,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
 import { listSuppliers, createSupplier } from '@/core/supplier';
-import { supplierSchema } from '$lib/server/db/schema';
+import { supplierSchema } from '@/schema/schema';
 import { parseContactInfo } from '$lib/utils/util';
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';

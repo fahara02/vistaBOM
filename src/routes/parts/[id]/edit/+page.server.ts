@@ -1,5 +1,5 @@
 // src/routes/parts/[id]/edit/+page.server.ts
-import { partVersionSchema, partVersionEditSchema } from '$lib/server/db/schema';
+import { partVersionSchema, partVersionEditSchema } from '@/schema/schema';
 // Import types from lib/types.ts for client-side compatibility
 import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, PartStatusEnum, TemperatureUnitEnum, DimensionUnitEnum } from '$lib/types';
 import { createPartVersion, getPartWithCurrentVersion, updatePartWithStatus } from '@/core/parts';
