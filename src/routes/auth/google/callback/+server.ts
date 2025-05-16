@@ -38,58 +38,30 @@ export async function GET({ url, cookies }: RequestEvent) {
 		if (row && typeof row === 'object' && !Array.isArray(row)) {
 			// Object style access for porsager/postgres - with Date parsing
 			return {
-				id: row.id,
+			    user_id : row.id,
 				username: row.username,
 				email: row.email,
-				fullName: row.fullName,
-				passwordHash: row.passwordHash,
-				googleId: row.googleId,
-				avatarUrl: row.avatarUrl,
+				full_name: row.fullName,
+				password_hash: row.passwordHash,
+				google_id: row.googleId,
+				avatar_url: row.avatarUrl,
 				// Convert string dates to Date objects
-				createdAt: row.createdAt ? new Date(row.createdAt) : new Date(),
-				updatedAt: row.updatedAt ? new Date(row.updatedAt) : new Date(),
-				lastLoginAt: row.lastLoginAt ? new Date(row.lastLoginAt) : null,
-				isActive: row.isActive,
-				isAdmin: row.isAdmin,
-				isDeleted: row.isDeleted
+				created_at: row.createdAt ? new Date(row.createdAt) : new Date(),
+				updated_at: row.updatedAt ? new Date(row.updatedAt) : new Date(),
+				last_login_at: row.lastLoginAt ? new Date(row.lastLoginAt) : null,
+				is_active: row.isActive,
+				is_admin: row.isAdmin,
+				is_deleted: row.isDeleted
 			};
-		} else if (Array.isArray(row)) {
-			// Legacy array-style access for ts-postgres
-			const [
-				id,
-				username,
-				email,
-				fullName,
-				passwordHash,
-				googleId,
-				avatarUrl,
-				createdAt,
-				updatedAt,
-				lastLoginAt,
-				isActive,
-				isAdmin,
-				isDeleted
-			] = row;
-			return {
-				id,
-				username,
-				email,
-				fullName,
-				passwordHash,
-				googleId,
-				avatarUrl,
-				createdAt,
-				updatedAt,
-				lastLoginAt,
-				isActive,
-				isAdmin,
-				isDeleted
-			};
+		} else{
+
+       // Return empty user if we somehow got an invalid format
+		   console.error('Invalid row format for user mapping:', row);
+		   return {} as User;
+
 		}
 
-		// Return empty user if we somehow got an invalid format
-		console.error('Invalid row format for user mapping:', row);
-		return {} as User;
+		
 	}
 
 	let user: User;
@@ -117,14 +89,14 @@ export async function GET({ url, cookies }: RequestEvent) {
 	if (find.length > 0) {
 		user = rowToUser(find[0]);
 
-		if (!user.googleId || user.avatarUrl !== userInfo.picture) {
+		if (!user.google_id || user.avatar_url !== userInfo.picture) {
 			// Update user with Google info if needed
 			const upd = await sql`
 				UPDATE "User" 
 				SET 
 					google_id = ${userInfo.id}, 
 					avatar_url = ${userInfo.picture} 
-				WHERE id = ${user.id}
+				WHERE id = ${user.user_id}
 				RETURNING 
 					id, 
 					username, 
@@ -175,7 +147,7 @@ export async function GET({ url, cookies }: RequestEvent) {
 	if (!user) throw error(500, 'User creation failed');
 
 	const sessionToken = generateSessionToken();
-	await createSession(sessionToken, user.id);
+	await createSession(sessionToken, user.user_id);
 
 	const isDev = import.meta.env.DEV;
 	cookies.set('auth-session', sessionToken, {

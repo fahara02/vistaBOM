@@ -1,13 +1,13 @@
 <!-- src/lib/components/CategoryComboBox.svelte -->
 <script lang="ts">
-  import { tick } from "svelte";
-  import Check from "lucide-svelte/icons/check";
-  import ChevronsUpDown from "lucide-svelte/icons/chevrons-up-down";
-  import * as Popover from "$lib/components/ui/popover/index.js";
-  import * as Command from "$lib/components/ui/command/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
+  import * as Command from "$lib/components/ui/command/index.js";
+  import * as Popover from "$lib/components/ui/popover/index.js";
   import { cn } from "$lib/utils.js";
   import type { Category } from '@/types/types';
+  import Check from "lucide-svelte/icons/check";
+  import ChevronsUpDown from "lucide-svelte/icons/chevrons-up-down";
+  import { tick } from "svelte";
   
   // Props
   export let categories: Category[] = [];
@@ -22,18 +22,18 @@
   
   // Function to get parent name for a category
   function getParentName(category: Category): string {
-    if (!category.parentId) return '';
-    const parent = categories.find(c => c.id === category.parentId);
-    return parent ? parent.name : '';
+    if (!category.parent_id) return '';
+    const parent = categories.find(c => c.parent_id === category.parent_id);
+    return parent ? parent.category_name : '';
   }
 
   // Create formatted options for the combobox with a "None" option
   $: options = [
     { value: "", label: "None (Top-level)" },
     ...categories.map(category => ({
-      value: category.id,
-      label: category.name,
-      parentId: category.parentId,
+      value: category.category_id,
+      label: category.category_name,
+      parentId: category.parent_id,
       parentName: getParentName(category)
     }))
   ];

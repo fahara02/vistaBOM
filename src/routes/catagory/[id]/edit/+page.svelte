@@ -1,10 +1,9 @@
 <!-- //src/routes/catagory/[id]/edit/+page.svelte -->
 <script lang="ts">
-  import { superForm } from 'sveltekit-superforms/client';
-  import type { PageData } from './$types';
-  import { formatJSON, isJSONValid } from '$lib/utils/formatters';
   import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
   import type { Category } from '@/types/types';
+  import { superForm } from 'sveltekit-superforms/client';
+  import type { PageData } from './$types';
 
   export let data: PageData;
   const { form, errors, enhance, submitting } = superForm(data.form, {
@@ -13,31 +12,7 @@
     taintedMessage: false,
   });
 
-  // For formatting JSON display
-  let customFieldsJsonValid = true;
-  let customFieldsFormatError = '';
 
-  // Function to format the custom fields JSON
-  const formatCustomFields = () => {
-    try {
-      const parsed = JSON.parse($form.customFieldsJson || '{}');
-      $form.customFieldsJson = formatJSON(parsed);
-      customFieldsJsonValid = true;
-      customFieldsFormatError = '';
-    } catch (e) {
-      customFieldsJsonValid = false;
-      if (e instanceof Error) {
-        customFieldsFormatError = e.message;
-      } else {
-        customFieldsFormatError = 'Invalid JSON format';
-      }
-    }
-  };
-
-  // Validate JSON as user types
-  $: if ($form.customFieldsJson) {
-    customFieldsJsonValid = isJSONValid($form.customFieldsJson);
-  }
 
   function formatFieldName(fieldName: string): string {
     return fieldName
@@ -118,62 +93,11 @@
         {/if}
       </div>
 
-      <div class="custom-fields-section">
-        <h2>Custom Fields</h2>
-        <p class="help-text">
-          Add any additional information about this category as custom fields. Format: JSON object with key-value pairs.
-        </p>
-        
-        {#if data.customFields && data.customFields.length > 0}
-          <div class="existing-fields">
-            <h3>Existing Custom Fields:</h3>
-            <ul>
-              {#each data.customFields as field}
-                <li><strong>{formatFieldName(field.name)}</strong> ({field.type})</li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-
-        <div class="form-group full-width">
-          <label for="customFieldsJson">
-            Custom Fields (JSON)
-            <button 
-              type="button" 
-              class="format-btn" 
-              on:click={formatCustomFields}
-            >
-              Format JSON
-            </button>
-          </label>
-          <textarea 
-            id="customFieldsJson" 
-            name="customFieldsJson" 
-            bind:value={$form.customFieldsJson} 
-            rows="8"
-            class:error={!customFieldsJsonValid || $errors.customFieldsJson}
-            placeholder="Enter JSON object here (example in code below)"
-          ></textarea>
-          {#if !customFieldsJsonValid}
-            <span class="error-text">Invalid JSON format: {customFieldsFormatError}</span>
-          {/if}
-          {#if $errors.customFieldsJson}
-            <span class="error-text">{$errors.customFieldsJson}</span>
-          {/if}
-          <div class="json-examples">
-            <p>Examples:</p>
-            <div class="example-code">
-              certification: "ISO 9001",<br>
-              yearEstablished: 1995,<br>
-              isVerified: true
-            </div>
-          </div>
-        </div>
-      </div>
+  
 
       <div class="form-actions">
         <a href="/catagory" class="cancel-btn">Cancel</a>
-        <button type="submit" class="save-btn" disabled={$submitting || !customFieldsJsonValid}>
+        <button type="submit" class="save-btn" disabled={$submitting }>
           {$submitting ? 'Saving...' : 'Save Category'}
         </button>
       </div>

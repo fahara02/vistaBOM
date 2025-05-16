@@ -1,12 +1,11 @@
 // src/routes/manufacturer/[id]/edit/+page.server.ts
-import type { PageServerLoad, Actions } from './$types';
+import sql from '$lib/server/db/index';
+import { getManufacturer } from '@/core/manufacturer';
 import { fail, redirect } from '@sveltejs/kit';
-import { superValidate, message } from 'sveltekit-superforms';
+import { message, superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import * as z from 'zod';
-import sql from '$lib/server/db/index';
-import { getManufacturer, deleteManufacturer } from '@/core/manufacturer';
-import { manufacturerSchema } from '@/schema/schema';
+import type { Actions, PageServerLoad } from './$types';
 
 // Create a schema for manufacturer updates, omitting fields that shouldn't be in the form
 const updateManufacturerSchema = z.object({
@@ -43,7 +42,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     
     // Check if the user is allowed to edit this manufacturer
     // Only the creator or admin should be able to edit
-    if (manufacturer.createdBy !== user.id && user.role !== 'admin') {
+    if (manufacturer.created_by !== user.id && user.role !== 'admin') {
       console.log('User not authorized to edit this manufacturer');
       throw redirect(302, '/manufacturer');
     }
@@ -51,7 +50,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     // Debug logs to see what's coming from the database
     console.log('Raw manufacturer from DB:', JSON.stringify(manufacturer, null, 2));
     console.log('Manufacturer properties:', Object.keys(manufacturer));
-    console.log('Custom fields:', manufacturer.customFields);
+    console.log('Custom fields:', manufacturer.custom_fields);
     
     // Format initial data with custom fields as a JSON string
     // Map camelCase TypeScript properties to snake_case form fields
