@@ -38,7 +38,21 @@ import type {
 } from '$lib/types/schemaTypes';
 
 // Import utility types
-import type { JsonValue, JsonRecord } from '$lib/types/types';
+import type { 
+    JsonValue, 
+    JsonRecord,
+    PostgresTransaction,
+    DbRow,
+    DynamicRecord,
+    JsonFieldProcessor,
+    NumericFieldProcessor,
+    ManufacturerPartInput,
+    SupplierPartInput,
+    AttachmentInput,
+    RepresentationInput,
+    ComplianceInput,
+    ValidationInput as DbValidationInput
+} from '$lib/types/types';
 
 // Import database entity types
 import type {
@@ -286,7 +300,7 @@ interface PartVersionWithId {
  * @param row Database row data
  * @returns A normalized PartWithId object
  */
-function normalizePart(row: any): PartWithId {
+function normalizePart(row: DbRow): PartWithId {
     const partId = row.part_id?.toString() || row.id?.toString();
     
     // Create normalized object with both camelCase and snake_case versions
@@ -326,7 +340,7 @@ function normalizePart(row: any): PartWithId {
  * @param row Database row data
  * @returns A normalized PartVersionWithId object
  */
-function normalizePartVersion(row: any): PartVersionWithId {
+function normalizePartVersion(row: DbRow): PartVersionWithId {
     const versionId = row.part_version_id?.toString() || row.id?.toString();
     const partId = row.part_id?.toString();
     
@@ -409,7 +423,7 @@ interface PartVersionCategory {
 /**
  * Converts a database row to a PartVersionCategory object
  */
-function rowToPartVersionCategory(row: any): PartVersionCategory {
+function rowToPartVersionCategory(row: DbRow): PartVersionCategory {
     return {
         part_version_id: row.part_version_id?.toString(),
         category_id: row.category_id?.toString(),
@@ -898,7 +912,7 @@ export async function createPart(input: ExtendedPartFormData, userId: string) {
 /**
  * Helper function to insert the part record
  */
-async function insertPartRecord(transaction: any, partId: string, userId: string, input: ExtendedPartFormData) {
+async function insertPartRecord(transaction: PostgresTransaction, partId: string, userId: string, input: ExtendedPartFormData) {
     await transaction`
     INSERT INTO "Part" (
         part_id, 
@@ -926,47 +940,29 @@ async function insertPartRecord(transaction: any, partId: string, userId: string
 /**
  * Helper function to insert the part version record
  */
-async function insertPartVersionRecord(transaction: any, versionId: string, partId: string, userId: string, input: ExtendedPartFormData) {
-    // Process JSON fields safely
-    const processJsonField = (fieldValue: any, fieldName: string) => {
-        if (fieldValue === undefined) {
-            return sql.json({});
+async function insertPartVersionRecord(transaction: PostgresTransaction, versionId: string, partId: string, userId: string, input: ExtendedPartFormData) {
+    const processJsonField: JsonFieldProcessor = (fieldValue, fieldName) => {
+        if (fieldValue === undefined || fieldValue === null) {
+            return null;
         }
         
-        if (typeof fieldValue === 'string') {
-            try {
-                if (fieldValue.trim().startsWith('{') || fieldValue.trim().startsWith('[')) {
-                    return sql.json(JSON.parse(fieldValue));
-                } else {
-                    return sql.json({value: fieldValue});
-                }
-            } catch (e) {
-                console.log(`[createPart] Error parsing ${fieldName}, using as raw value:`, e);
-                return sql.json({value: fieldValue});
-            }
-        } else if (typeof fieldValue === 'object' && fieldValue !== null) {
-            return sql.json(fieldValue);
-        } else if (fieldValue === null) {
-            return sql.json({});
-        } else {
-            return sql.json({value: fieldValue});
+        try {
+            return typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue);
+        } catch (error) {
+            console.error(`Error processing JSON field ${fieldName}:`, error);
+            return null;
         }
     };
     
-    // Process numeric fields with proper type conversion
-    const processNumericField = (value: any): number | null => {
-        if (value === undefined) return null;
-        if (value === null) return null;
-        if (value === '') return null;
-        
-        if (typeof value === 'number') return value;
-        if (typeof value === 'string') {
-            const parsed = parseFloat(value);
-            return isNaN(parsed) ? null : parsed;
+    const processNumericField: NumericFieldProcessor = (value) => {
+        if (value === undefined || value === null || value === '') {
+            return null;
         }
-        return null;
+        
+        const num = Number(value);
+        return isNaN(num) ? null : num;
     };
-
+    
     // Insert the part version with all details
     await transaction`
     INSERT INTO "PartVersion" (
@@ -1059,7 +1055,7 @@ async function insertPartVersionRecord(transaction: any, versionId: string, part
 /**
  * Helper function to add part relationships
  */
-async function addPartRelationships(transaction: any, partId: string, versionId: string, userId: string, input: ExtendedPartFormData) {
+async function addPartRelationships(transaction: PostgresTransaction, partId: string, versionId: string, userId: string, input: ExtendedPartFormData) {
     // 1. Add categories if provided
     if (input.category_ids) {
         const categoryIds = input.category_ids.split(',').filter((id: string) => id.trim() !== '');
@@ -1070,7 +1066,7 @@ async function addPartRelationships(transaction: any, partId: string, versionId:
     }
 
     // 2. Add manufacturer parts if provided
-    const manufacturerParts = parseComplexField(input.manufacturer_parts);
+    const manufacturerParts = parseComplexField(input.manufacturer_parts) as ManufacturerPartInput[];
     if (Array.isArray(manufacturerParts) && manufacturerParts.length > 0) {
         try {
             for (const mfgPart of manufacturerParts) {
@@ -1090,7 +1086,7 @@ async function addPartRelationships(transaction: any, partId: string, versionId:
     }
 
     // 3. Add supplier parts if provided 
-    const supplierParts = parseComplexField(input.supplier_parts);
+    const supplierParts = parseComplexField(input.supplier_parts) as SupplierPartInput[];
     if (Array.isArray(supplierParts) && supplierParts.length > 0) {
         try {
             for (const supPart of supplierParts) {
@@ -1111,7 +1107,7 @@ async function addPartRelationships(transaction: any, partId: string, versionId:
     }
 
     // 4. Add attachments if provided
-    const attachments = parseComplexField(input.attachments);
+    const attachments = parseComplexField(input.attachments) as AttachmentInput[];
     if (Array.isArray(attachments) && attachments.length > 0) {
         try {
             for (const attachment of attachments) {
@@ -1133,7 +1129,7 @@ async function addPartRelationships(transaction: any, partId: string, versionId:
     }
 
     // 5. Add representations if provided
-    const representations = parseComplexField(input.representations);
+    const representations = parseComplexField(input.representations) as RepresentationInput[];
     if (Array.isArray(representations) && representations.length > 0) {
         try {
             for (const rep of representations) {
@@ -1168,36 +1164,34 @@ async function addPartRelationships(transaction: any, partId: string, versionId:
 /**
  * Helper function to parse complex fields that can be either string or object
  */
-function parseComplexField(field: any): any[] {
+function parseComplexField(field: unknown): unknown[] {
     if (!field) return [];
+    
+    if (Array.isArray(field)) return field;
     
     if (typeof field === 'string') {
         try {
-            return JSON.parse(field);
-        } catch (e) {
-            console.error('[parseComplexField] Error parsing JSON string:', e);
-            return [];
+            const parsed = JSON.parse(field);
+            return Array.isArray(parsed) ? parsed : [parsed];
+        } catch (error) {
+            return [field];
         }
     }
     
-    if (Array.isArray(field)) {
-        return field;
-    }
-    
-    return [];
+    return [field];
 }
 
 /**
  * Helper function to add compliance information
  */
 async function addComplianceInfo(versionId: string, input: ExtendedPartFormData) {
-    const complianceInfo = parseComplexField(input.compliance_info);
+    const complianceInfo = parseComplexField(input.compliance_info) as ComplianceInput[];
     if (complianceInfo.length > 0) {
         try {
             for (const comp of complianceInfo) {
                 await createPartCompliance(
                     versionId,
-                    comp.compliance_type || ComplianceTypeEnum.ROHS,
+                    (comp.compliance_type as ComplianceTypeEnum) || ComplianceTypeEnum.ROHS,
                     comp.certificate_url || '',
                     comp.certified_at ? new Date(comp.certified_at) : new Date(),
                     comp.expires_at ? new Date(comp.expires_at) : null,
@@ -1215,7 +1209,7 @@ async function addComplianceInfo(versionId: string, input: ExtendedPartFormData)
  * Helper function to add validation records
  */
 async function addValidationRecords(versionId: string, userId: string, input: ExtendedPartFormData) {
-    const validationRecords = parseComplexField(input.validation_records);
+    const validationRecords = parseComplexField(input.validation_records) as DbValidationInput[];
     if (validationRecords.length > 0) {
         try {
             for (const validation of validationRecords) {
@@ -1226,12 +1220,12 @@ async function addValidationRecords(versionId: string, userId: string, input: Ex
                     userId,
                     'INSPECTION', // Default method
                     '', // test_procedure
-                    validation.test_results || '',
+                    validation.test_results ? (typeof validation.test_results === 'string' ? { value: validation.test_results } : validation.test_results) : {},
                     [], // issuesFound (empty array instead of empty string)
                     [], // correctiveActions (empty array instead of empty string)
-                    validation.certification_info || '',
+                    validation.certification_info ? (typeof validation.certification_info === 'string' ? [validation.certification_info] : validation.certification_info) : [],
                     validation.notes || '',
-                    validation.is_compliant !== undefined ? validation.is_compliant : false
+                    validation.is_compliant !== undefined ? (validation.is_compliant ? 'true' : 'false') : 'false'
                 );
             }
             console.log(`[createPart] Added ${validationRecords.length} validation records`);
@@ -1278,8 +1272,8 @@ async function addTagsAndCustomFields(versionId: string, userId: string, input: 
         try {
             // Convert string to object if needed
             const customFields = typeof input.custom_fields === 'string'
-                ? JSON.parse(input.custom_fields)
-                : input.custom_fields;
+                ? JSON.parse(input.custom_fields) as Record<string, JsonValue>
+                : input.custom_fields as Record<string, JsonValue>;
                 
             let fieldCount = 0;
             for (const [fieldName, fieldValue] of Object.entries(customFields)) {
@@ -1309,9 +1303,9 @@ async function addTagsAndCustomFields(versionId: string, userId: string, input: 
 /**
  * Helper function to add part families and groups
  */
-async function addPartFamiliesAndGroups(transaction: any, partId: string, userId: string, input: ExtendedPartFormData) {
+async function addPartFamiliesAndGroups(transaction: PostgresTransaction, partId: string, userId: string, input: ExtendedPartFormData) {
     // Add part family links if provided
-    const partFamilies = parseComplexField(input.part_families);
+    const partFamilies = parseComplexField(input.part_families) as { family_id: string }[];
     if (partFamilies.length > 0) {
         try {
             for (const family of partFamilies) {
@@ -1334,7 +1328,7 @@ async function addPartFamiliesAndGroups(transaction: any, partId: string, userId
     }
 
     // Add part group links if provided
-    const partGroups = parseComplexField(input.part_groups);
+    const partGroups = parseComplexField(input.part_groups) as { group_id: string; position_index?: number; notes?: string }[];
     if (partGroups.length > 0) {
         try {
             for (const group of partGroups) {
@@ -1391,7 +1385,12 @@ async function addPartFamiliesAndGroups(transaction: any, partId: string, userId
  * Helper function to add part structure
  */
 async function addPartStructure(partId: string, userId: string, input: ExtendedPartFormData) {
-    const structure = parseComplexField(input.structure);
+    const structure = parseComplexField(input.structure) as { 
+        child_part_id: string; 
+        relation_type?: string; 
+        quantity?: number; 
+        notes?: string 
+    }[];
     if (structure.length > 0) {
         try {
             for (const item of structure) {
@@ -1400,7 +1399,7 @@ async function addPartStructure(partId: string, userId: string, input: ExtendedP
                     await createPartStructure(
                         partId,
                         childPartId,
-                        item.relation_type || StructuralRelationTypeEnum.COMPONENT,
+                        (item.relation_type as StructuralRelationTypeEnum) || StructuralRelationTypeEnum.COMPONENT,
                         item.quantity || 1,
                         userId,
                         item.notes || ''
@@ -1418,7 +1417,10 @@ async function addPartStructure(partId: string, userId: string, input: ExtendedP
  * Helper function to add part revisions
  */
 async function addPartRevisions(versionId: string, userId: string, input: ExtendedPartFormData) {
-    const revisionRecords = parseComplexField(input.revision_records);
+    const revisionRecords = parseComplexField(input.revision_records) as {
+        change_description?: string;
+        changed_fields?: string | string[];
+    }[];
     if (revisionRecords.length > 0) {
         try {
             for (const revision of revisionRecords) {

@@ -15,6 +15,23 @@ export type {
   ContactInfo
 } from './primitive';
 
+// Database-specific type definitions
+export type {
+  PostgresTransaction,
+  DbRow,
+  DynamicRecord,
+  JsonFieldProcessor,
+  NumericFieldProcessor,
+  UpdateValues,
+  JsonFields,
+  ManufacturerPartInput,
+  SupplierPartInput,
+  AttachmentInput,
+  RepresentationInput,
+  ComplianceInput,
+  ValidationInput
+} from './db-types';
+
 // Enum type definitions
 export * from './enums';
 
