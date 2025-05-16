@@ -1,0 +1,42 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# VistaBOM Database Cursor Rule
+
+**1. Table Naming Enforcement**
+- ✅ Valid: `CREATE TABLE "ProjectComponents" (...);`
+- ❌ Invalid: `CREATE TABLE project_components (...);`
+- **Fix:** Always use quoted camelCase for PostgreSQL case sensitivity
+
+**2. Column Naming Enforcement**
+- ✅ Valid: `component_id UUID NOT NULL`
+- ❌ Invalid: `"componentId" UUID NOT NULL`
+- **Fix:** Use snake_case without quotes for all columns
+
+**3. Reserved Keyword Protection**
+- Blocked Keywords: [`user`, `group`, `order`, `check`...]
+- ✅ Valid: `organization_name`
+- ❌ Invalid: `"user"` (quoted keyword)
+- **Fix:** Use alternatives like `user_account` or `system_user`
+
+**4. Schema Validation**
+- Source of Truth: `lib/schema/schema.ts`
+- ✅ Valid: Table exists in schema.ts TypeBox definitions
+- ❌ Invalid: Raw SQL tables not referenced in schema.ts
+- **Resolution Flow:**
+  1. Update schema.ts first
+  2. Run migration generator
+  3. Verify SQL matches TypeBox
+
+**Common Error Solutions:**
+```code
+-- Error: "column user does not exist"
+-- Cause: Using reserved keyword without quotes
+-- Fix: ALTER TABLE "Account" RENAME COLUMN "user" TO account_holder;
+
+-- Error: "relation projects does not exist"
+-- Cause: Missing quotes on camelCase table
+
+-- Fix: SELECT * FROM "Projects" WHERE ...;

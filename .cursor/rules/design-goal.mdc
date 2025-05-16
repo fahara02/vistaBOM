@@ -1,0 +1,39 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# VistaBOM Comprehensive Design Goals
+
+## Component & Page Implementation Standards
+1. Update all components, +page.svelte, and +page.server.ts for all entities (auth, user, part, category, manufacturer, supplier, partfamily, etc.)
+2. Focus on efficiency, correctness, and production-readiness (no basic/partial implementations)
+3. Delete any file redefining core schema types - import from centralized type definitions
+4. Extract and consolidate utility functions to utils modules for reuse
+
+## Database & Schema Standards
+5. Use consistent table/field naming in SQL queries matching the updated schema
+6. Never hardcode entity data - all data should be schema-driven
+7. Always enforce validation through SuperForm - never bypass validation
+8. Implement complete features as intended in schema.ts
+
+## Data Handling Best Practices
+9. Ensure all entities can be created with minimum required data
+10. Validation must not fail for optional fields that aren't present
+11. When editing, all data (public/private) must be available as optional
+12. Data flow from user to DB must pass through SuperForm
+   - Can process for sanitization or null/string conversion
+   - Never use hardcoded fallbacks or mutate user data directly
+
+## Code Quality
+13. Be cautious with large files to avoid bracket mistakes or duplicates
+14. Remove old, confusing comments
+15. Follow strict TypeScript typing (no any/unknown types)
+16. Maintain consistent error handling and user feedback
+
+## TypeScript Type System
+17. Schema-driven: Types derived from Zod schemas
+18. Central type definitions: All types defined in dedicated files
+19. Consistent naming: Clear distinction between different type categories
+
+20. Specific typing: No use of 'any' or generic object types

@@ -1,0 +1,26 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# VistaBOM Project Architecture
+
+## Core Technology Stack
+-package manager:pnpm
+- **Framework**: SvelteKit 5
+- **Database**: PostgreSQL with raw SQL (no ORM)
+- **Database Schema**: Defined in `db/schema.sql`
+- **TypeScript**: Strict typing with schema definitions in `src/lib/server/db/schema.ts` and `types.ts`
+- **Database Client**: Postgres client in `src/lib/server/db/postgres.ts` and `index.ts`
+- **UI Components**: 
+  - Shadcn UI library in `src/lib/components/ui/`
+  - Custom components in `src/lib/components/`
+  - Global CSS in `app.css`
+
+## API Structure
+- Entity CRUD operations in server files:
+  - `src/lib/core/category.ts`
+  - `src/lib/core/parts.ts`and /parts/many other modules
+  - `src/lib/core/manufacturer.ts`
+  - `src/lib/core/supplier.ts`
+

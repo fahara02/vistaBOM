@@ -1,0 +1,32 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+
+0. AlWAYS FOLLOW RULE
+1.Background server always runs Never run "npm run dev" or "pnpm run dev"  
+2. Backup files before editing 
+3.Fix all lint errors before file changes 
+4. Never delete A feature
+5.No shortcuts/bypasses in fixes  
+6. Debug > assume, log details 
+7. TypeScript: No any/unknown, explicit interfaces 
+8. SuperForm + Zod validation (strict) 
+9. Verify design goals first
+10. Update memory/todo after changes 
+11. Confirm file access before edits 
+12 Check duplicates before new vars/functions  
+13 Reuse components/utils/styles  
+14.Document complex logic explicitly  
+15. SvelteKit 5 + Postgres.js syntax compliance  
+16. Follow Design pattern 
+CORE PATTERNS:  
+- Components: Props → Derived → Methods  
+- Forms: Named actions (?/entity)  
+- UI: 4px/8px grid, semantic colors  
+- State: Prefer reactivity over stores  
+
+
+
