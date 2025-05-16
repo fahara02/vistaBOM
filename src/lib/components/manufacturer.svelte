@@ -1,8 +1,8 @@
 <!-- src/lib/components/manufacturer.svelte -->
 <script lang="ts">
-    import { onDestroy } from 'svelte';
     import type { Manufacturer } from '@/types/types';
-	import { formatFieldName } from '@/utils/util';
+    import { formatFieldName } from '@/utils/util';
+    import { onDestroy } from 'svelte';
 
     export let manufacturer: Manufacturer;
     export let currentUserId: string;
@@ -22,7 +22,7 @@
 
     const startEdit = () => {
         edits = { ...manufacturer };
-        customFieldsString = manufacturer.customFields ? JSON.stringify(manufacturer.customFields, null, 2) : '';
+        customFieldsString = manufacturer.custom_fields ? JSON.stringify(manufacturer.custom_fields, null, 2) : '';
         editMode = true;
     };
 
@@ -48,15 +48,15 @@
                 }
             }
 
-            const response = await fetch(`/api/manufacturers/${manufacturer.id}`, {
+            const response = await fetch(`/api/manufacturers/${manufacturer.manufacturer_id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     updates: {
-                        name: edits.name,
-                        description: edits.description,
-                        websiteUrl: edits.websiteUrl,
-                        logoUrl: edits.logoUrl,
+                        manufacturer_name: edits.manufacturer_name,
+                        manufacturer_description: edits.manufacturer_description,
+                        website_url: edits.website_url,
+                        logo_url: edits.logo_url,
                         customFields
                     },
                     userId: currentUserId
@@ -84,7 +84,7 @@
         if (!confirm('Are you sure you want to delete this manufacturer?')) return;
         
         try {
-            const response = await fetch(`/api/manufacturers/${manufacturer.id}`, {
+            const response = await fetch(`/api/manufacturers/${manufacturer.manufacturer_id}`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUserId }),
@@ -96,7 +96,7 @@
                 throw new Error(errorData.message || 'Failed to delete manufacturer');
             }
 
-            const event = new CustomEvent('deleted', { detail: manufacturer.id });
+            const event = new CustomEvent('deleted', { detail: manufacturer.manufacturer_id });
             dispatchEvent(event);
         } catch (e:unknown) {
             if (e instanceof Error && e.name !== 'AbortError') {
@@ -117,29 +117,29 @@
 
     {#if !editMode}
         <div class="view-mode">
-            <h2>{manufacturer.name}</h2>
-            {#if manufacturer.logoUrl}
-                <img src={manufacturer.logoUrl} alt="{manufacturer.name} logo" class="logo" />
+            <h2>{manufacturer.manufacturer_name}</h2>
+            {#if manufacturer.logo_url}
+                <img src={manufacturer.logo_url} alt="{manufacturer.manufacturer_name} logo" class="logo" />
             {/if}
             
             <div class="details">
-                {#if manufacturer.description}
-                    <p class="description">{manufacturer.description}</p>
+                {#if manufacturer.manufacturer_description}
+                    <p class="description">{manufacturer.manufacturer_description}</p>
                 {/if}
                 
-                {#if manufacturer.websiteUrl}
+                {#if manufacturer.website_url}
                     <p class="website">
-                        <a href={manufacturer.websiteUrl} target="_blank" rel="noopener">
-                            {manufacturer.websiteUrl}
+                        <a href={manufacturer.website_url} target="_blank" rel="noopener">
+                            {manufacturer.website_url}
                         </a>
                     </p>
                 {/if}
                 
-                {#if manufacturer.customFields && Object.keys(manufacturer.customFields).length > 0}
+                {#if manufacturer.custom_fields && Object.keys(manufacturer.custom_fields).length > 0}
                     <div class="custom-fields">
                         <h3>Additional Information</h3>
                         <div class="custom-fields-grid">
-                            {#each Object.entries(manufacturer.customFields) as [fieldName, fieldValue]}
+                            {#each Object.entries(manufacturer.custom_fields) as [fieldName, fieldValue]}
                                 <div class="custom-field-item">
                                     <div class="field-name">{formatFieldName(fieldName)}</div>
                                     <div class="field-value">
@@ -164,15 +164,15 @@
                 {/if}
                                 
                 <div class="meta">
-                    <small>Created: {manufacturer.createdAt.toLocaleDateString()}</small>
-                    {#if manufacturer.updatedAt}
-                        <small>Updated: {manufacturer.updatedAt.toLocaleDateString()}</small>
+                    <small>Created: {manufacturer.created_at.toLocaleDateString()}</small>
+                    {#if manufacturer.updated_at}
+                        <small>Updated: {manufacturer.updated_at.toLocaleDateString()}</small>
                     {/if}
                 </div>
             </div>
             
             <!-- Only show edit/delete buttons if user is logged in and created this manufacturer -->
-            {#if currentUserId && manufacturer.createdBy === currentUserId}
+            {#if currentUserId && manufacturer.created_by === currentUserId}
                 <div class="actions">
                     <button on:click={startEdit} class="btn-edit">Edit</button>
                     <button on:click={removeManufacturer} class="danger">Delete</button>
@@ -188,7 +188,7 @@
                     Name*
                     <input
                         type="text"
-                        bind:value={edits.name}
+                        bind:value={edits.manufacturer_name}
                         required
                         placeholder="Manufacturer name"
                     />
@@ -197,7 +197,7 @@
                 <label>
                     Description
                     <textarea
-                        bind:value={edits.description}
+                        bind:value={edits.manufacturer_description}
                         rows="3"
                         placeholder="Detailed description..."
                     ></textarea>
@@ -207,7 +207,7 @@
                     Website URL
                     <input
                         type="url"
-                        bind:value={edits.websiteUrl}
+                        bind:value={edits.website_url}
                         placeholder="https://example.com"
                     />
                 </label>
@@ -216,7 +216,7 @@
                     Logo URL
                     <input
                         type="url"
-                        bind:value={edits.logoUrl}
+                        bind:value={edits.logo_url}
                         placeholder="https://example.com/logo.png"
                     />
                 </label>

@@ -1,7 +1,7 @@
 <!-- src/lib/components/supplier.svelte -->
 <script lang="ts">
-    import type { Supplier } from '$lib/types';    
-	import { formatFieldName, processContactInfo } from '@/utils/util';
+    import type { Supplier } from '$lib/types';
+    import { formatFieldName, processContactInfo } from '@/utils/util';
     import { onDestroy } from 'svelte';
     
 
@@ -30,7 +30,7 @@
     const startEdit = () => {
         edits = { ...supplier };
         // Get contact info data for editing
-        const contactData = getContactInfo(supplier.contactInfo);
+        const contactData = getContactInfo(supplier.contact_info);
         
         // Format it as JSON for the edit form
         const contactObject: Record<string, string> = {};
@@ -69,17 +69,17 @@
                 }
             }
 
-            const response = await fetch(`/api/suppliers/${supplier.id}`, {
+            const response = await fetch(`/api/suppliers/${supplier.supplier_id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    name: edits.name,
-                    description: edits.description,
-                    websiteUrl: edits.websiteUrl,
+                    name: edits.supplier_name,
+                    description: edits.supplier_description,
+                    websiteUrl: edits.website_url,
                     contactInfo,
-                    logoUrl: edits.logoUrl,
+                    logoUrl: edits.logo_url,
                     userId: currentUserId
                 }),
                 signal: abortController.signal
@@ -110,7 +110,7 @@
         if (!confirm('Are you sure you want to delete this supplier? This action cannot be undone.')) return;
         
         try {
-            const response = await fetch(`/api/suppliers/${supplier.id}`, {
+            const response = await fetch(`/api/suppliers/${supplier.supplier_id}`, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
@@ -150,24 +150,24 @@
 
     {#if !editMode}
         <div class="view-mode">
-            <h2>{supplier.name}</h2>
-            {#if supplier.logoUrl}
-                <img src={supplier.logoUrl} alt="{supplier.name} logo" class="logo" />
+            <h2>{supplier.supplier_name}</h2>
+            {#if supplier.logo_url}
+                <img src={supplier.logo_url} alt="{supplier.supplier_name} logo" class="logo" />
             {/if}
             
             <div class="content-section">
-                {#if supplier.description}
+                {#if supplier.supplier_description}
                     <div class="description">
                         <h3>Description</h3>
-                        <div class="description-content">{supplier.description}</div>
+                        <div class="description-content">{supplier.supplier_description}</div>
                     </div>
                 {/if}
 
-                {#if supplier.customFields && Object.keys(supplier.customFields).length > 0}
+                {#if supplier.custom_fields && Object.keys(supplier.custom_fields).length > 0}
                     <div class="custom-fields">
                         <h3>Additional Information</h3>
                         <div class="custom-fields-grid">
-                            {#each Object.entries(supplier.customFields) as [fieldName, fieldValue]}
+                            {#each Object.entries(supplier.custom_fields) as [fieldName, fieldValue]}
                                 <div class="custom-field-item">
                                     <div class="field-name">{formatFieldName(fieldName)}</div>
                                     <div class="field-value">
@@ -191,16 +191,16 @@
                     </div>
                 {/if}
                 
-                {#if supplier.websiteUrl}
+                {#if supplier.website_url}
                     <p class="website">
-                        <a href={supplier.websiteUrl} target="_blank" rel="noopener">
-                            {supplier.websiteUrl}
+                        <a href={supplier.website_url} target="_blank" rel="noopener">
+                            {supplier.website_url}
                         </a>
                     </p>
                 {/if}
                 
-                {#if supplier.contactInfo}
-                    {@const contact = getContactInfo(supplier.contactInfo)}
+                {#if supplier.contact_info}
+                    {@const contact = getContactInfo(supplier.contact_info)}
                     <div class="contact-info">
                         <h3>Contact Information</h3>
                         <div class="contact-details">
@@ -245,15 +245,15 @@
                 {/if}
                 
                 <div class="meta">
-                    <small>Created: {supplier.createdAt.toLocaleDateString()}</small>
-                    {#if supplier.updatedAt}
-                        <small>Updated: {supplier.updatedAt.toLocaleDateString()}</small>
+                    <small>Created: {supplier.created_at.toLocaleDateString()}</small>
+                    {#if supplier.updated_at}
+                        <small>Updated: {supplier.updated_at.toLocaleDateString()}</small>
                     {/if}
                 </div>
             </div>
             
             <!-- Only show edit/delete buttons if user is logged in and created this supplier -->
-            {#if currentUserId && supplier.createdBy === currentUserId}
+            {#if currentUserId && supplier.created_by === currentUserId}
                 <div class="actions">
                     <button on:click={startEdit} class="btn-edit">Edit</button>
                     <button on:click={removeSupplier} class="danger">Delete</button>
@@ -269,14 +269,14 @@
                     Name*
                     <input
                         type="text"
-                        bind:value={edits.name}
+                        bind:value={edits.supplier_name}
                         required
                     />
                 </label>
                 
                 <label>
                     Description
-                    <textarea bind:value={edits.description}
+                    <textarea bind:value={edits.supplier_description}
                         rows="3"></textarea>
                 </label>
                 
@@ -284,7 +284,7 @@
                     Website URL
                     <input
                         type="url"
-                        bind:value={edits.websiteUrl}
+                        bind:value={edits.website_url}
                         placeholder="https://example.com"
                     />
                 </label>
@@ -293,7 +293,7 @@
                     Logo URL
                     <input
                         type="url"
-                        bind:value={edits.logoUrl}
+                        bind:value={edits.logo_url}
                         placeholder="https://example.com/logo.png"
                     />
                 </label>

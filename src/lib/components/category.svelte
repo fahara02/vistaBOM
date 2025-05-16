@@ -1,8 +1,8 @@
 <!-- src/lib/components/category.svelte -->
 <script lang="ts">
-    import { onDestroy, onMount } from 'svelte';
-    import CategoryComboBox from './CategoryComboBox.svelte';
     import type { Category } from '@/types/types';
+    import { onDestroy } from 'svelte';
+    import CategoryComboBox from './CategoryComboBox.svelte';
 
     export let category: any;
     export const currentUserId: string = ''; // Changed to const as it's not being used directly in the template
@@ -35,7 +35,7 @@
             const response = await fetch('/api/categories');
             if (response.ok) {
                 const data = await response.json();
-                allCategories = data.filter((cat: Category) => cat.id !== category.id);
+                allCategories = data.filter((cat: Category) => cat.category_id !== category.id);
             }
         } catch (e) {
             console.error('Failed to load categories:', e);

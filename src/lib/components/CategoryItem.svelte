@@ -1,13 +1,13 @@
  <!-- src/lib/components/CategoryItem.svelte -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import type { Category } from '@/types/types';
+  import { onDestroy } from 'svelte';
   export let category: Category;
   /** current user ID executing actions */
   export let currentUserId: string | undefined;
 
   let editMode = false;
-  let name = category.name;
+  let name = category.category_name;
   let error: string | null = null;
   let success: string | null = null;
   let abortController = new AbortController();
@@ -17,7 +17,7 @@
   });
 
   const startEdit = () => {
-    name = category.name;
+    name = category.category_name;
     editMode = true;
     error = success = null;
   };
@@ -35,7 +35,7 @@
     error = success = null;
     abortController = new AbortController();
     try {
-      const response = await fetch(`/catagory/${category.id}`, {
+      const response = await fetch(`/catagory/${category.category_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -71,7 +71,7 @@
     if (!currentUserId) return;
     if (!confirm('Delete this category?')) return;
     try {
-      const response = await fetch(`/catagory/${category.id}`, {
+      const response = await fetch(`/catagory/${category.category_id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -86,7 +86,7 @@
         const data = await response.json();
         throw new Error(data.message || 'Delete failed');
       }
-      dispatchEvent(new CustomEvent('deleted', { detail: category.id }));
+      dispatchEvent(new CustomEvent('deleted', { detail: category.category_id }));
     } catch (e: unknown) {
       if ((e as any).name !== 'AbortError') {
         error = e instanceof Error ? e.message : 'Unknown error';
@@ -111,7 +111,7 @@
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
         </div>
-        <span>{category.name}</span>
+        <span>{category.category_name}</span>
       </div>
       <div class="view-actions">
         <button type="button" class="icon edit" on:click={startEdit} aria-label="Edit category">

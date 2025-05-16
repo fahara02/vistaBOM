@@ -1,11 +1,10 @@
 <!-- src/lib/components/SupplierForm.svelte -->
 <script lang="ts">
+  import { formatContactInfoForDisplay, validateJSON } from '$lib/utils/util';
+  import type { SupplierFormData } from '@/types/formTypes';
   import { slide } from 'svelte/transition';
   import type { SuperForm } from 'sveltekit-superforms';
   import type { SuperFormData } from 'sveltekit-superforms/client';
-  import type { z } from 'zod';
-  import { parseContactInfo, formatContactInfoForDisplay, validateJSON } from '$lib/utils/util';
-	import type { SupplierFormData,Json } from '@/types/formTypes';
 
 
   // Props
@@ -27,16 +26,16 @@
   
   // Initialize formData with default values to prevent undefined errors
   formData = {
-    id: '',
-    name: '',
-    description: null,
+    supplier_id: '',
+    supplier_name: '',
+    supplier_description: null,
     website_url: null,
     contact_info: null,
     logo_url: null,
     custom_fields_json: '',
-    created_by: null,
+    created_by: '',
     created_at: new Date(),
-    updated_by: null,
+    updated_by: '',
     updated_at: new Date()
   };
   
@@ -49,9 +48,9 @@
         if (value && value.data) {
           const newData = value.data as Partial<SupplierFormData>;
           // Update each property individually
-          if (newData.id !== undefined) formData.id = newData.id;
-          if (newData.name !== undefined) formData.name = newData.name;
-          if (newData.description !== undefined) formData.description = newData.description;
+          if (newData.supplier_id !== undefined) formData.supplier_id = newData.supplier_id;
+          if (newData.supplier_name !== undefined) formData.supplier_name = newData.supplier_name;
+          if (newData.supplier_description !== undefined) formData.supplier_description = newData.supplier_description;
           if (newData.website_url !== undefined) formData.website_url = newData.website_url;
           if (newData.contact_info !== undefined) formData.contact_info = newData.contact_info;
           if (newData.logo_url !== undefined) formData.logo_url = newData.logo_url;
@@ -67,8 +66,8 @@
       const newData = form.data as Partial<SupplierFormData>;
       // Update each property individually
       if (newData.id !== undefined) formData.id = newData.id;
-      if (newData.name !== undefined) formData.name = newData.name;
-      if (newData.description !== undefined) formData.description = newData.description;
+      if (newData.supplier_name !== undefined) formData.supplier_name = newData.supplier_name;
+      if (newData.supplier_description !== undefined) formData.supplier_description = newData.supplier_description;
       if (newData.website_url !== undefined) formData.website_url = newData.website_url;
       if (newData.contact_info !== undefined) formData.contact_info = newData.contact_info;
       if (newData.logo_url !== undefined) formData.logo_url = newData.logo_url;
@@ -92,7 +91,7 @@
       id="name" 
       name="name" 
       type="text" 
-      bind:value={formData.name}
+      bind:value={formData.supplier_name}
       class="form-control" 
       required
     />
@@ -106,7 +105,7 @@
     <textarea 
       id="description" 
       name="description" 
-      bind:value={formData.description}
+      bind:value={formData.supplier_description}
       class="form-control"
       rows="4"
     ></textarea>
