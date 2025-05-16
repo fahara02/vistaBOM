@@ -1,6 +1,7 @@
 // src/routes/manufacturer/[id]/edit/+page.server.ts
 import sql from '$lib/server/db/index';
 import { getManufacturer } from '@/core/manufacturer';
+import { manufacturerSchema } from '@/schema/schema';
 import { fail, redirect } from '@sveltejs/kit';
 import { message, superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
@@ -8,19 +9,13 @@ import * as z from 'zod';
 import type { Actions, PageServerLoad } from './$types';
 
 // Create a schema for manufacturer updates, omitting fields that shouldn't be in the form
-const updateManufacturerSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1, "Name is required"),
-  description: z.string().optional().nullable(),
-  website_url: z.string().optional().nullable(),
-  logo_url: z.string().optional().nullable(),
-  custom_fields_json: z.string().optional().nullable(),
-  // These fields are in manufacturerSchema but should not be required in the form
-  created_by: z.string().optional().nullable(),
-  created_at: z.any().optional(),
-  updated_by: z.string().optional().nullable(),
-  updated_at: z.any().optional(),
-});
+const updateManufacturerSchema =manufacturerSchema
+                 .partial()
+                 .extend(
+                  {manufacturer_id:z.string().uuid()}
+                 );
+
+
 
 export const load: PageServerLoad = async ({ params, locals }) => {
   const user = locals.user;
@@ -56,22 +51,22 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     // Map camelCase TypeScript properties to snake_case form fields
     const initialData = {
       // Core fields
-      id: manufacturer.id,
-      name: manufacturer.name,
-      description: manufacturer.description || '',
-      website_url: manufacturer.websiteUrl || '', // Convert camelCase to snake_case
-      logo_url: manufacturer.logoUrl || '', // Convert camelCase to snake_case
+      id: manufacturer.manufacturer_id,
+      name: manufacturer.manufacturer_name,
+      description: manufacturer.manufacturer_description || '',
+      website_url: manufacturer.website_url || '', // Convert camelCase to snake_case
+      logo_url: manufacturer.logo_url || '', // Convert camelCase to snake_case
       
       // Custom fields as JSON string
-      custom_fields_json: manufacturer.customFields && Object.keys(manufacturer.customFields).length > 0
-        ? JSON.stringify(manufacturer.customFields, null, 2) 
+      custom_fields_json: manufacturer.custom_fields && Object.keys(manufacturer.custom_fields).length > 0
+        ? JSON.stringify(manufacturer.custom_fields, null, 2) 
         : '',
       
       // Metadata fields
-      created_by: manufacturer.createdBy || null,
-      created_at: manufacturer.createdAt || new Date(),
-      updated_by: manufacturer.updatedBy || null,
-      updated_at: manufacturer.updatedAt || new Date()
+      created_by: manufacturer.created_by || null,
+      created_at: manufacturer.created_at || new Date(),
+      updated_by: manufacturer.updated_by || null,
+      updated_at: manufacturer.updated_at || new Date()
     };
     
     console.log('Complete initialData for form:', initialData);
@@ -123,9 +118,9 @@ export const actions: Actions = {
     try {
       // Parse custom fields JSON if provided
       let customFields = null;
-      if (form.data.custom_fields_json?.trim()) {
+      if (form.data.custom_fields?.trim()) {
         try {
-          customFields = JSON.parse(form.data.custom_fields_json);
+          customFields = JSON.parse(form.data.custom_fields);
           console.log('Successfully parsed custom fields:', customFields);
         } catch (e) {
           console.error('Invalid JSON format for custom fields:', e);
@@ -139,8 +134,8 @@ export const actions: Actions = {
       const result = await sql`
         UPDATE manufacturer
         SET 
-          name = ${form.data.name},
-          description = ${form.data.description || null},
+          manufacturer_name = ${form.data.manufacturer_name},
+          manufacturer_description = ${form.data.manufacturer_description || null},
           website_url = ${form.data.website_url || null},
           logo_url = ${form.data.logo_url || null}
         WHERE id = ${manufacturerId}
@@ -154,12 +149,12 @@ export const actions: Actions = {
         console.log('Processing custom fields...');
         
         try {
-          if (form.data.custom_fields_json) {
+          if (form.data.custom_fields) {
             // Delete existing custom fields first
             await sql`DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${manufacturerId}`;
             console.log('Deleted existing custom fields');
 
-            const customFields = JSON.parse(form.data.custom_fields_json);
+            const customFields = JSON.parse(form.data.custom_fields);
             for (const [fieldName, fieldValue] of Object.entries(customFields)) {
               // Check if this field already exists
               const existingField = await sql`

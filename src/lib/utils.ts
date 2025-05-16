@@ -1,7 +1,8 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
 import { cubicOut } from "svelte/easing";
 import type { TransitionConfig } from "svelte/transition";
+import { twMerge } from "tailwind-merge";
+import * as z from 'zod';
 
 /**
  * Format a date string or Date object into a readable format
@@ -97,3 +98,23 @@ export const flyAndScale = (
 		easing: cubicOut
 	};
 };
+
+
+export function createUpdateSchema<T extends z.ZodRawShape>(
+	createSchema:z.ZodObject<T>,
+	idField:string,
+	idSchema:z.ZodType<any>,
+	omitFields:string[]=[]){
+
+  const updateSchema=createSchema.partial();
+  return updateSchema.extend({
+  [idField]:idSchema
+  }).omit(
+
+   omitFields.reduce(
+
+	(acc,field)=>({...acc,[field]:true}),{}
+   )
+
+  )
+	};
