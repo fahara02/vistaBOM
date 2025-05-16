@@ -24,8 +24,28 @@ import {
   sessionSchema,
   supplierSchema,
   userSchema,
-  categoryClientSchema
-
+  categoryClientSchema,
+  projectSchema,
+  billOfMaterialsSchema,
+  // Custom field schemas
+  customFieldSchema,
+  manufacturerCustomFieldSchema,
+  supplierCustomFieldSchema,
+  partCustomFieldSchema,
+  // Additional schemas
+  bomItemSchema,
+  bomItemSubstituteSchema,
+  partRevisionSchema,
+  partValidationSchema,
+  tagSchema,
+  partVersionTagSchema,
+  partFamilySchema,
+  partGroupSchema,
+  partFamilyLinkSchema,
+  partGroupLinkSchema,
+  manufacturerPartSchema,
+  supplierPartSchema,
+  partFormBaseSchema
 } from '../schema/schema';
 
 import type { LifecycleStatusEnum } from './enums';
@@ -50,6 +70,12 @@ export type CreatePartVersion = z.infer<typeof createPartVersionSchema>;
 // Attachment and representation types
 export type PartAttachment = z.infer<typeof partAttachmentSchema>;
 export type PartRepresentation = z.infer<typeof partRepresentationSchema>;
+
+// Custom field types
+export type CustomField = z.infer<typeof customFieldSchema>;
+export type ManufacturerCustomField = z.infer<typeof manufacturerCustomFieldSchema>;
+export type SupplierCustomField = z.infer<typeof supplierCustomFieldSchema>;
+export type PartCustomField = z.infer<typeof partCustomFieldSchema>;
 
 // Other supporting types
 export type Manufacturer = z.infer<typeof manufacturerSchema>;
@@ -78,6 +104,7 @@ export type SnakeCasePartSchema = PartFormData & {
 export interface PartWithCurrentVersion extends Part {
   currentVersion?: PartVersion | null;
   categories?: Category[];
+  customFields?: Record<string, JsonValue>; // Add custom fields support
 }
 
 export interface PartVersionWithRelations extends PartVersion {
@@ -85,7 +112,72 @@ export interface PartVersionWithRelations extends PartVersion {
   categories?: Category[];
   attachments?: PartAttachment[];
   representations?: PartRepresentation[];
+  customFields?: Record<string, JsonValue>; // Custom fields support
 }
+
+// Project and BillOfMaterials types
+export type Project = z.infer<typeof projectSchema>;
+export type BillOfMaterials = z.infer<typeof billOfMaterialsSchema>;
+
+// BOM related types
+export type BOMItem = z.infer<typeof bomItemSchema>;
+export type BOMItemSubstitute = z.infer<typeof bomItemSubstituteSchema>;
+
+// Part relationship types
+export type PartRevision = z.infer<typeof partRevisionSchema>;
+export type PartValidation = z.infer<typeof partValidationSchema>;
+export type Tag = z.infer<typeof tagSchema>;
+export type PartVersionTag = z.infer<typeof partVersionTagSchema>;
+
+// Part organization types
+export type PartFamily = z.infer<typeof partFamilySchema>;
+export type PartGroup = z.infer<typeof partGroupSchema>;
+export type PartFamilyLink = z.infer<typeof partFamilyLinkSchema>;
+export type PartGroupLink = z.infer<typeof partGroupLinkSchema>;
+
+// Part manufacturer/supplier types
+export type ManufacturerPart = z.infer<typeof manufacturerPartSchema>;
+export type SupplierPart = z.infer<typeof supplierPartSchema>;
+
+// Form related types
+export type PartFormBase = z.infer<typeof partFormBaseSchema>;
+
+// CRUD operation types
+export type CreateManufacturer = Omit<Manufacturer, 'manufacturer_id' | 'created_at' | 'updated_at'>;
+export type UpdateManufacturer = Partial<Omit<Manufacturer, 'manufacturer_id' | 'created_at' | 'created_by'>>;
+
+export type CreateSupplier = Omit<Supplier, 'supplier_id' | 'created_at' | 'updated_at'>;
+export type UpdateSupplier = Partial<Omit<Supplier, 'supplier_id' | 'created_at' | 'created_by'>>;
+
+export type CreateCategory = Omit<Category, 'category_id' | 'created_at' | 'updated_at' | 'category_path'>;
+export type UpdateCategory = Partial<Omit<Category, 'category_id' | 'created_at' | 'created_by' | 'category_path'>>;
+
+export type CreateTag = Omit<Tag, 'tag_id' | 'created_at' | 'updated_at' | 'is_deleted' | 'deleted_at' | 'deleted_by'>;
+export type UpdateTag = Partial<Omit<Tag, 'tag_id' | 'created_at' | 'created_by' | 'is_deleted' | 'deleted_at' | 'deleted_by'>>;
+
+export type CreateProject = Omit<Project, 'project_id' | 'created_at' | 'updated_at'>;
+export type UpdateProject = Partial<Omit<Project, 'project_id' | 'created_at'>>;
+
+export type CreateBOM = Omit<BillOfMaterials, 'bom_id' | 'created_at' | 'updated_at' | 'released_at'>;
+export type UpdateBOM = Partial<Omit<BillOfMaterials, 'bom_id' | 'created_at' | 'created_by'>>;
+
+export type CreateBOMItem = Omit<BOMItem, 'bom_item_id' | 'created_at' | 'updated_at'>;
+export type UpdateBOMItem = Partial<Omit<BOMItem, 'bom_item_id' | 'created_at' | 'created_by'>>;
+
+export type CreateManufacturerPart = Omit<ManufacturerPart, 'manufacturer_part_id' | 'created_at' | 'updated_at'>;
+export type UpdateManufacturerPart = Partial<Omit<ManufacturerPart, 'manufacturer_part_id' | 'created_at' | 'created_by'>>;
+
+export type CreateSupplierPart = Omit<SupplierPart, 'supplier_part_id' | 'created_at' | 'updated_at'>;
+export type UpdateSupplierPart = Partial<Omit<SupplierPart, 'supplier_part_id' | 'created_at' | 'created_by'>>;
+
+export type CreatePartCustomField = Omit<PartCustomField, 'part_custom_field_id' | 'created_at' | 'updated_at'>;
+export type UpdatePartCustomField = Partial<Omit<PartCustomField, 'part_custom_field_id' | 'created_at' | 'created_by'>>;
+
+export type CreatePartAttachment = Omit<PartAttachment, 'part_attachment_id' | 'uploaded_at' | 'updated_at'>;
+export type UpdatePartAttachment = Partial<Omit<PartAttachment, 'part_attachment_id' | 'uploaded_at' | 'uploaded_by'>>;
+
+export type CreatePartRepresentation = Omit<PartRepresentation, 'part_representation_id' | 'created_at' | 'updated_at'>;
+export type UpdatePartRepresentation = Partial<Omit<PartRepresentation, 'part_representation_id' | 'created_at' | 'created_by'>>;
 
 /**
  * Additional utility types specific to the application
@@ -140,4 +232,14 @@ export interface EnvironmentalData {
   flammability_rating?: string;
   notes?: string;
   [key: string]: number | string | boolean | null | undefined;
+}
+
+// Advanced custom field interface that extends the Zod schema
+export interface ExtendedPartCustomField extends PartCustomField {
+  field_group?: string | null;
+  display_order?: number | null;
+  required: boolean;
+  validation_regex?: string | null;
+  validation_message?: string | null;
+  options?: string[] | null;
 }

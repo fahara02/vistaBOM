@@ -113,7 +113,8 @@ export const userSchema = z.object({
     last_login_at: z.date().optional().nullable(), // TIMESTAMPTZ
     is_active: z.boolean(), // BOOLEAN DEFAULT TRUE NOT NULL
     is_admin: z.boolean(), // BOOLEAN DEFAULT FALSE NOT NULL
-    is_deleted: z.boolean() // BOOLEAN DEFAULT FALSE NOT NULL
+    is_deleted: z.boolean(), // BOOLEAN DEFAULT FALSE NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
 // ### Session Schema
@@ -162,7 +163,8 @@ export const categorySchema = z.object({
     is_public: z.boolean(), // BOOLEAN DEFAULT TRUE NOT NULL
     is_deleted: z.boolean(), // BOOLEAN DEFAULT FALSE NOT NULL
     deleted_at: z.date().optional().nullable(), // TIMESTAMPTZ
-    deleted_by: z.string().uuid().optional().nullable() // UUID REFERENCES "User"(user_id)
+    deleted_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
 // ### Dimension Schemas
@@ -193,7 +195,8 @@ export const partSchema = z.object({
     created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
     updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
-    current_version_id: z.string().uuid().optional().nullable() // UUID REFERENCES PartVersion(part_version_id)
+    current_version_id: z.string().uuid().optional().nullable(), // UUID REFERENCES PartVersion(part_version_id)
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
 // ### PartVersion Schema Base (Updated with snake_case, removed partStatus)
@@ -237,7 +240,8 @@ export const partVersionSchemaBase = z.object({
     created_by: z.string().uuid(), // UUID NOT NULL REFERENCES "User"(user_id)
     created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
-    updated_at: z.date() // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 }).superRefine((data, ctx) => {
     // Validate paired fields
     if ((data.part_weight !== undefined && data.part_weight !== null) !== (data.weight_unit !== undefined && data.weight_unit !== null)) {
@@ -1746,7 +1750,8 @@ export const manufacturerSchema = z.object({
     updated_at: z.preprocess(
         (val) => val instanceof Date ? val : new Date(val as string),
         z.date({ invalid_type_error: "Must be a valid date" })
-    ).default(() => new Date()) // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    ).default(() => new Date()), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
 // ### ManufacturerPart Schema
@@ -1820,7 +1825,8 @@ export const supplierSchema = z.object({
     updated_at: z.preprocess(
         (val) => val instanceof Date ? val : new Date(val as string),
         z.date({ invalid_type_error: "Must be a valid date" })
-    ).default(() => new Date()) // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    ).default(() => new Date()), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
 // ### SupplierPart Schema
@@ -1858,7 +1864,8 @@ export const tagSchema = z.object({
     updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     is_deleted: z.boolean(), // BOOLEAN DEFAULT FALSE NOT NULL
     deleted_at: z.date().optional().nullable(), // TIMESTAMPTZ
-    deleted_by: z.string().uuid().optional().nullable() // UUID REFERENCES "User"(user_id)
+    deleted_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
 // ### PartVersionTag Schema
@@ -1893,9 +1900,21 @@ export const supplierCustomFieldSchema = z.object({
 
 // ### PartCustomField Schema
 export const partCustomFieldSchema = z.object({
+    part_custom_field_id: z.string().uuid(), // Primary key
     part_version_id: z.string().uuid(), // UUID NOT NULL REFERENCES PartVersion(part_version_id)
-    field_id: z.string().uuid(), // UUID NOT NULL REFERENCES CustomField(custom_field_id)
-    custom_field_value: jsonSchema // JSONB NOT NULL
+    field_name: z.string().min(1), // TEXT NOT NULL - name of the custom field
+    field_value: jsonSchema, // JSONB NOT NULL - value of the custom field
+    field_type: z.enum(['STRING', 'NUMBER', 'BOOLEAN', 'DATE', 'OBJECT', 'ARRAY']), // Type of field
+    field_group: z.string().optional().nullable(), // For grouping related fields
+    display_order: z.number().int().optional().nullable(), // For controlling display order in UI
+    required: z.boolean().default(false), // Whether the field is required
+    validation_regex: z.string().optional().nullable(), // Optional regex pattern for validation
+    validation_message: z.string().optional().nullable(), // Optional message to show when validation fails
+    options: z.array(z.string()).optional().nullable(), // Optional array of allowed values (for enum fields)
+    created_by: z.string().uuid(), // UUID NOT NULL REFERENCES "User"(user_id)
+    created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
+    updated_at: z.date().optional().nullable() // TIMESTAMPTZ
 });
 
 // ### PartFamily Schema
@@ -1910,7 +1929,8 @@ export const partFamilySchema = z.object({
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
     updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     is_public: z.boolean().default(true), // BOOLEAN DEFAULT TRUE NOT NULL
-    is_active: z.boolean().default(true) // BOOLEAN DEFAULT TRUE NOT NULL
+    is_active: z.boolean().default(true), // BOOLEAN DEFAULT TRUE NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields for future extensibility
 });
 
 // ### PartGroup Schema
@@ -1926,7 +1946,8 @@ export const partGroupSchema = z.object({
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
     updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     is_public: z.boolean().default(true), // BOOLEAN DEFAULT TRUE NOT NULL
-    is_active: z.boolean().default(true) // BOOLEAN DEFAULT TRUE NOT NULL
+    is_active: z.boolean().default(true), // BOOLEAN DEFAULT TRUE NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields for future extensibility
 });
 
 // ### PartFamilyLink Schema
@@ -1959,7 +1980,8 @@ export const projectSchema = z.object({
     project_status: z.nativeEnum(LifecycleStatusEnum), // lifecycle_status_enum NOT NULL DEFAULT 'draft'
     created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
-    updated_at: z.date() // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields for future extensibility
 });
 
 // ### BillOfMaterials Schema
@@ -1974,7 +1996,8 @@ export const billOfMaterialsSchema = z.object({
     created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
     updated_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
-    released_at: z.date().optional().nullable() // TIMESTAMPTZ
+    released_at: z.date().optional().nullable(), // TIMESTAMPTZ
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields for future extensibility
 });
 
 // ### BOMItem Schema
@@ -1991,7 +2014,8 @@ export const bomItemSchema = z.object({
     created_by: z.string().uuid(), // UUID NOT NULL REFERENCES "User"(user_id)
     created_at: z.date(), // TIMESTAMPTZ DEFAULT NOW() NOT NULL
     updated_by: z.string().uuid().optional().nullable(), // UUID REFERENCES "User"(user_id)
-    updated_at: z.date().optional().nullable() // TIMESTAMPTZ
+    updated_at: z.date().optional().nullable(), // TIMESTAMPTZ
+    custom_fields: jsonSchema.optional().nullable() // Add support for custom fields for future extensibility
 });
 
 // ### BOMItemSubstitute Schema
