@@ -1,15 +1,24 @@
 /**
  * Database-specific type definitions
- * This file contains types for database interactions, particularly for the postgres.js library
+ * This file contains types for database interactions and fixes type conflicts
  */
 import type postgres from 'postgres';
 import type { Row } from 'postgres';
-import type { JsonValue, JsonRecord } from './primitive';
+import type { 
+    JsonValue, 
+    Dimensions 
+} from './primitive';
+import type {
+    ElectricalProperties,
+    MechanicalProperties,
+    ThermalProperties,
+    EnvironmentalData
+} from './schemaTypes';
 
 /**
  * Type for PostgreSQL transaction from postgres.js library
  */
-export type PostgresTransaction = postgres.TransactionSql;
+export type PostgresTransaction = postgres.TransactionSql<Record<string, unknown>>;
 
 /**
  * Type for database rows returned from queries
@@ -17,124 +26,172 @@ export type PostgresTransaction = postgres.TransactionSql;
 export type DbRow = Row;
 
 /**
- * Dynamic record type for flexible object structures
- */
-export type DynamicRecord = Record<string, unknown>;
-
-/**
- * Type for JSON field processing functions
- * Used for serializing/deserializing fields to/from JSON
+ * Flexible JSON field processor function type
  */
 export interface JsonFieldProcessor {
-  (fieldValue: unknown, fieldName: string): string | null;
+    (fieldValue: unknown, fieldName: string): unknown;
 }
 
 /**
- * Type for numeric field processors
- * Used to safely convert values to numbers
+ * Numeric field processor function type
  */
 export interface NumericFieldProcessor {
-  (value: unknown): number | null;
+    (value: unknown): number | null;
 }
 
 /**
- * Type for database update operations
- * Used in functions like updatePart, updatePartVersion
+ * Type for update values in database operations
  */
-export type UpdateValues = Partial<Record<string, string | number | boolean | null | JsonValue>>;
+export interface UpdateValues {
+    [key: string]: unknown;
+}
 
 /**
- * Type for JSON fields in database records
- * Used for structured data stored in JSON columns
+ * Type for JSON fields in database operations
  */
-export type JsonFields = Record<string, JsonValue | null>;
+export interface JsonFields {
+    [key: string]: JsonValue;
+}
 
 /**
  * Input type for manufacturer part data
  */
 export interface ManufacturerPartInput {
-  id?: string;
-  manufacturer_id: string;
-  manufacturer_name?: string;
-  part_number: string;
-  manufacturer_part_number?: string;
-  description?: string;
-  url?: string;
-  datasheet_url?: string;
-  status?: string;
+    manufacturer_id: string;
+    part_number?: string;
+    manufacturer_part_number?: string;
+    manufacturer_name?: string;
+    description?: string;
+    [key: string]: unknown;
 }
 
 /**
  * Input type for supplier part data
  */
 export interface SupplierPartInput {
-  id?: string;
-  supplier_id: string;
-  supplier_name?: string;
-  part_number: string;
-  supplier_part_number?: string;
-  description?: string;
-  url?: string;
-  datasheet_url?: string;
-  cost?: number;
-  cost_currency?: string;
-  status?: string;
-  manufacturer_part_id?: string;
+    supplier_id: string;
+    part_number?: string;
+    supplier_part_number?: string;
+    supplier_name?: string;
+    manufacturer_part_id?: string;
+    description?: string;
+    [key: string]: unknown;
 }
 
 /**
- * Input type for part attachment data
+ * Input type for attachment data
  */
 export interface AttachmentInput {
-  id?: string;
-  file_name: string;
-  file_size_bytes: number;
-  file_type: string;
-  file_url: string;
-  description?: string;
-  attachment_description?: string;
-  is_primary?: boolean;
+    file_name?: string;
+    file_size_bytes?: number;
+    file_type?: string;
+    file_url?: string;
+    description?: string;
+    attachment_description?: string;
+    is_primary?: boolean;
+    [key: string]: unknown;
 }
 
 /**
- * Input type for part representation data
+ * Input type for representation data
  */
 export interface RepresentationInput {
-  id?: string;
-  representation_type: string;
-  file_name: string;
-  format: string;
-  file_url: string;
-  file_size_bytes: number;
-  metadata?: string | object;
-  additional_data?: string | object;
-  is_primary?: boolean;
+    representation_type?: string;
+    file_name?: string;
+    format?: string;
+    file_url?: string;
+    file_size_bytes?: number;
+    metadata?: unknown;
+    additional_data?: unknown;
+    is_primary?: boolean;
+    [key: string]: unknown;
 }
 
 /**
- * Input type for compliance information
+ * Input type for compliance data
  */
 export interface ComplianceInput {
-  compliance_type: string;
-  certificate_url: string;
-  certified_at?: string | Date;
-  expires_at?: string | Date | null;
-  notes?: string;
+    compliance_type?: string;
+    certificate_url?: string;
+    certified_at?: string | Date;
+    expires_at?: string | Date | null;
+    notes?: string;
+    [key: string]: unknown;
 }
 
 /**
- * Input type for validation records
+ * Input type for validation data
  */
 export interface ValidationInput {
-  type?: string;
-  status?: string;
-  test_results?: string;
-  certification_info?: string;
-  notes?: string;
-  is_compliant?: boolean;
+    test_results?: string | Record<string, unknown>;
+    certification_info?: string | string[];
+    notes?: string;
+    is_compliant?: boolean;
+    [key: string]: unknown;
 }
 
 /**
- * Export utility types from postgres.js
+ * Database-safe versions of schema types that avoid type conflicts
+ * Used for database operations where JSON compatibility is required
  */
-export type { Row } from 'postgres'; 
+export interface DbElectricalProperties extends Record<string, unknown> {
+    resistance?: number;
+    capacitance?: number;
+    inductance?: number;
+    impedance?: number;
+    frequency?: number;
+    frequency_unit?: string;
+    dielectric_constant?: number;
+    dielectric_strength?: number;
+    polarized?: boolean;
+    notes?: string;
+}
+
+export interface DbMechanicalProperties extends Record<string, unknown> {
+    hardness?: number;
+    tensile_strength?: number;
+    compression_strength?: number;
+    material_density?: number;
+    finish?: string;
+    surface_treatment?: string;
+    vibration_resistance?: string;
+    shock_resistance?: string;
+    ip_rating?: string;
+    notes?: string;
+}
+
+export interface DbThermalProperties extends Record<string, unknown> {
+    thermal_resistance?: number;
+    thermal_conductivity?: number;
+    specific_heat?: number;
+    thermal_expansion?: number;
+    thermal_time_constant?: number;
+    heat_dissipation?: number;
+    notes?: string;
+}
+
+export interface DbEnvironmentalData extends Record<string, unknown> {
+    rohs_compliant?: boolean;
+    reach_compliant?: boolean;
+    halogen_free?: boolean;
+    moisture_sensitivity_level?: number;
+    flammability_rating?: string;
+    notes?: string;
+}
+
+/**
+ * Dynamic record type for flexible object structures
+ */
+export type DynamicRecord = Record<string, unknown>;
+
+/**
+ * Type for field values that can be processed for database storage
+ * Used to replace 'any' types in various field processors
+ */
+export type ProcessableFieldValue = string | number | boolean | null | undefined | JsonValue | Record<string, unknown>;
+
+/**
+ * Type for database update values in key-value form
+ * Used to replace 'any' in Record<string, any> contexts
+ */
+export type DbUpdateValue = string | number | boolean | null | JsonValue | postgres.Serializable; 

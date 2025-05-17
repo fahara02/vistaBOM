@@ -19,17 +19,23 @@ export type {
 export type {
   PostgresTransaction,
   DbRow,
-  DynamicRecord,
-  JsonFieldProcessor,
-  NumericFieldProcessor,
   UpdateValues,
   JsonFields,
+  JsonFieldProcessor,
+  NumericFieldProcessor,
+  DynamicRecord,
   ManufacturerPartInput,
   SupplierPartInput,
   AttachmentInput,
   RepresentationInput,
   ComplianceInput,
-  ValidationInput
+  ValidationInput,
+  DbElectricalProperties,
+  DbMechanicalProperties,
+  DbThermalProperties,
+  DbEnvironmentalData,
+  ProcessableFieldValue,
+  DbUpdateValue
 } from './db-types';
 
 // Enum type definitions
@@ -43,9 +49,6 @@ export type {
   PartFormData,
   PartVersionFormData
 } from './formTypes';
-
-// Contact information types with explicit naming
-export type { ContactInfo as ContactDetails } from './contact';
 
 // Import types from schemaTypes.ts
 import type {
