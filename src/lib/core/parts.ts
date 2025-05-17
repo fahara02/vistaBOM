@@ -9,15 +9,109 @@ import { PART_ERRORS } from './parts/partErrors';
 
 // Import schema-defined types for type safety
 import type {
-  CreatePartVersion,
-  PartVersion as SchemaPartVersion,
-  PartVersionBase,
-  JsonValue,
-  Part as SchemaPart
+    JsonValue,
+    PartVersion as SchemaPartVersion
 } from '$lib/types/schemaTypes';
 
 // Import primitive types
 import type { Dimensions, MaterialComposition } from '$lib/types/primitive';
+
+// Import enums from enums.ts
+import {
+    ComplianceTypeEnum,
+    DimensionUnitEnum,
+    LifecycleStatusEnum,
+    MountingTypeEnum,
+    PackageTypeEnum,
+    PartStatusEnum,
+    StructuralRelationTypeEnum,
+    TemperatureUnitEnum,
+    WeightUnitEnum
+} from '$lib/types/enums';
+
+// Define a tolerance unit enum if it doesn't exist elsewhere
+enum ToleranceUnitEnum {
+    PERCENT = 'percent',
+    PPM = 'ppm',
+    ABSOLUTE = 'absolute'
+}
+
+// Import types from schemaTypes.ts with type-only imports
+import type {
+    ElectricalProperties,
+    EnvironmentalData,
+    MechanicalProperties,
+    Part,
+    PartVersion,
+    ThermalProperties
+} from '$lib/types/schemaTypes';
+
+// Import schemas for type inference
+import type { PartFormData } from '$lib/types/formTypes';
+
+// Import utility types
+import type {
+    AttachmentInput,
+    ComplianceInput,
+    DbRow,
+    DbUpdateValue,
+    ValidationInput as DbValidationInput,
+    JsonFieldProcessor,
+    ManufacturerPartInput,
+    NumericFieldProcessor,
+    PostgresTransaction,
+    RepresentationInput,
+    SupplierPartInput
+} from '$lib/types/types';
+
+// Import database entity types
+
+// Import part module types and functions
+import {
+    createPartStructure
+} from './parts/partStructure';
+
+import {
+    createPartCompliance
+} from './parts/partCompliance';
+
+import {
+    createPartAttachment
+} from './parts/partAttachment';
+
+import {
+    createPartRepresentation
+} from './parts/partRepresentation';
+
+import {
+    createPartValidation
+} from './parts/partValidation';
+
+import {
+    createPartVersionTag
+} from './parts/partVersionTag';
+
+import {
+    createPartCustomField
+} from './parts/partCustomField';
+
+import {
+    createManufacturerPart
+} from './parts/manufacturerPart';
+
+import {
+    createSupplierPart
+} from './parts/supplierPart';
+
+import {
+    createPartRevision,
+} from './parts/partRevision';
+
+import {
+    addPartToFamily
+} from './parts/partFamily';
+
+
 
 // JSON field serialization/deserialization helper functions
 /**
@@ -229,42 +323,7 @@ function convertDimensionsToJsonValue(dimensions: Dimensions | null): JsonValue 
     return JSON.parse(JSON.stringify(jsonDimensions));
 }
 
-// Import enums from enums.ts
-import {
-    LifecycleStatusEnum,
-    MountingTypeEnum,
-    PackageTypeEnum,
-    PartStatusEnum,
-    TemperatureUnitEnum,
-    WeightUnitEnum,
-    DimensionUnitEnum,
-    StructuralRelationTypeEnum,
-    ComplianceTypeEnum
-} from '$lib/types/enums';
 
-// Define a tolerance unit enum if it doesn't exist elsewhere
-enum ToleranceUnitEnum {
-    PERCENT = 'percent',
-    PPM = 'ppm',
-    ABSOLUTE = 'absolute'
-}
-
-// Import types from schemaTypes.ts with type-only imports
-import type {
-    Part,
-    PartVersion,
-    ElectricalProperties,
-    MechanicalProperties,
-    ThermalProperties,
-    EnvironmentalData,
-    ManufacturerPart,
-    SupplierPart
-} from '$lib/types/schemaTypes';
-
-// Import schemas for type inference
-import { createPartSchema, partVersionSchema } from '$lib/schema/schema';
-import type { PartFormData } from '$lib/types/formTypes';
-import type { z } from 'zod';
 
 // Create a combined type that includes all fields from both schemas
 type ExtendedPartFormData = PartFormData;
@@ -322,126 +381,8 @@ function processNumericField(value: string | number | undefined | null): number 
 }
 
 // Import transaction types
-import type { Parameter } from 'postgres';
 
-// Import utility types
-import type { 
-    PostgresTransaction,
-    DbRow,
-    JsonFieldProcessor,
-    NumericFieldProcessor,
-    ManufacturerPartInput,
-    SupplierPartInput,
-    AttachmentInput,
-    RepresentationInput,
-    ComplianceInput,
-    ValidationInput as DbValidationInput,
-    DbUpdateValue
-} from '$lib/types/types';
 
-// Import database entity types
-import type {
-    DbPartVersionCategory,
-    DbPartAttachment, 
-    DbPartRepresentation,
-    DbPartVersionTag,
-    DbPartCustomField
-} from '$lib/types/types';
-
-// Import part module types and functions
-import { 
-    createPartStructure, 
-    getPartStructure, 
-    getPartStructuresForPart, 
-    updatePartStructure, 
-    deletePartStructure 
-} from './parts/partStructure';
-
-import { 
-    createPartCompliance, 
-    getPartComplianceById, 
-    getPartCompliancesByPartVersion,
-    updatePartCompliance, 
-    deletePartCompliance 
-} from './parts/partCompliance';
-
-import { 
-    createPartAttachment, 
-    getPartAttachmentById, 
-    getPartAttachmentsByPartVersion,
-    updatePartAttachment, 
-    deletePartAttachment 
-} from './parts/partAttachment';
-
-import { 
-    createPartRepresentation, 
-    getPartRepresentationById, 
-    getPartRepresentationsByPartVersion,
-    updatePartRepresentation, 
-    deletePartRepresentation 
-} from './parts/partRepresentation';
-
-import { 
-    createPartValidation, 
-    getPartValidationById, 
-    getPartValidationsByPartVersion,
-    updatePartValidationStatus, 
-    deletePartValidation 
-} from './parts/partValidation';
-
-import { 
-    createPartVersionTag, 
-    getPartVersionTagById, 
-    getPartVersionTags,
-    findPartVersionsByTag, 
-    updatePartVersionTag, 
-    deletePartVersionTag 
-} from './parts/partVersionTag';
-
-import { 
-    createPartCustomField, 
-    getPartCustomFieldById, 
-    getPartCustomFields,
-    updatePartCustomFieldValue, 
-    updatePartCustomFieldMetadata, 
-    deletePartCustomField 
-} from './parts/partCustomField';
-
-import { 
-    createManufacturerPart, 
-    getManufacturerPartById, 
-    getManufacturerPartsByPartVersion,
-    updateManufacturerPart, 
-    deleteManufacturerPart 
-} from './parts/manufacturerPart';
-
-import { 
-    createSupplierPart, 
-    getSupplierPartById, 
-    getSupplierPartsByPartVersion,
-    updateSupplierPart, 
-    deleteSupplierPart 
-} from './parts/supplierPart';
-
-import { 
-    createPartRevision, 
-    getPartRevisionById, 
-    getPartRevisionsByPartVersion,
-    updatePartRevision
-} from './parts/partRevision';
-
-import { 
-    addPartToFamily,
-    removePartFromFamily,
-    getPartFamiliesForPart
-} from './parts/partFamily';
-
-type PartUIHelpers = {
-    categories?: Array<{ id: string; name: string }>;
-    manufacturerParts?: Array<{ manufacturerId: string; partNumber: string; manufacturerName?: string }>;
-    supplierParts?: Array<{ supplierId: string; partNumber: string; supplierName?: string }>;
-    custom_fields?: Record<string, unknown>;
-}
 
 /**
  * Normalizes database row data into a Part object
