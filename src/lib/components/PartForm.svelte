@@ -1,39 +1,38 @@
 <!-- src/lib/components/PartForm.svelte -->
 
 <script lang="ts">
-import type { categoryClientSchema as categorySchema } from '$lib/schema/shared';
-import type { manufacturerSchema } from '$lib/server/db/schema';
-import { createPartSchema } from '$lib/schema/shared';
+import { createPartSchema } from '$lib/schema/schema';
+import type { Category, Manufacturer } from '$lib/types/types';
 import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, TemperatureUnitEnum, WeightUnitEnum, type Dimensions } from '@/types/types';
-import { onMount, createEventDispatcher } from 'svelte';
+import { createEventDispatcher, onMount } from 'svelte';
 import { superForm } from 'sveltekit-superforms/client';
 import type { z } from 'zod';
+import { prepareFormDataForValidation } from '../utils/formUtils';
 import ManufacturerSelector from './ManufacturerSelector.svelte';
 import MultiCategorySelector from './MultiCategorySelector.svelte';
-import { prepareFormDataForValidation } from '../utils/formUtils';
 
 // Event dispatcher to send form updates to parent component
 const dispatch = createEventDispatcher<{
   formUpdate: Record<string, any>;
 }>();
 
-// DECLARATION OF TYPES 
-type SnakeCasePartSchema = z.infer<typeof createPartSchema>;
-// Define Category and Manufacturer types based on schema
-type Category = z.infer<typeof categorySchema>;
-// Define Manufacturer type with proper handling of null/undefined
-type Manufacturer = {
-  id: string;
-  name: string;
-  created_at: Date;
-  updated_at: Date;
-  description?: string | undefined;  // Remove null to match expected type
-  created_by?: string | undefined;
-  updated_by?: string | undefined;
-  website_url?: string | undefined;
-  contact_info?: any;
-  logo_url?: string | undefined;
-};
+// // DECLARATION OF TYPES 
+ type SnakeCasePartSchema = z.infer<typeof createPartSchema>;
+// // Define Category and Manufacturer types based on schema
+// type Category = z.infer<typeof categorySchema>;
+// // Define Manufacturer type with proper handling of null/undefined
+// type Manufacturer = {
+//   id: string;
+//   name: string;
+//   created_at: Date;
+//   updated_at: Date;
+//   description?: string | undefined;  // Remove null to match expected type
+//   created_by?: string | undefined;
+//   updated_by?: string | undefined;
+//   website_url?: string | undefined;
+//   contact_info?: any;
+//   logo_url?: string | undefined;
+// };
 // Updated type based on new schema
 type PartsFormData = Omit<SnakeCasePartSchema, 'lifecycle_status'> & {
   id?: string;
