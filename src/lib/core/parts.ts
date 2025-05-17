@@ -2147,17 +2147,20 @@ export async function createPartVersion(partVersion: PartVersionInput): Promise<
         // Helper function to safely convert values for PostgreSQL JSON
         const toPostgresJson = <T>(value: T | string | null | undefined): JsonValue | null => {
             if (value === undefined || value === null) return null;
+            
             // If the value is already a string representation of JSON, parse it first
             if (typeof value === 'string') {
                 try {
+                    // Valid JSON string - parse it
                     return JSON.parse(value) as JsonValue;
                 } catch (e) {
-                    // If not valid JSON, treat as a simple string value
-                    return value as unknown as JsonValue;
+                    // Not valid JSON, return the string directly since strings are valid JsonValue
+                    return value;
                 }
             }
-            // Otherwise return the value directly
-            return value as unknown as JsonValue;
+            
+            // For non-string values, use JSON.stringify and parse back to ensure it's a valid JsonValue
+            return JSON.parse(JSON.stringify(value));
         };
         
         // Helper function to safely convert number values
