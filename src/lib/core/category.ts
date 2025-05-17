@@ -2,7 +2,13 @@
  * Core functionality for category management
  */
 import sql from '$lib/server/db';
-import type { Category, JsonValue } from '$lib/types/types';
+import crypto from 'crypto';
+
+// Import schema-driven types
+import type { Category } from '$lib/types/schemaTypes';
+
+// Import JSON specific types
+import type { JsonValue } from '$lib/types/primitive';
 
 /**
  * Error messages for category operations
@@ -24,8 +30,9 @@ export const CATEGORY_ERRORS = {
 /**
  * Extended Category interface for internal use with both camelCase and snake_case properties
  * This provides backwards compatibility with existing code while maintaining type safety
+ * Uses schema-driven design from categorySchema
  */
-interface CategoryWithId {
+interface CategoryWithId extends Omit<Category, 'custom_fields'> {
     // Standard API properties (camelCase)
     id: string;
     name: string;
@@ -47,9 +54,9 @@ interface CategoryWithId {
     partsCount?: number;
     depth?: number;
     breadcrumbs?: CategoryWithId[];
-    customFields?: Record<string, JsonValue>;
+    customFields?: Record<string, JsonValue> | null;
     
-    // Database column names for direct mapping (snake_case)
+    // Database column names (snake_case) - extended from Category with more precise null handling
     category_id: string;
     category_name: string;
     parent_id: string | null;
@@ -63,6 +70,7 @@ interface CategoryWithId {
     is_deleted: boolean;
     deleted_at: Date | null;
     deleted_by: string | null;
+    custom_fields?: Record<string, JsonValue> | null; // Strongly typed JSON field
     
     // Database join fields
     parent_name?: string;
@@ -90,6 +98,13 @@ function sanitizeLtreeLabel(name: string): string {
  * @param params - Category creation parameters
  * @returns Newly created category
  */
+/**
+ * Create a new category with all its properties
+ * 
+ * @param params Parameters for category creation
+ * @returns Newly created category with normalized structure
+ * @throws Error if validation fails or database operation fails
+ */
 export async function createCategory(params: {
     name: string;
     createdBy: string;
@@ -108,6 +123,9 @@ export async function createCategory(params: {
     } = params;
 
     try {
+        // Generate a UUID for the new category
+        const id = crypto.randomUUID();
+        
         // Check parent category exists if specified
         if (parentId) {
             const parentExists = await sql`
@@ -134,7 +152,8 @@ export async function createCategory(params: {
                 throw new Error(CATEGORY_ERRORS.INVALID_PARENT);
             }
             
-            path = `${parentResult[0].category_path}.${sanitizedLabel}`;
+            const parentPath = parentResult[0].category_path;
+            path = `${parentPath}.${sanitizedLabel}`;
         } else {
             // For root categories, use the sanitized label as path
             path = sanitizedLabel;
@@ -145,22 +164,31 @@ export async function createCategory(params: {
             // Insert the main category record
             const categoryResult = await sql`
                 INSERT INTO "Category" (
+                    category_id,
                     category_name,
                     parent_id,
                     category_description,
                     category_path,
                     created_by,
+                    created_at,
                     updated_by,
-                    is_public
-                )
-                VALUES (
+                    updated_at,
+                    is_public,
+                    is_deleted,
+                    custom_fields
+                ) VALUES (
+                    ${id},
                     ${name},
                     ${parentId || null},
                     ${description},
                     ${path},
                     ${createdBy},
+                    NOW(),
                     ${createdBy},
-                    ${isPublic}
+                    NOW(),
+                    ${isPublic},
+                    false,
+                    ${customFields ? JSON.stringify(customFields) : null}::jsonb
                 )
                 RETURNING *
             `;
@@ -217,11 +245,45 @@ export async function createCategory(params: {
 }
 
 /**
+ * Type definition for database row data to ensure type safety
+ */
+type DbRow = Record<string, unknown>;
+
+/**
+ * Helper function to safely deserialize custom fields from database JSON
+ * @param json The JSON value from the database
+ * @returns Typed custom fields object or null
+ */
+function deserializeCustomFields(json: unknown | null | undefined): Record<string, JsonValue> | null {
+    if (!json) return null;
+    
+    try {
+        // Handle string JSON
+        if (typeof json === 'string') {
+            return JSON.parse(json) as Record<string, JsonValue>;
+        }
+        
+        // Already an object
+        if (typeof json === 'object') {
+            return json as Record<string, JsonValue>;
+        }
+        
+        // Default case
+        return null;
+    } catch (error) {
+        console.error('[deserializeCustomFields] Error deserializing custom fields:', error);
+        return null;
+    }
+}
+
+/**
  * Helper function to map database rows to Category objects with normalized property names
+ * Uses type-safe deserialization for complex JSON fields
+ * 
  * @param row - Raw database row
  * @returns Normalized category object
  */
-function normalizeCategory(row: Record<string, unknown>): CategoryWithId {
+function normalizeCategory(row: DbRow): CategoryWithId {
     // Ensure we have all required fields or throw an error
     if (!row.category_id || !row.category_name || !row.category_path ||
         !row.created_by || !row.created_at || !row.updated_at) {
@@ -239,6 +301,19 @@ function normalizeCategory(row: Record<string, unknown>): CategoryWithId {
         (row.deleted_at instanceof Date ? row.deleted_at : new Date(row.deleted_at as string)) : 
         null;
 
+    // Process custom fields with type safety
+    const customFields = deserializeCustomFields(row.custom_fields);
+    
+    // Helper function to safely convert string numbers to number type
+    function safeParseInt(value: unknown): number | undefined {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+            const parsed = parseInt(value, 10);
+            return isNaN(parsed) ? undefined : parsed;
+        }
+        return undefined;
+    }
+    
     // Create a normalized category object with both styles of property names
     const category: CategoryWithId = {
         // Standard API properties (camelCase)
@@ -256,16 +331,14 @@ function normalizeCategory(row: Record<string, unknown>): CategoryWithId {
         deletedAt: deleted_at || undefined,
         deletedBy: (row.deleted_by as string) || undefined,
         
-        // UI helper properties from joins
+        // UI helper properties from joins with safer parsing
         parentName: (row.parent_name as string) || undefined,
-        childCount: typeof row.child_count === 'number' ? row.child_count as number : 
-                    typeof row.child_count === 'string' ? parseInt(row.child_count, 10) : undefined,
-        partsCount: typeof row.parts_count === 'number' ? row.parts_count as number : 
-                    typeof row.parts_count === 'string' ? parseInt(row.parts_count, 10) : undefined,
-        depth: typeof row.depth === 'number' ? row.depth as number : 
-               typeof row.depth === 'string' ? parseInt(row.depth, 10) : undefined,
+        childCount: safeParseInt(row.child_count),
+        partsCount: safeParseInt(row.parts_count),
+        depth: safeParseInt(row.depth),
+        customFields: customFields,
         
-        // Database column names (snake_case)
+        // Database column names (snake_case) with proper typing
         category_id: row.category_id as string,
         category_name: row.category_name as string,
         parent_id: (row.parent_id as string) || null,
@@ -279,13 +352,12 @@ function normalizeCategory(row: Record<string, unknown>): CategoryWithId {
         is_deleted: Boolean(row.is_deleted),
         deleted_at: deleted_at,
         deleted_by: (row.deleted_by as string) || null,
+        custom_fields: customFields,
         
-        // Database join fields
+        // Database join fields with safer parsing
         parent_name: (row.parent_name as string) || undefined,
-        child_count: typeof row.child_count === 'number' ? row.child_count as number : 
-                     typeof row.child_count === 'string' ? parseInt(row.child_count, 10) : undefined,
-        parts_count: typeof row.parts_count === 'number' ? row.parts_count as number : 
-                     typeof row.parts_count === 'string' ? parseInt(row.parts_count, 10) : undefined
+        child_count: safeParseInt(row.child_count),
+        parts_count: safeParseInt(row.parts_count)
     };
 
     return category;
@@ -316,6 +388,15 @@ export async function getCategory(id: string): Promise<CategoryWithId | null> {
  * @param updates - Fields to update
  * @param userId - ID of user making the update
  * @returns Updated category with normalized structure
+ */
+/**
+ * Update an existing category with improved type safety
+ * 
+ * @param id Category UUID to update
+ * @param updates Fields to update with proper typing
+ * @param userId User making the update (for audit trail)
+ * @returns Updated category with normalized structure
+ * @throws Error if category not found or validation fails
  */
 export async function updateCategory(
     id: string,
@@ -543,6 +624,16 @@ export async function getCategoryChildren(categoryId: string): Promise<CategoryW
 }
 
 // Move category hierarchy with full transaction support
+/**
+ * Move a category to a new parent with full transaction support
+ * Updates category path and closure table atomically
+ * 
+ * @param categoryId The ID of the category to move
+ * @param newParentId The ID of the new parent, or null for root level
+ * @param userId User making the change (for audit trail)
+ * @returns Updated category with new path information
+ * @throws Error if validation fails (e.g., circular reference)
+ */
 export async function moveCategory(
     categoryId: string,
     newParentId: string | null,
@@ -603,6 +694,7 @@ export async function moveCategory(
                 throw error; // Re-throw specific errors as is
             }
         }
+        
         console.error(`Error moving category ${categoryId}:`, error);
         throw new Error(`${CATEGORY_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -646,20 +738,28 @@ export async function getCategoryBreadcrumbs(categoryId: string): Promise<Catego
 
 // Helper function to check descendant relationship
 async function isDescendant(
-	ancestorId: string,
-	descendantId: string
+    ancestorId: string,
+    descendantId: string
 ): Promise<boolean> {
-	const result = await sql`
-		SELECT 1 FROM "CategoryClosure"
-		WHERE ancestor_id = ${ancestorId} AND descendant_id = ${descendantId}
-	`;
-	return result.length > 0;
+    const result = await sql`
+        SELECT 1 FROM "CategoryClosure"
+        WHERE ancestor_id = ${ancestorId} AND descendant_id = ${descendantId}
+    `;
+    return result.length > 0;
 }
 
 /**
  * Search categories by name with optional filters
  * @param params - Search parameters
  * @returns Array of matching categories
+ */
+/**
+ * Search categories by name with optimized performance
+ * Uses PostgreSQL trigram similarity for fuzzy matching
+ * 
+ * @param params Search parameters with filtering options
+ * @returns Array of matching categories with normalized structure
+ * @throws Error if search operation fails
  */
 export async function searchCategories(params: {
     query: string;
@@ -827,8 +927,9 @@ export async function updateCategoryCustomFields(
                 else if (fieldValue instanceof Date) dataType = 'date';
 
                 // Convert to JSON string for storage
-                const storedValue = typeof fieldValue === 'object' ? 
-                    JSON.stringify(fieldValue) : String(fieldValue);
+                const storedValue = typeof fieldValue === 'object' 
+                    ? JSON.stringify(fieldValue) 
+                    : String(fieldValue);
 
                 await sql`
                     INSERT INTO "CategoryCustomField" (
@@ -868,12 +969,16 @@ export async function updateCategoryCustomFields(
  */
 export async function getCategoryWithCounts(categoryId: string): Promise<CategoryWithId | null> {
     try {
+        /**
+         * Execute query with JOINs for efficient data retrieval
+         * Gets category details with parent name and counts in a single query
+         */
         const result = await sql`
-            SELECT 
-                c.*,
-                p.category_name as parent_name,
-                (SELECT COUNT(*) FROM "Category" WHERE parent_id = c.category_id AND is_deleted = false) as child_count,
-                (SELECT COUNT(*) FROM "PartVersionCategory" pvc WHERE pvc.category_id = c.category_id) as parts_count
+            SELECT c.*, p.category_name as parent_name,
+                (SELECT COUNT(*) FROM "Category" cc WHERE cc.parent_id = c.category_id AND cc.is_deleted = false) as child_count,
+                (SELECT COUNT(*) FROM "PartVersionCategory" pvc 
+                 JOIN "PartVersion" pv ON pvc.part_version_id = pv.part_version_id 
+                 WHERE pvc.category_id = c.category_id) as parts_count
             FROM "Category" c
             LEFT JOIN "Category" p ON c.parent_id = p.category_id
             WHERE c.category_id = ${categoryId} AND c.is_deleted = false

@@ -2,7 +2,10 @@
  * Core functionality for supplier management
  */
 import sql from '$lib/server/db';
-import type { JsonValue, Supplier, SupplierFormData } from '$lib/types/types';
+import crypto from 'crypto';
+// Import schema-defined types for type safety
+import type { JsonValue, Supplier } from '$lib/types/schemaTypes';
+import type { SupplierFormData } from '$lib/types/formTypes';
 
 /**
  * Extended Supplier interface for internal use with both camelCase and snake_case properties
@@ -16,27 +19,27 @@ interface SupplierWithId {
     // Core supplier data (both formats)
     name: string;
     supplier_name: string;
-    description?: string | undefined;
-    supplier_description?: string | undefined;
-    websiteUrl?: string | undefined;
-    website_url?: string | undefined;
-    logoUrl?: string | undefined;
-    logo_url?: string | undefined;
+    description?: string | null | undefined;
+    supplier_description?: string | null | undefined;
+    websiteUrl?: string | null | undefined;
+    website_url?: string | null | undefined;
+    logoUrl?: string | null | undefined;
+    logo_url?: string | null | undefined;
     
     // Contact information (both formats)
-    contactInfo?: Record<string, JsonValue> | undefined;
-    contact_info?: Record<string, JsonValue> | undefined;
+    contactInfo?: JsonValue | null | undefined;
+    contact_info?: JsonValue | null | undefined;
     
-    // Custom fields
+    // Custom fields - always a non-null object to avoid type issues
     customFields: Record<string, JsonValue>;
     
     // Metadata fields (both formats)
-    createdBy?: string | undefined;
-    created_by?: string | undefined;
+    createdBy: string;
+    created_by: string;
     createdAt: Date;
     created_at: Date;
-    updatedBy?: string | undefined;
-    updated_by?: string | undefined;
+    updatedBy?: string | null | undefined;
+    updated_by?: string | null | undefined;
     updatedAt: Date;
     updated_at: Date;
 }
@@ -57,7 +60,96 @@ export const SUPPLIER_ERRORS = {
  * @param row - Raw database row
  * @returns Normalized supplier object
  */
-function normalizeSupplier(row: Record<string, unknown>): SupplierWithId {
+/**
+ * Type definition for database row data to ensure type safety
+ */
+type DbRow = Record<string, unknown>;
+
+/**
+ * Helper function to safely deserialize contact info from database JSON
+ * @param json The JSON value from the database
+ * @returns Typed contact info object or null
+ */
+function deserializeContactInfo(json: unknown | null | undefined): JsonValue | null {
+    if (!json) return null;
+    
+    try {
+        // Handle string JSON
+        if (typeof json === 'string') {
+            return JSON.parse(json) as JsonValue;
+        }
+        
+        // Already an object
+        if (typeof json === 'object') {
+            return json as JsonValue;
+        }
+        
+        // Default case
+        return null;
+    } catch (error) {
+        console.error('[deserializeContactInfo] Error deserializing contact info:', error);
+        return null;
+    }
+}
+
+/**
+ * Helper function to safely deserialize custom fields from database JSON
+ * @param json The JSON value from the database
+ * @returns Typed custom fields object or null
+ */
+function deserializeCustomFields(json: unknown | null | undefined): Record<string, JsonValue> | null {
+    if (!json) return null;
+    
+    try {
+        // Handle string JSON
+        if (typeof json === 'string') {
+            return JSON.parse(json) as Record<string, JsonValue>;
+        }
+        
+        // Already an object
+        if (typeof json === 'object') {
+            return json as Record<string, JsonValue>;
+        }
+        
+        // Default case
+        return null;
+    } catch (error) {
+        console.error('[deserializeCustomFields] Error deserializing custom fields:', error);
+        return null;
+    }
+}
+
+/**
+ * Convert SupplierWithId to schema-compatible Supplier
+ * This function handles type compatibility between our extended interface and the schema type
+ * 
+ * @param supplier - The extended supplier object or a partial supplier object
+ * @returns A schema-compatible supplier object
+ */
+export function toSchemaSupplier(supplier: Partial<SupplierWithId> & { 
+    supplier_id: string; 
+    supplier_name: string; 
+    created_at: Date; 
+    updated_at: Date; 
+    created_by: string;
+}): Supplier {
+    // Create a schema-compatible supplier object
+    return {
+        supplier_id: supplier.supplier_id,
+        supplier_name: supplier.supplier_name,
+        supplier_description: supplier.supplier_description !== null && supplier.supplier_description !== undefined ? supplier.supplier_description : undefined,
+        website_url: supplier.website_url !== null && supplier.website_url !== undefined ? supplier.website_url : undefined,
+        contact_info: supplier.contact_info !== null && supplier.contact_info !== undefined ? supplier.contact_info : undefined,
+        logo_url: supplier.logo_url !== null && supplier.logo_url !== undefined ? supplier.logo_url : undefined,
+        created_by: supplier.created_by,
+        created_at: supplier.created_at,
+        updated_by: supplier.updated_by !== null && supplier.updated_by !== undefined ? supplier.updated_by : undefined,
+        updated_at: supplier.updated_at,
+        custom_fields: supplier.customFields || {}
+    };
+}
+
+function normalizeSupplier(row: DbRow): SupplierWithId {
     // Convert JSONB fields properly
     const contactInfo = row.contact_info ? 
         (typeof row.contact_info === 'string' ? 
@@ -77,6 +169,15 @@ function normalizeSupplier(row: Record<string, unknown>): SupplierWithId {
             row.created_at : 
             new Date(row.created_at as string)) : 
         new Date();
+    
+    // Extract and validate created_by field
+    // Following TypeScript best practices with proper type narrowing
+    let createdByValue: string;
+    if (row.created_by !== null && row.created_by !== undefined && String(row.created_by).trim() !== '') {
+        createdByValue = String(row.created_by).trim();
+    } else {
+        createdByValue = 'system';
+    }
     
     const updatedDate = row.updated_at ? 
         (row.updated_at instanceof Date ? 
@@ -98,10 +199,11 @@ function normalizeSupplier(row: Record<string, unknown>): SupplierWithId {
         logoUrl: row.logo_url as string | undefined,
         logo_url: row.logo_url as string | undefined, // Match with SupplierFormData 
         customFields: customFields,
-        createdBy: row.created_by as string | undefined,
-        created_by: row.created_by as string | undefined, // Match with SupplierFormData
-        createdAt: createdDate,
-        created_at: createdDate, // Match with SupplierFormData
+        // Both fields must be strings per the interface definition
+        createdBy: createdByValue,
+        created_by: createdByValue,
+        createdAt: createdDate as Date, // Explicit type assertion to avoid type error
+        created_at: createdDate as Date, // Match with SupplierFormData and ensure proper type
         updatedBy: row.updated_by as string | undefined,
         updated_by: row.updated_by as string | undefined, // Match with SupplierFormData
         updatedAt: updatedDate,
@@ -123,7 +225,7 @@ export async function createSupplier(
         logoUrl?: string;
         createdBy: string;
     }
-): Promise<SupplierWithId> {
+): Promise<Supplier> {
     try {
         // Validate input
         if (!params.name?.trim()) {
@@ -155,7 +257,8 @@ export async function createSupplier(
             throw new Error(SUPPLIER_ERRORS.GENERAL_ERROR + ': Failed to create supplier');
         }
 
-        return normalizeSupplier(result[0]);
+        const supplier = normalizeSupplier(result[0]);
+        return toSchemaSupplier(supplier);
     } catch (error) {
         // Handle specific known errors
         if (error instanceof Error) {
@@ -177,7 +280,7 @@ export async function createSupplier(
  * @param id - Supplier UUID
  * @returns The supplier with normalized structure or null if not found
  */
-export async function getSupplier(id: string): Promise<SupplierWithId | null> {
+export async function getSupplier(id: string): Promise<Supplier | null> {
     try {
         const result = await sql`
             SELECT 
@@ -191,7 +294,11 @@ export async function getSupplier(id: string): Promise<SupplierWithId | null> {
             FROM "Supplier" s
             WHERE s.id = ${id}
         `;
-        return result.length > 0 ? normalizeSupplier(result[0]) : null;
+        if (result.length > 0) {
+            const supplier = normalizeSupplier(result[0]);
+            return toSchemaSupplier(supplier);
+        }
+        return null;
     } catch (error) {
         console.error(`Error fetching supplier ${id}:`, error);
         throw new Error(`${SUPPLIER_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -201,21 +308,21 @@ export async function getSupplier(id: string): Promise<SupplierWithId | null> {
 /**
  * Update an existing supplier
  * @param id - Supplier UUID
- * @param updates - Fields to update
+ * @param params - Fields to update
  * @param userId - ID of user making the update
  * @returns Updated supplier with normalized structure
  */
 export async function updateSupplier(
     id: string,
-    updates: {
+    params: {
         name?: string;
-        description?: string | null;
-        websiteUrl?: string | null;
-        contactInfo?: Record<string, JsonValue> | null;
-        logoUrl?: string | null;
-    },
-    userId: string
-): Promise<SupplierWithId> {
+        description?: string;
+        websiteUrl?: string;
+        contactInfo?: Record<string, JsonValue>;
+        logoUrl?: string;
+        updatedBy: string;
+    }
+): Promise<Supplier | null> {
     // First check that the supplier exists
     const existing = await getSupplier(id);
     if (!existing) {
@@ -223,33 +330,33 @@ export async function updateSupplier(
     }
 
     // Return early if no updates
-    if (Object.keys(updates).length === 0) {
-        return existing;
+    if (Object.keys(params).length === 0) {
+        return await getSupplier(id);
     }
     
     try {
         // Build the SET parts of the query using a safer approach with sql fragments
-        let query = sql`UPDATE "Supplier" SET updated_by = ${userId}, updated_at = NOW()`;
+        let query = sql`UPDATE "Supplier" SET updated_by = ${params.updatedBy}, updated_at = NOW()`;
         
         // Conditionally add each field to update
-        if (updates.name !== undefined) {
-            query = sql`${query}, name = ${updates.name}`;
+        if (params.name !== undefined) {
+            query = sql`${query}, name = ${params.name}`;
         }
         
-        if (updates.description !== undefined) {
-            query = sql`${query}, description = ${updates.description}`;
+        if (params.description !== undefined) {
+            query = sql`${query}, description = ${params.description}`;
         }
         
-        if (updates.websiteUrl !== undefined) {
-            query = sql`${query}, website_url = ${updates.websiteUrl}`;
+        if (params.websiteUrl !== undefined) {
+            query = sql`${query}, website_url = ${params.websiteUrl}`;
         }
         
-        if (updates.contactInfo !== undefined) {
-            query = sql`${query}, contact_info = ${updates.contactInfo ? sql.json(updates.contactInfo) : null}`;
+        if (params.contactInfo !== undefined) {
+            query = sql`${query}, contact_info = ${params.contactInfo ? sql.json(params.contactInfo) : null}`;
         }
         
-        if (updates.logoUrl !== undefined) {
-            query = sql`${query}, logo_url = ${updates.logoUrl}`;
+        if (params.logoUrl !== undefined) {
+            query = sql`${query}, logo_url = ${params.logoUrl}`;
         }
         
         // Complete the query
@@ -334,7 +441,7 @@ export async function listSuppliers(options?: {
     offset?: number; 
     nameFilter?: string;
     userId?: string; // Optional user ID to filter by created_by
-}): Promise<SupplierWithId[]> {
+}): Promise<Supplier[]> {
     try {
         // Build query conditionally based on options
         let query = sql`
@@ -372,7 +479,20 @@ export async function listSuppliers(options?: {
         }
         
         const result = await query;
-        return result.map(normalizeSupplier);
+
+// Ensure we have valid suppliers with required fields
+const validSuppliers = result.map(row => {
+    const supplier = normalizeSupplier(row);
+    // Make sure created_by is always a string
+    if (!supplier.created_by) {
+        supplier.created_by = 'system';
+        supplier.createdBy = 'system';
+    }
+    return supplier;
+});
+
+// Convert to schema-compatible type
+return validSuppliers.map(supplier => toSchemaSupplier(supplier));
     } catch (error) {
         console.error('Error listing suppliers:', error);
         throw new Error(`${SUPPLIER_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -410,13 +530,13 @@ export async function getSupplierCustomFields(supplierId: string): Promise<Recor
  * Update supplier custom fields
  * @param supplierId - Supplier UUID
  * @param customFields - Object containing custom field name/value pairs
- * @returns Promise that resolves when update is complete
+ * @returns Updated supplier with custom fields
  * @throws Error if supplier doesn't exist or another error occurs
  */
 export async function updateSupplierCustomFields(
     supplierId: string, 
     customFields: Record<string, JsonValue>
-): Promise<void> {
+): Promise<Supplier | null> {
     try {
         // First verify that the supplier exists
         const supplier = await getSupplier(supplierId);
@@ -471,6 +591,9 @@ export async function updateSupplierCustomFields(
                 `;
             }
         });
+        
+        // Return the updated supplier with custom fields
+        return await getSupplier(supplierId);
     } catch (error) {
         // Re-throw specific errors we recognize
         if (error instanceof Error && error.message.includes(SUPPLIER_ERRORS.NOT_FOUND)) {
@@ -488,7 +611,7 @@ export async function updateSupplierCustomFields(
  * @param data - Form data for creating the supplier
  * @returns The created supplier with normalized structure
  */
-export async function createSupplierWithCustomFields(data: SupplierFormData): Promise<SupplierWithId> {
+export async function createSupplierWithCustomFields(data: SupplierFormData): Promise<Supplier> {
     try {
         // Extract custom fields from form data if present
         let customFields: Record<string, JsonValue> = {};
@@ -503,14 +626,14 @@ export async function createSupplierWithCustomFields(data: SupplierFormData): Pr
         
         // Create the supplier and add custom fields in a transaction
         return await sql.begin(async (sql) => {
-            // Create the supplier first
+            // Create the supplier first with required fields
             const supplier = await createSupplier({
                 name: data.supplier_name,
                 description: data.supplier_description || undefined,
                 websiteUrl: data.website_url || undefined,
                 logoUrl: data.logo_url || undefined,
-                contactInfo: data.contact_info ? JSON.parse(data.contact_info) : undefined,
-                createdBy: data.created_by || ''
+                contactInfo: data.contact_info ? (typeof data.contact_info === 'string' ? JSON.parse(data.contact_info) : data.contact_info) : undefined,
+                createdBy: data.created_by || 'system'
             });
             
             // Add custom fields if any exist
@@ -518,8 +641,17 @@ export async function createSupplierWithCustomFields(data: SupplierFormData): Pr
                 await updateSupplierCustomFields(supplier.supplier_id, customFields);
             }
             
-            // Return the supplier with custom fields
-            return supplier;
+            // Ensure all required fields are present before conversion
+            // TypeScript doesn't recognize that we've already set a default in createSupplier
+            // So we need to ensure it's definitely a string here too
+            supplier.created_by = supplier.created_by || 'system';
+            
+            // Return the supplier with its newly assigned custom fields
+            // Use type assertion to explicitly tell TypeScript that created_by is now guaranteed to be a string
+            return toSchemaSupplier({
+                ...supplier,
+                created_by: supplier.created_by // We've already ensured this is a string
+            });
         });
     } catch (error) {
         console.error('Error creating supplier with custom fields:', error);
@@ -532,32 +664,42 @@ export async function createSupplierWithCustomFields(data: SupplierFormData): Pr
  * @param formData The form data from SuperForm
  * @returns Supplier data structure
  */
-export function supplierFormDataToSupplier(formData: SupplierFormData): SupplierWithId {
+export function supplierFormDataToSupplier(formData: SupplierFormData): Supplier {
     // Parse contact info safely
     let contactInfo: Record<string, JsonValue> | undefined = undefined;
     if (formData.contact_info) {
         try {
-            contactInfo = JSON.parse(formData.contact_info);
+            contactInfo = typeof formData.contact_info === 'string' ? 
+                JSON.parse(formData.contact_info) : 
+                formData.contact_info;
         } catch (e) {
-            // If parsing fails, use as is
-            console.warn('Failed to parse contact info JSON:', e);
+            console.error('Error parsing contact info JSON:', e);
+            // Leave as undefined if parsing fails
         }
     }
     
-    // Parse custom fields safely
+    // Parse custom fields safely - always ensure it's a non-null object
     let customFields: Record<string, JsonValue> = {};
     if (formData.custom_fields_json) {
         try {
-            customFields = JSON.parse(formData.custom_fields_json);
+            const parsed = typeof formData.custom_fields_json === 'string' ? 
+                JSON.parse(formData.custom_fields_json) : 
+                formData.custom_fields_json;
+            if (typeof parsed === 'object' && parsed !== null) {
+                customFields = parsed;
+            }
         } catch (e) {
-            console.warn('Failed to parse custom fields JSON:', e);
+            console.error('Error parsing custom fields JSON:', e);
+            // Already using empty object as fallback
         }
     }
     
-    // Handle dates safely
-    const createdDate = formData.created_at instanceof Date ? 
-        formData.created_at : 
-        new Date(formData.created_at || '');
+    // Handle dates properly
+    const createdDate = formData.created_at ? 
+        (formData.created_at instanceof Date ? 
+            formData.created_at : 
+            new Date(formData.created_at)) : 
+        new Date();
     
     const updatedDate = formData.updated_at ? 
         (formData.updated_at instanceof Date ? 
@@ -565,9 +707,16 @@ export function supplierFormDataToSupplier(formData: SupplierFormData): Supplier
             new Date(formData.updated_at)) : 
         new Date();
     
-    return {
-        id: formData.supplier_id || '',
-        supplier_id: formData.supplier_id || '',
+    // Generate a random ID if needed
+    const id = formData.supplier_id || crypto.randomUUID();
+    
+    // Ensure createdBy is never undefined
+    const createdBy = formData.created_by || 'system';
+    
+    // Create a normalized supplier object with both internal and schema properties
+    const supplierWithId: SupplierWithId = {
+        id: id,
+        supplier_id: id,
         name: formData.supplier_name,
         supplier_name: formData.supplier_name,
         description: formData.supplier_description || undefined,
@@ -578,14 +727,17 @@ export function supplierFormDataToSupplier(formData: SupplierFormData): Supplier
         logo_url: formData.logo_url || undefined,
         contactInfo: contactInfo,
         contact_info: contactInfo,
-        createdBy: formData.created_by,
-        created_by: formData.created_by,
+        customFields: customFields,
+        createdBy: createdBy,
+        created_by: createdBy,
         createdAt: createdDate,
         created_at: createdDate,
-        updatedBy: formData.updated_by,
-        updated_by: formData.updated_by,
+        updatedBy: formData.updated_by || undefined,
+        updated_by: formData.updated_by || undefined,
         updatedAt: updatedDate,
-        updated_at: updatedDate,
-        customFields: customFields
+        updated_at: updatedDate
     };
+    
+    // Convert to schema-compatible type
+    return toSchemaSupplier(supplierWithId);
 }

@@ -11,7 +11,18 @@ import { PART_ERRORS } from './parts/partErrors';
 /**
  * Type-safe conversion of specialized data structures to PostgreSQL JSON format
  */
-type JsonSerializable = ElectricalProperties | MechanicalProperties | ThermalProperties | EnvironmentalData | Dimensions | Record<string, unknown> | unknown;
+type JsonSerializable = 
+    | ElectricalProperties 
+    | MechanicalProperties 
+    | ThermalProperties 
+    | EnvironmentalData 
+    | Dimensions 
+    | MaterialComposition 
+    | Record<string, string | number | boolean | null | Record<string, JsonValue> | JsonValue[]> 
+    | string 
+    | number 
+    | boolean 
+    | null;
 
 // Since we're using JSON.parse(JSON.stringify()) for JSON field conversions,
 // we don't need a separate JsonValue type here
@@ -23,7 +34,7 @@ type JsonSerializable = ElectricalProperties | MechanicalProperties | ThermalPro
  * @param fieldName Optional field name for debugging
  * @returns JSON representation suitable for PostgreSQL storage
  */
-function serializeToJson(data: JsonSerializable | null | undefined, fieldName?: string): unknown {
+function serializeToJson(data: JsonSerializable | null | undefined, fieldName?: string): JsonValue {
     if (data === undefined || data === null) {
         return null;
     }
@@ -34,20 +45,26 @@ function serializeToJson(data: JsonSerializable | null | undefined, fieldName?: 
             try {
                 if (data.trim().startsWith('{') || data.trim().startsWith('[')) {
                     // Parse JSON string and then serialize
-                    return JSON.parse(data);
+                    return JSON.parse(data) as JsonValue;
                 } else {
                     // Wrap simple string in an object
-                    return { value: data };
+                    return { value: data } as JsonValue;
                 }
             } catch (e) {
                 console.warn(`[serializeToJson] Error parsing JSON string for ${fieldName || 'unknown field'}:`, e);
                 // Fall back to storing as simple value object
-                return { value: data };
+                return { value: data } as JsonValue;
             }
         }
         
-        // Already an object, just cast to unknown
-        return data;
+        // For complex objects, convert to JSON compatible structure
+        if (typeof data === 'object' && data !== null) {
+            // Use JSON.stringify/parse to ensure JSON compatibility
+            return JSON.parse(JSON.stringify(data)) as JsonValue;
+        }
+        
+        // For primitive types (number, boolean), they're already JSON-compatible
+        return data as JsonValue;
     } catch (error) {
         console.error(`[serializeToJson] Error serializing ${fieldName || 'unknown field'}:`, error);
         return null;
@@ -139,34 +156,65 @@ function deserializeEnvironmentalData(json: unknown | null | undefined): Environ
  * @param json The JSON value from the database
  * @returns Typed Dimensions object or null
  */
-function deserializeDimensions(json: unknown | null | undefined): Dimensions | null {
+function deserializeDimensions(json: JsonValue | string | null | undefined): Dimensions | null {
     if (!json) return null;
     
     try {
-        let parsed = json;
+        // For type safety, create an interface that matches potential dimension input
+        interface DimensionLike {
+            length?: number | string | null;
+            width?: number | string | null;
+            height?: number | string | null;
+            [key: string]: JsonValue | undefined;
+        }
         
-        // Handle string input (which might be a JSON string)
+        // Convert string JSON to object if needed
+        let dimensions: DimensionLike;
         if (typeof json === 'string') {
-            parsed = JSON.parse(json);
+            try {
+                dimensions = JSON.parse(json) as DimensionLike;
+            } catch (e) {
+                console.warn('[deserializeDimensions] Failed to parse JSON string:', e);
+                return null;
+            }
+        } else if (typeof json === 'object' && json !== null) {
+            // Already an object, cast it to our expected shape
+            dimensions = json as DimensionLike;
+        } else {
+            // Not a valid dimensions input
+            return null;
         }
         
-        // Ensure the parsed object has the expected structure
-        if (parsed && typeof parsed === 'object') {
-            // Check if it has the required properties
-            if ('length' in parsed && 'width' in parsed && 'height' in parsed) {
-                // Create properly typed Dimensions object with null handling
-                return {
-                    length: parsed.length === null || parsed.length === undefined ? null : Number(parsed.length),
-                    width: parsed.width === null || parsed.width === undefined ? null : Number(parsed.width),
-                    height: parsed.height === null || parsed.height === undefined ? null : Number(parsed.height)
-                };
-            }
-        }
+        // Return properly typed dimensions with number conversion
+        return {
+            length: dimensions.length == null ? null : Number(dimensions.length), 
+            width: dimensions.width == null ? null : Number(dimensions.width),
+            height: dimensions.height == null ? null : Number(dimensions.height)
+        };
     } catch (error) {
-        console.error('Error deserializing dimensions:', error);
+        console.error('[deserializeDimensions] Error deserializing dimensions:', error);
+        return null;
     }
+}
+
+/**
+ * Helper function to safely convert a Dimensions object to JsonValue
+ * Ensures proper type compatibility between schema types and database JSON storage
+ * @param dimensions The dimensions object to convert
+ * @returns A properly formatted JsonValue representation of the dimensions
+ */
+function convertDimensionsToJsonValue(dimensions: Dimensions | null): JsonValue {
+    if (!dimensions) return null;
     
-    return null;
+    // Create a record that matches the JsonValue structure
+    const jsonDimensions: Record<string, number | null> = {
+        length: dimensions.length,
+        width: dimensions.width,
+        height: dimensions.height
+    };
+    
+    // Use JSON.stringify and parse to ensure JsonValue compatibility
+    return JSON.parse(JSON.stringify(jsonDimensions));
 }
 
 // Import enums from enums.ts
@@ -213,7 +261,7 @@ type ExtendedPartFormData = PartFormData;
 import type { JsonValue, Dimensions, MaterialComposition } from '$lib/types/primitive';
 
 // Define a type for complex JSON properties that need type conversion
-type ComplexJsonProperty<T> = T | JsonValue;
+type ComplexJsonProperty<T extends Record<string, unknown>> = T | JsonValue;
 
 // Define a type for JSON data for database compatibility
 type DbJson = JsonValue;
@@ -433,7 +481,7 @@ export function normalizePartVersion(
         thermal_properties: thermalProps as DbJson,
         part_weight: typeof row.part_weight === 'number' ? row.part_weight : null,
         weight_unit: row.weight_unit as WeightUnitEnum || null,
-        dimensions: deserializeDimensions(dimensions) as any, // Use type assertion to resolve compatibility with schema
+        dimensions: dimensions as unknown as { length: number; width: number; height: number; } | null, // Type assertion to match schema expectations
         dimensions_unit: row.dimensions_unit as DimensionUnitEnum || null,
         material_composition: materialComposition as DbJson,
         environmental_data: environmentalData as DbJson,
@@ -2239,40 +2287,48 @@ export async function createPartVersion(partVersion: PartVersionInput): Promise<
         // using snake_case property names to match database schema and PartVersion type
         return {
             ...versionData,
-            technical_specifications: versionData.technical_specifications ? 
-                typeof versionData.technical_specifications === 'string' ? 
-                    JSON.parse(versionData.technical_specifications) : versionData.technical_specifications : undefined,
-            properties: versionData.properties ? 
-                typeof versionData.properties === 'string' ? 
-                    JSON.parse(versionData.properties) : versionData.properties : undefined,
-            electrical_properties: versionData.electrical_properties ? 
-                typeof versionData.electrical_properties === 'string' ? 
-                    JSON.parse(versionData.electrical_properties as string) as unknown as ElectricalProperties : 
-                    versionData.electrical_properties as unknown as ElectricalProperties : undefined as any,
-            mechanical_properties: versionData.mechanical_properties ? 
-                typeof versionData.mechanical_properties === 'string' ? 
-                    JSON.parse(versionData.mechanical_properties as string) as unknown as MechanicalProperties : 
-                    versionData.mechanical_properties as unknown as MechanicalProperties : undefined as any,
-            thermal_properties: versionData.thermal_properties ? 
-                typeof versionData.thermal_properties === 'string' ? 
-                    JSON.parse(versionData.thermal_properties as string) as unknown as ThermalProperties : 
-                    versionData.thermal_properties as unknown as ThermalProperties : undefined as any,
-            material_composition: versionData.material_composition ? 
-                typeof versionData.material_composition === 'string' ? 
-                    JSON.parse(versionData.material_composition as string) as unknown as MaterialComposition : 
-                    versionData.material_composition as unknown as MaterialComposition : undefined as any,
-            environmental_data: versionData.environmental_data ? 
-                typeof versionData.environmental_data === 'string' ? 
-                    JSON.parse(versionData.environmental_data as string) as unknown as EnvironmentalData : 
-                    versionData.environmental_data as unknown as EnvironmentalData : undefined as any,
-            dimensions: deserializeDimensions(versionData.dimensions) as any, // Use type assertion to resolve compatibility with schema
+            technical_specifications: versionData.technical_specifications 
+                ? (typeof versionData.technical_specifications === 'string' 
+                    ? JSON.parse(versionData.technical_specifications) 
+                    : versionData.technical_specifications) 
+                : undefined,
+            properties: versionData.properties 
+                ? (typeof versionData.properties === 'string' 
+                    ? JSON.parse(versionData.properties) 
+                    : versionData.properties) 
+                : undefined,
+            electrical_properties: versionData.electrical_properties 
+                ? (typeof versionData.electrical_properties === 'string' 
+                    ? JSON.parse(versionData.electrical_properties as string) as DbJson
+                    : versionData.electrical_properties as DbJson)
+                : null,
+            mechanical_properties: versionData.mechanical_properties 
+                ? (typeof versionData.mechanical_properties === 'string' 
+                    ? JSON.parse(versionData.mechanical_properties as string) as DbJson
+                    : versionData.mechanical_properties as DbJson)
+                : null,
+            thermal_properties: versionData.thermal_properties 
+                ? (typeof versionData.thermal_properties === 'string' 
+                    ? JSON.parse(versionData.thermal_properties as string) as DbJson
+                    : versionData.thermal_properties as DbJson)
+                : null,
+            material_composition: versionData.material_composition 
+                ? (typeof versionData.material_composition === 'string'
+                    ? JSON.parse(versionData.material_composition as string) as DbJson
+                    : versionData.material_composition as DbJson)
+                : null,
+            environmental_data: versionData.environmental_data 
+                ? (typeof versionData.environmental_data === 'string' 
+                    ? JSON.parse(versionData.environmental_data as string) as DbJson
+                    : versionData.environmental_data as DbJson)
+                : null,
+            dimensions: deserializeDimensions(versionData.dimensions) as { length: number; width: number; height: number; } | null | undefined, // Ensure explicit type compatibility with schema
         };
     } catch (error) {
-        console.error('[createPartVersion] Error:', error);
-        throw error;
+        console.error('[createPartVersion] Error creating part version:', error);
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
-// ... (rest of the code remains the same)
 
 /**
  * Remove a category from a part version
@@ -2676,4 +2732,3 @@ export async function updatePartWithStatus(
     throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-

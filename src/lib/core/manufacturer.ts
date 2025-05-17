@@ -3,8 +3,13 @@
  * Handles all database operations for manufacturers
  */
 import sql from '$lib/server/db/index';
-import type { Manufacturer } from '$lib/types';
+import crypto from 'crypto';
+
+// Import schema-defined type for type safety
+import type { Manufacturer } from '$lib/types/schemaTypes';
 import type { ManufacturerFormData } from '$lib/types/formTypes';
+
+// Import JSON-specific type
 import type { JsonValue } from '$lib/types/primitive';
 
 /**
@@ -20,49 +25,170 @@ const MANUFACTURER_ERRORS = {
 };
 
 /**
+ * Type definition for database row data to ensure type safety
+ */
+type DbRow = Record<string, unknown>;
+
+/**
+ * Extended Manufacturer interface for internal use with both camelCase and snake_case properties
+ * This provides backwards compatibility with existing code while maintaining type safety
+ * Uses schema-driven design from manufacturerSchema
+ */
+interface ManufacturerWithId {
+  // API-friendly camelCase properties
+  id: string;
+  name: string;
+  description?: string;
+  websiteUrl?: string;
+  contactInfo?: JsonValue;
+  logoUrl?: string;
+  createdBy: string;
+  createdAt: Date;
+  updatedBy?: string;
+  updatedAt: Date;
+  customFields?: Record<string, JsonValue> | null;
+  
+  // Database column names (snake_case) - extended from Manufacturer with more precise null handling
+  manufacturer_id: string;
+  manufacturer_name: string;
+  manufacturer_description?: string | null;
+  website_url?: string | null;
+  contact_info?: JsonValue | null;
+  logo_url?: string | null;
+  created_by: string;
+  created_at: Date;
+  updated_by?: string | null;
+  updated_at: Date;
+  custom_fields?: Record<string, JsonValue> | null; // Strongly typed JSON field
+};
+
+/**
+ * Helper function to safely deserialize contact info from database JSON
+ * @param json The JSON value from the database
+ * @returns Typed contact info object or null
+ */
+function deserializeContactInfo(json: unknown | null | undefined): JsonValue | null {
+    if (!json) return null;
+    
+    try {
+        // Handle string JSON
+        if (typeof json === 'string') {
+            return JSON.parse(json) as JsonValue;
+        }
+        
+        // Already an object
+        if (typeof json === 'object') {
+            return json as JsonValue;
+        }
+        
+        // Default case
+        return null;
+    } catch (error) {
+        console.error('[deserializeContactInfo] Error deserializing contact info:', error);
+        return null;
+    }
+}
+
+/**
+ * Helper function to safely deserialize custom fields from database JSON
+ * @param json The JSON value from the database
+ * @returns Typed custom fields object or null
+ */
+function deserializeCustomFields(json: unknown | null | undefined): Record<string, JsonValue> | null {
+    if (!json) return null;
+    
+    try {
+        // Handle string JSON
+        if (typeof json === 'string') {
+            return JSON.parse(json) as Record<string, JsonValue>;
+        }
+        
+        // Already an object
+        if (typeof json === 'object') {
+            return json as Record<string, JsonValue>;
+        }
+        
+        // Default case
+        return null;
+    } catch (error) {
+        console.error('[deserializeCustomFields] Error deserializing custom fields:', error);
+        return null;
+    }
+}
+
+/**
  * Normalize manufacturer data from database result
  * Converts snake_case DB fields to camelCase for the application
+ * Uses type-safe JSON handling
+ * 
+ * @param row - Database row data
+ * @returns Normalized manufacturer object with both camelCase and snake_case properties
  */
-function normalizeManufacturer(row: Record<string, unknown>): Manufacturer {
-    // Parse contact_info if it exists
-    let contactInfo: JsonValue | null = null;
-    if (row.contact_info) {
-        try {
-            if (typeof row.contact_info === 'string') {
-                contactInfo = JSON.parse(row.contact_info);
-            } else if (typeof row.contact_info === 'object') {
-                contactInfo = row.contact_info as JsonValue;
-            }
-        } catch (e) {
-            console.error('Error parsing contact info:', e);
-        }
-    }
+function normalizeManufacturer(row: DbRow): ManufacturerWithId {
+    // Process JSON fields with type safety
+    const contactInfo = deserializeContactInfo(row.contact_info);
+    const customFields = deserializeCustomFields(row.custom_fields);
     
-    // Parse custom_fields if they exist
-    let customFields: Record<string, JsonValue> = {};
-    try {
-        if (typeof row.custom_fields === 'string') {
-            customFields = JSON.parse(row.custom_fields);
-        } else if (row.custom_fields && typeof row.custom_fields === 'object') {
-            customFields = row.custom_fields as Record<string, JsonValue>;
-        }
-    } catch (e) {
-        console.error('Error parsing custom fields:', e);
-    }
+    // Ensure dates are properly converted to Date objects
+    const createdAt = row.created_at instanceof Date ? 
+        row.created_at : new Date(row.created_at as string);
     
-    // Create normalized object with proper typing
-    return {
-        id: row.id as string,
-        name: row.name as string,
-        description: row.description as string | undefined,
-        websiteUrl: row.website_url as string | undefined,
+    const updatedAt = row.updated_at instanceof Date ? 
+        row.updated_at : new Date(row.updated_at as string);
+
+    // Create and return a normalized manufacturer object
+    const manufacturer: ManufacturerWithId = {
+        // Standard API properties (camelCase)
+        id: row.manufacturer_id as string,
+        name: row.manufacturer_name as string,
+        description: (row.manufacturer_description as string) || undefined,
+        websiteUrl: (row.website_url as string) || undefined,
         contactInfo,
-        logoUrl: row.logo_url as string | undefined,
-        createdBy: row.created_by as string | undefined,
-        createdAt: row.created_at as Date,
-        updatedBy: row.updated_by as string | undefined,
-        updatedAt: row.updated_at as Date,
-        customFields
+        logoUrl: (row.logo_url as string) || undefined,
+        createdBy: row.created_by as string,
+        createdAt,
+        updatedBy: (row.updated_by as string) || undefined,
+        updatedAt,
+        customFields,
+        
+        // Database column names (snake_case) with proper typing
+        manufacturer_id: row.manufacturer_id as string,
+        manufacturer_name: row.manufacturer_name as string,
+        manufacturer_description: (row.manufacturer_description as string) || null,
+        website_url: (row.website_url as string) || null,
+        contact_info: contactInfo,
+        logo_url: (row.logo_url as string) || null,
+        created_by: row.created_by as string,
+        created_at: createdAt,
+        updated_by: (row.updated_by as string) || null,
+        updated_at: updatedAt,
+        custom_fields: customFields
+    };
+    
+    return manufacturer;
+}
+
+/**
+ * Convert ManufacturerWithId to schema-compatible Manufacturer
+ * This function handles type compatibility between our extended interface and the schema type
+ * 
+ * @param mfg - The extended manufacturer object
+ * @returns A schema-compatible manufacturer object
+ */
+function toSchemaManufacturer(mfg: ManufacturerWithId): Manufacturer {
+    // Create a schema-compatible manufacturer object
+    return {
+        manufacturer_id: mfg.manufacturer_id,
+        manufacturer_name: mfg.manufacturer_name,
+        manufacturer_description: mfg.manufacturer_description !== null ? mfg.manufacturer_description : undefined,
+        website_url: mfg.website_url !== null ? mfg.website_url : undefined,
+        contact_info: mfg.contact_info !== null ? mfg.contact_info : undefined,
+        logo_url: mfg.logo_url !== null ? mfg.logo_url : undefined,
+        created_by: mfg.created_by,
+        created_at: mfg.created_at,
+        updated_by: mfg.updated_by !== null ? mfg.updated_by : undefined,
+        updated_at: mfg.updated_at,
+        custom_fields: mfg.custom_fields !== null ? mfg.custom_fields : undefined
     };
 }
 
@@ -105,7 +231,8 @@ export async function createManufacturer(params: {
             throw new Error(MANUFACTURER_ERRORS.CREATE_FAILED);
         }
 
-        return normalizeManufacturer(result[0]);
+        const manufacturer = normalizeManufacturer(result[0]);
+        return toSchemaManufacturer(manufacturer);
     } catch (error) {
         // Type guard for postgres error with code property
         if (typeof error === 'object' && error !== null && 'code' in error) {
@@ -132,7 +259,7 @@ export async function createManufacturer(params: {
  * @param id - Manufacturer UUID
  * @returns Manufacturer data with custom fields or null if not found
  */
-export async function getManufacturer(id: string): Promise<Manufacturer | null> {
+export async function getManufacturerById(manufacturerId: string): Promise<Manufacturer | null> {
     try {
         // Query with properly quoted table names and field names
         const result = await sql`
@@ -145,181 +272,19 @@ export async function getManufacturer(id: string): Promise<Manufacturer | null> 
                     WHERE mcf.manufacturer_id = m.id
                     ), '{}'::json) AS custom_fields
             FROM "Manufacturer" m
-            WHERE m.id = ${id}
+            WHERE m.id = ${manufacturerId}
         `;
         
         // Return normalized result or null if not found
-        return result.length > 0 ? normalizeManufacturer(result[0]) : null;
+        if (result.length > 0) {
+            const manufacturer = normalizeManufacturer(result[0]);
+            return toSchemaManufacturer(manufacturer);
+        } else {
+            return null;
+        }
     } catch (error) {
-        console.error(`Error fetching manufacturer with ID ${id}:`, error);
+        console.error(`Error fetching manufacturer with ID ${manufacturerId}:`, error);
         throw new Error(`${MANUFACTURER_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-}
-
-/**
- * Update an existing manufacturer
- * @param id - Manufacturer UUID to update
- * @param updates - Object containing fields to update
- * @param userId - ID of the user making the update
- * @returns Updated manufacturer with custom fields
- */
-export async function updateManufacturer(
-    id: string,
-    updates: {
-        name?: string;
-        description?: string;
-        websiteUrl?: string;
-        contactInfo?: Record<string, JsonValue>;
-        logoUrl?: string;
-    },
-    userId: string
-): Promise<Manufacturer> {
-    // Return early if no updates provided
-    if (Object.keys(updates).length === 0) {
-        const existing = await getManufacturer(id);
-        if (!existing) throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
-        return existing;
-    }
-    
-    try {
-        // Start a transaction to ensure atomicity of update and custom field operations
-        return await sql.begin(async (sql) => {
-            // Build the dynamic SET clause with parameters
-            const setParts = [];
-            const paramValues = [];
-            
-            // Add each provided field to the update
-            if (updates.name !== undefined) {
-                setParts.push('name = $1');
-                paramValues.push(updates.name);
-            }
-            if (updates.description !== undefined) {
-                setParts.push(`description = $${paramValues.length + 1}`);
-                paramValues.push(updates.description);
-            }
-            if (updates.websiteUrl !== undefined) {
-                setParts.push(`website_url = $${paramValues.length + 1}`);
-                paramValues.push(updates.websiteUrl);
-            }
-            if (updates.logoUrl !== undefined) {
-                setParts.push(`logo_url = $${paramValues.length + 1}`);
-                paramValues.push(updates.logoUrl);
-            }
-            if (updates.contactInfo !== undefined) {
-                setParts.push(`contact_info = $${paramValues.length + 1}`);
-                paramValues.push(updates.contactInfo ? JSON.stringify(updates.contactInfo) : null);
-            }
-            
-            // Always add updated_by and updated_at
-            setParts.push(`updated_by = $${paramValues.length + 1}`);
-            paramValues.push(userId);
-            setParts.push('updated_at = NOW()');
-            
-            // Complete the query with proper parameter placeholders
-            const query = `
-                UPDATE "Manufacturer" 
-                SET ${setParts.join(', ')} 
-                WHERE id = $${paramValues.length + 1} 
-                RETURNING *
-            `;
-            
-            // Add ID as the last parameter
-            paramValues.push(id);
-            
-            // Execute update with parameters in correct order
-            const result = await sql.unsafe(query, paramValues);
-            
-            if (result.length === 0) {
-                throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
-            }
-            
-            // If contact info was provided, ensure it's properly formatted
-            if (updates.contactInfo !== undefined) {
-                // Format has already been handled in the query above
-            }
-            
-            // Fetch the complete manufacturer data with custom fields
-            const manufacturerWithCustomFields = await getManufacturer(id);
-            if (!manufacturerWithCustomFields) {
-                throw new Error(MANUFACTURER_ERRORS.NOT_FOUND_AFTER_UPDATE);
-            }
-            
-            return manufacturerWithCustomFields;
-        });
-    } catch (error) {
-        // Type guard for postgres error with code property
-        if (typeof error === 'object' && error !== null && 'code' in error) {
-            const pgError = error as { code: string; message: string };
-            
-            // Handle duplicate key violation
-            if (pgError.code === '23505') {
-                throw new Error(`${MANUFACTURER_ERRORS.NAME_EXISTS}: "${updates.name}"`);
-            }
-        }
-        
-        // Re-throw specifically handled errors
-        if (error instanceof Error && 
-            (error.message.includes(MANUFACTURER_ERRORS.NOT_FOUND) || 
-             error.message.includes(MANUFACTURER_ERRORS.NOT_FOUND_AFTER_UPDATE) ||
-             error.message.includes(MANUFACTURER_ERRORS.NAME_EXISTS))) {
-            throw error;
-        }
-        
-        // Generic error with original message
-        if (error instanceof Error) {
-            throw new Error(`${MANUFACTURER_ERRORS.GENERAL_ERROR}: ${error.message}`);
-        }
-        
-        // Fallback for unknown error types
-        throw new Error(MANUFACTURER_ERRORS.GENERAL_ERROR);
-    }
-}
-
-/**
- * Delete a manufacturer by ID
- * @param id - Manufacturer UUID to delete
- * @throws Error if manufacturer is referenced by parts or doesn't exist
- */
-export async function deleteManufacturer(id: string): Promise<void> {
-    try {
-        // First verify that the manufacturer exists
-        const manufacturer = await getManufacturer(id);
-        if (!manufacturer) {
-            throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
-        }
-        
-        // Execute deletion with proper table name quoting
-        const result = await sql`DELETE FROM "Manufacturer" WHERE id = ${id}`;
-        
-        // Verify something was deleted
-        if (result.count === 0) {
-            throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
-        }
-    } catch (error) {
-        // Type guard for postgres error with code property
-        if (typeof error === 'object' && error !== null && 'code' in error) {
-            const pgError = error as { code: string; message: string };
-            
-            // Handle foreign key constraint violation
-            if (pgError.code === '23503') {
-                throw new Error(MANUFACTURER_ERRORS.DELETE_REFERENCED);
-            }
-        }
-        
-        // Re-throw specific errors we recognize
-        if (error instanceof Error && 
-            (error.message.includes(MANUFACTURER_ERRORS.NOT_FOUND) || 
-             error.message.includes(MANUFACTURER_ERRORS.DELETE_REFERENCED))) {
-            throw error;
-        }
-        
-        // Generic error with original message
-        if (error instanceof Error) {
-            throw new Error(`${MANUFACTURER_ERRORS.GENERAL_ERROR}: ${error.message}`);
-        }
-        
-        // Fallback for unknown error types
-        throw new Error(MANUFACTURER_ERRORS.GENERAL_ERROR);
     }
 }
 
@@ -373,7 +338,8 @@ export async function listManufacturers(options?: {
         }
         
         const result = await query;
-        return result.map(normalizeManufacturer);
+        const manufacturers = result.map(row => normalizeManufacturer(row));
+        return manufacturers.map(mfg => toSchemaManufacturer(mfg));
     } catch (error) {
         console.error('Error listing manufacturers:', error);
         throw new Error(`${MANUFACTURER_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -411,16 +377,16 @@ export async function getManufacturerCustomFields(manufacturerId: string): Promi
  * Update manufacturer custom fields
  * @param manufacturerId - Manufacturer UUID
  * @param customFields - Object containing custom field name/value pairs
- * @returns Promise that resolves when update is complete
+ * @returns Updated manufacturer with custom fields
  * @throws Error if manufacturer doesn't exist or another error occurs
  */
 export async function updateManufacturerCustomFields(
     manufacturerId: string, 
     customFields: Record<string, JsonValue>
-): Promise<void> {
+): Promise<Manufacturer | null> {
     try {
         // First verify that the manufacturer exists
-        const manufacturer = await getManufacturer(manufacturerId);
+        const manufacturer = await getManufacturerById(manufacturerId);
         if (!manufacturer) {
             throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
         }
@@ -472,6 +438,9 @@ export async function updateManufacturerCustomFields(
                 `;
             }
         });
+        
+        // Return the updated manufacturer with custom fields
+        return await getManufacturerById(manufacturerId);
     } catch (error) {
         // Re-throw specific errors we recognize
         if (error instanceof Error && error.message.includes(MANUFACTURER_ERRORS.NOT_FOUND)) {
@@ -516,7 +485,7 @@ export async function createManufacturerWithCustomFields(data: ManufacturerFormD
             
             // Add custom fields if any exist
             if (Object.keys(customFields).length > 0) {
-                await updateManufacturerCustomFields(manufacturer.id, customFields);
+                await updateManufacturerCustomFields(manufacturer.manufacturer_id, customFields);
             }
             
             // Return the manufacturer with custom fields
