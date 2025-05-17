@@ -209,8 +209,8 @@ export async function createManufacturer(params: {
         // Use porsager/postgres template literals with proper table name quoting
         const result = await sql`
             INSERT INTO "Manufacturer" (
-                name, 
-                description, 
+                manufacturer_name, 
+                manufacturer_description, 
                 website_url, 
                 logo_url, 
                 contact_info,
@@ -266,13 +266,12 @@ export async function getManufacturerById(manufacturerId: string): Promise<Manuf
             SELECT 
                 m.*,
                 COALESCE(
-                    (SELECT json_object_agg(cf.field_name, mcf.value)
-                    FROM "ManufacturerCustomField" mcf
-                    JOIN "CustomField" cf ON mcf.field_id = cf.id
-                    WHERE mcf.manufacturer_id = m.id
+                    (SELECT json_object_agg(field_name, field_value)
+                    FROM "ManufacturerCustomField"
+                    WHERE manufacturer_id = m.manufacturer_id
                     ), '{}'::json) AS custom_fields
             FROM "Manufacturer" m
-            WHERE m.id = ${manufacturerId}
+            WHERE m.manufacturer_id = ${manufacturerId}
         `;
         
         // Return normalized result or null if not found
@@ -307,10 +306,9 @@ export async function listManufacturers(options?: {
             SELECT 
                 m.*,
                 COALESCE(
-                    (SELECT json_object_agg(cf.field_name, mcf.value)
-                     FROM "ManufacturerCustomField" mcf
-                     JOIN "CustomField" cf ON mcf.field_id = cf.id
-                     WHERE mcf.manufacturer_id = m.id
+                    (SELECT json_object_agg(custom_field_value, field_id)
+                     FROM "ManufacturerCustomField"
+                     WHERE manufacturer_id = m.manufacturer_id
                     ), '{}'::json) AS custom_fields
             FROM "Manufacturer" m
             WHERE 1=1
@@ -318,7 +316,7 @@ export async function listManufacturers(options?: {
         
         // Add conditional filters if provided
         if (options?.nameFilter) {
-            query = sql`${query} AND m.name ILIKE ${`%${options.nameFilter}%`}`;
+            query = sql`${query} AND m.manufacturer_name ILIKE ${`%${options.nameFilter}%`}`;
         }
         
         if (options?.userId) {
@@ -326,7 +324,7 @@ export async function listManufacturers(options?: {
         }
         
         // Add sorting
-        query = sql`${query} ORDER BY m.name ASC`;
+        query = sql`${query} ORDER BY m.manufacturer_name ASC`;
         
         // Add pagination if specified
         if (options?.limit) {
@@ -354,16 +352,15 @@ export async function listManufacturers(options?: {
 export async function getManufacturerCustomFields(manufacturerId: string): Promise<Record<string, JsonValue>> {
     try {
         const result = await sql`
-            SELECT cf.field_name, mcf.value
-            FROM "ManufacturerCustomField" mcf
-            JOIN "CustomField" cf ON mcf.field_id = cf.id
-            WHERE mcf.manufacturer_id = ${manufacturerId}
+            SELECT custom_field_value, field_id
+            FROM "ManufacturerCustomField"
+            WHERE manufacturer_id = ${manufacturerId}
         `;
         
         // Build the custom fields object
         const customFields: Record<string, JsonValue> = {};
         for (const row of result) {
-            customFields[row.field_name] = row.value;
+            customFields[row.field_id] = row.custom_field_value;
         }
         
         return customFields;
@@ -406,35 +403,19 @@ export async function updateManufacturerCustomFields(
             
             // Insert new custom fields
             for (const [fieldName, fieldValue] of Object.entries(customFields)) {
-                // Get or create the custom field definition
-                let fieldId: string;
-                const existingField = await sql`
-                    SELECT id FROM "CustomField"
-                    WHERE field_name = ${fieldName} AND applies_to = 'manufacturer'
-                `;
+                // Determine data type based on the value
+                let dataType = 'text'; // Default to text
+                if (typeof fieldValue === 'number') dataType = 'number';
+                else if (typeof fieldValue === 'boolean') dataType = 'boolean';
+                else if (fieldValue instanceof Date) dataType = 'date';
                 
-                if (existingField.length > 0) {
-                    fieldId = existingField[0].id;
-                } else {
-                    // Determine data type based on the value
-                    let dataType = 'text'; // Default to text
-                    if (typeof fieldValue === 'number') dataType = 'number';
-                    else if (typeof fieldValue === 'boolean') dataType = 'boolean';
-                    else if (fieldValue instanceof Date) dataType = 'date';
-                    
-                    // Create the custom field definition
-                    const newField = await sql`
-                        INSERT INTO "CustomField" (field_name, data_type, applies_to)
-                        VALUES (${fieldName}, ${dataType}, 'manufacturer')
-                        RETURNING id
-                    `;
-                    fieldId = newField[0].id;
-                }
+                // Generate a UUID for the new custom field
+                const fieldId = crypto.randomUUID();
                 
                 // Insert the custom field value using sql.json for proper JSONB formatting
                 await sql`
-                    INSERT INTO "ManufacturerCustomField" (manufacturer_id, field_id, value)
-                    VALUES (${manufacturerId}, ${fieldId}, ${sql.json(fieldValue)})
+                    INSERT INTO "ManufacturerCustomField" (id, manufacturer_id, field_id, custom_field_value, data_type, created_by, created_at)
+                    VALUES (${fieldId}, ${manufacturerId}, ${fieldName || ''}, ${String(fieldValue || '')}, ${dataType || 'text'}, ${manufacturer.created_by || null}, ${new Date()})
                 `;
             }
         });

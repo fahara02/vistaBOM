@@ -7,6 +7,25 @@ import crypto from 'crypto';
 // Import schema-driven types
 import type { Category } from '$lib/types/schemaTypes';
 
+// Create a Category type alias for components to use
+export interface UiCategory {
+    id: string;
+    name: string;
+    path: string;
+    parentId?: string | null;
+    description?: string | null;
+    isPublic: boolean;
+    createdBy: string;
+    createdAt: Date;
+    updatedBy?: string | null;
+    updatedAt: Date;
+    isDeleted: boolean;
+    customFields?: Record<string, any> | null;
+    parentName?: string;
+    childCount?: number;
+    depth?: number;
+}
+
 // Import JSON specific types
 import type { JsonValue } from '$lib/types/primitive';
 
@@ -31,22 +50,25 @@ export const CATEGORY_ERRORS = {
  * Extended Category interface for internal use with both camelCase and snake_case properties
  * This provides backwards compatibility with existing code while maintaining type safety
  * Uses schema-driven design from categorySchema
+ * Added index signature to make it compatible with DbRow
  */
 interface CategoryWithId extends Omit<Category, 'custom_fields'> {
+    // Index signature for DbRow compatibility
+    [key: string]: any;
     // Standard API properties (camelCase)
     id: string;
     name: string;
-    parentId?: string;
-    description?: string;
+    parentId?: string | null; // Allow null for DB compatibility
+    description?: string | null;
     path: string;
     createdBy: string;
     createdAt: Date;
-    updatedBy?: string;
+    updatedBy?: string | null;
     updatedAt: Date;
     isPublic: boolean;
     isDeleted: boolean;
-    deletedAt?: Date;
-    deletedBy?: string;
+    deletedAt?: Date | null;
+    deletedBy?: string | null;
     
     // UI helper properties
     parentName?: string;
@@ -140,7 +162,62 @@ export async function createCategory(params: {
         // Sanitize name for ltree path
         const sanitizedLabel = sanitizeLtreeLabel(name);
 
-        // Determine path based on parent
+        /**
+ * Helper function to normalize a category record from the database
+ * This ensures we have consistent property names in both snake_case (DB) and camelCase (UI) formats
+ * @param category Raw category data from database
+ * @returns Normalized CategoryWithId with consistent property access
+ */
+function normalizeCategory(category: any): CategoryWithId {
+    // Helper to convert null to undefined for optional string fields
+    const nullToUndefined = (val: string | null | undefined): string | undefined => {
+        return val === null ? undefined : val;
+    };
+    
+    return {
+        // Original DB fields - snake_case
+        ...category,
+        
+        // UI fields - camelCase (normalize from DB fields if not present)
+        id: category.id || category.category_id,
+        name: category.name || category.category_name,
+        // Convert null to undefined for parentId to satisfy TypeScript
+        parentId: nullToUndefined(category.parentId || category.parent_id),
+        description: nullToUndefined(category.description || category.category_description),
+        path: category.path || category.category_path,
+        isPublic: category.isPublic !== undefined ? category.isPublic : category.is_public,
+        createdBy: category.createdBy || category.created_by,
+        createdAt: category.createdAt || category.created_at,
+        updatedBy: nullToUndefined(category.updatedBy || category.updated_by),
+        updatedAt: category.updatedAt || category.updated_at,
+        isDeleted: category.isDeleted !== undefined ? category.isDeleted : category.is_deleted,
+        deletedAt: category.deletedAt || category.deleted_at,
+        deletedBy: nullToUndefined(category.deletedBy || category.deleted_by),
+        customFields: category.customFields || category.custom_fields,
+        parentName: nullToUndefined(category.parentName || category.parent_name),
+        childCount: category.childCount || category.child_count || 0,
+        partsCount: category.partsCount || category.parts_count || 0,
+        
+        // Make sure all DB fields are also present
+        category_id: category.category_id || category.id,
+        category_name: category.category_name || category.name,
+        parent_id: category.parent_id || category.parentId,
+        category_description: category.category_description || category.description,
+        category_path: category.category_path || category.path,
+        is_public: category.is_public !== undefined ? category.is_public : category.isPublic,
+        created_by: category.created_by || category.createdBy,
+        created_at: category.created_at || category.createdAt,
+        updated_by: category.updated_by || category.updatedBy,
+        updated_at: category.updated_at || category.updatedAt,
+        is_deleted: category.is_deleted !== undefined ? category.is_deleted : category.isDeleted,
+        deleted_at: category.deleted_at || category.deletedAt,
+        deleted_by: category.deleted_by || category.deletedBy,
+        custom_fields: category.custom_fields || category.customFields,
+        parent_name: category.parent_name || category.parentName
+    };
+}
+
+// Determine path based on parent
         let path;
         if (parentId) {
             // For child categories, construct path by appending to parent path
@@ -888,6 +965,67 @@ export async function getCategoryCustomFields(categoryId: string): Promise<Recor
  * @param userId - The ID of the user making the update
  * @returns void
  */
+/**
+ * Build a hierarchical tree of categories
+ * @returns Array of root categories with their children nested
+ */
+export async function getCategoryTree(): Promise<CategoryWithId[]> {
+    try {
+        // Get all categories ordered by path
+        const categories = await getAllCategories({ excludeDeleted: true });
+        
+        // Create a map for fast lookups - use string keys only
+        const categoryMap = new Map<string, CategoryWithId & { children: CategoryWithId[] }>();
+        
+        // Initialize result array for root categories
+        const rootCategories: (CategoryWithId & { children: CategoryWithId[] })[] = [];
+        
+        // First pass: create category objects with empty children arrays
+        for (const category of categories) {
+            // Extract id first since we need it as the map key
+            const id = category.id || category.category_id;
+            
+            // Convert DB snake_case to UI camelCase using normalize function
+            const normalizedCategory = normalizeCategory(category);
+            
+            // Add to map with children array
+            categoryMap.set(id, { 
+                ...normalizedCategory,
+                children: []
+            });
+        }
+        
+        // Second pass: build the tree structure
+        for (const category of categories) {
+            // Get the normalized category with children array
+            const id = category.id || category.category_id;
+            const categoryWithChildren = categoryMap.get(id);
+            
+            if (!categoryWithChildren) continue; // Skip if not found for some reason
+            
+            // Convert null to undefined to make TypeScript happy
+            const parentId = categoryWithChildren.parentId;
+            
+            if (parentId) {
+                // Only process if parentId is a valid string
+                const parent = categoryMap.get(parentId);
+                if (parent) {
+                    // Add as child to parent
+                    parent.children.push(categoryWithChildren);
+                }
+            } else {
+                // This is a root category
+                rootCategories.push(categoryWithChildren);
+            }
+        }
+        
+        return rootCategories;
+    } catch (error) {
+        console.error('Error building category tree:', error);
+        throw new Error(`${CATEGORY_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
+
 export async function updateCategoryCustomFields(
     categoryId: string,
     customFields: Record<string, JsonValue>,

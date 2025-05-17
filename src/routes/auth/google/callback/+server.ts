@@ -38,20 +38,20 @@ export async function GET({ url, cookies }: RequestEvent) {
 		if (row && typeof row === 'object' && !Array.isArray(row)) {
 			// Object style access for porsager/postgres - with Date parsing
 			return {
-			    user_id : row.id,
+			    user_id: row.user_id,
 				username: row.username,
 				email: row.email,
-				full_name: row.fullName,
-				password_hash: row.passwordHash,
-				google_id: row.googleId,
-				avatar_url: row.avatarUrl,
+				full_name: row.full_name,
+				password_hash: row.password_hash,
+				google_id: row.google_id,
+				avatar_url: row.avatar_url,
 				// Convert string dates to Date objects
-				created_at: row.createdAt ? new Date(row.createdAt) : new Date(),
-				updated_at: row.updatedAt ? new Date(row.updatedAt) : new Date(),
-				last_login_at: row.lastLoginAt ? new Date(row.lastLoginAt) : null,
-				is_active: row.isActive,
-				is_admin: row.isAdmin,
-				is_deleted: row.isDeleted
+				created_at: row.created_at ? new Date(row.created_at) : new Date(),
+				updated_at: row.updated_at ? new Date(row.updated_at) : new Date(),
+				last_login_at: row.last_login_at ? new Date(row.last_login_at) : null,
+				is_active: row.is_active,
+				is_admin: row.is_admin,
+				is_deleted: row.is_deleted
 			};
 		} else{
 
@@ -69,19 +69,19 @@ export async function GET({ url, cookies }: RequestEvent) {
 	// Use porsager/postgres template literals for queries
 	const find = await sql`
 		SELECT 
-			id, 
+			user_id, 
 			username, 
 			email, 
-			full_name AS "fullName", 
-			password_hash AS "passwordHash", 
-			google_id AS "googleId", 
-			avatar_url AS "avatarUrl", 
-			created_at AS "createdAt", 
-			updated_at AS "updatedAt", 
-			last_login_at AS "lastLoginAt", 
-			is_active AS "isActive", 
-			is_admin AS "isAdmin", 
-			is_deleted AS "isDeleted"
+			full_name, 
+			password_hash, 
+			google_id, 
+			avatar_url, 
+			created_at, 
+			updated_at, 
+			last_login_at, 
+			is_active, 
+			is_admin, 
+			is_deleted
 		FROM "User" 
 		WHERE google_id = ${userInfo.id} OR email = ${userInfo.email}
 	`;
@@ -96,21 +96,21 @@ export async function GET({ url, cookies }: RequestEvent) {
 				SET 
 					google_id = ${userInfo.id}, 
 					avatar_url = ${userInfo.picture} 
-				WHERE id = ${user.user_id}
+				WHERE user_id = ${user.user_id}
 				RETURNING 
-					id, 
+					user_id, 
 					username, 
 					email, 
-					full_name AS "fullName", 
-					password_hash AS "passwordHash", 
-					google_id AS "googleId", 
-					avatar_url AS "avatarUrl", 
-					created_at AS "createdAt", 
-					updated_at AS "updatedAt", 
-					last_login_at AS "lastLoginAt", 
-					is_active AS "isActive", 
-					is_admin AS "isAdmin", 
-					is_deleted AS "isDeleted"
+					full_name, 
+					password_hash, 
+					google_id, 
+					avatar_url, 
+					created_at, 
+					updated_at, 
+					last_login_at, 
+					is_active, 
+					is_admin, 
+					is_deleted
 			`;
 			user = rowToUser(upd[0]);
 		}
@@ -118,7 +118,7 @@ export async function GET({ url, cookies }: RequestEvent) {
 		// Insert new user with Google info
 		const newId = randomUUID();
 		const ins = await sql`
-			INSERT INTO "User"(id, email, full_name, google_id, avatar_url)
+			INSERT INTO "User"(user_id, email, full_name, google_id, avatar_url)
 			VALUES (
 				${newId}, 
 				${userInfo.email}, 
@@ -127,19 +127,19 @@ export async function GET({ url, cookies }: RequestEvent) {
 				${userInfo.picture}
 			)
 			RETURNING 
-				id, 
+				user_id, 
 				username, 
 				email, 
-				full_name AS "fullName", 
-				password_hash AS "passwordHash", 
-				google_id AS "googleId", 
-				avatar_url AS "avatarUrl", 
-				created_at AS "createdAt", 
-				updated_at AS "updatedAt", 
-				last_login_at AS "lastLoginAt", 
-				is_active AS "isActive", 
-				is_admin AS "isAdmin", 
-				is_deleted AS "isDeleted"
+				full_name, 
+				password_hash, 
+				google_id, 
+				avatar_url, 
+				created_at, 
+				updated_at, 
+				last_login_at, 
+				is_active, 
+				is_admin, 
+				is_deleted
 		`;
 		user = rowToUser(ins[0]);
 	}

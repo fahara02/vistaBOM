@@ -17,18 +17,18 @@ export function generateSessionToken(): string {
 // src/lib/server/auth.ts
 export async function createSession(token: string, userId: string): Promise<Session> {
 	// Create Date objects
-	const expiresAt = new Date(Date.now() + 30 * DAY_IN_MS);
-	const lastUsed = new Date();
+	const expires_at = new Date(Date.now() + 30 * DAY_IN_MS);
+	const last_used = new Date();
 	
 	// Format dates as ISO strings for postgres.js compatibility
-	const expiresAtStr = expiresAt.toISOString();
-	const lastUsedStr = lastUsed.toISOString();
+	const expiresAtStr = expires_at.toISOString();
+	const lastUsedStr = last_used.toISOString();
 	
 	await sql`
-		INSERT INTO "Session" (id, user_id, expires_at, last_used)
+		INSERT INTO "Session" (session_id, user_id, expires_at, last_used)
 		VALUES (${token}, ${userId}, ${expiresAtStr}::timestamp, ${lastUsedStr}::timestamp)
 	`;
-	return { id: token, userId, expiresAt, lastUsed };
+	return { session_id: token, user_id: userId, expires_at, last_used };
 }
 
 export async function validateSessionToken(
@@ -37,10 +37,10 @@ export async function validateSessionToken(
 	const sessionId = token;
 	const rows = await sql`
 	  SELECT
-	    s.id AS session_id,
+	    s.session_id AS session_id,
 	    s.user_id AS session_user_id,
 	    s.expires_at AS expires_at,
-	    u.id AS usr_id,
+	    u.user_id AS usr_id,
 	    u.username AS username,
 	    u.email AS email,
 	    u.full_name AS full_name,
@@ -54,8 +54,8 @@ export async function validateSessionToken(
 	    u.is_admin AS is_admin,
 	    u.is_deleted AS is_deleted
 	  FROM "Session" s
-	  JOIN "User" u ON s.user_id = u.id
-	  WHERE s.id = ${token}
+	  JOIN "User" u ON s.user_id = u.user_id
+	  WHERE s.session_id = ${token}
 	`;
 	if (!rows || !Array.isArray(rows)) {
 		return { session: null, user: null };
@@ -64,39 +64,39 @@ export async function validateSessionToken(
 	if (!rows.length) return { session: null, user: null };
 	const row = rows[0];
 	const session: Session = { 
-		id: row.session_id, 
-		userId: row.session_user_id, 
-		expiresAt: row.expires_at, 
-		lastUsed: new Date() 
+		session_id: row.session_id, 
+		user_id: row.session_user_id, 
+		expires_at: row.expires_at, 
+		last_used: new Date() 
 	};
 	const user: User = {
-		id: row.usr_id,
+		user_id: row.usr_id,
 		username: row.username,
 		email: row.email,
-		fullName: row.full_name,
-		passwordHash: row.password_hash,
-		googleId: row.google_id,
-		avatarUrl: row.avatar_url,
-		createdAt: new Date(row.created_at),
-		updatedAt: new Date(row.updated_at),
-		lastLoginAt: row.last_login_at ? new Date(row.last_login_at) : null,
-		isActive: row.is_active,
-		isAdmin: row.is_admin,
-		isDeleted: row.is_deleted
+		full_name: row.full_name,
+		password_hash: row.password_hash,
+		google_id: row.google_id,
+		avatar_url: row.avatar_url,
+		created_at: new Date(row.created_at),
+		updated_at: new Date(row.updated_at),
+		last_login_at: row.last_login_at ? new Date(row.last_login_at) : null,
+		is_active: row.is_active,
+		is_admin: row.is_admin,
+		is_deleted: row.is_deleted
 	};
 
 	// Session expiration and renewal logic remains unchanged
-	if (Date.now() >= session.expiresAt.getTime()) {
-		await sql`DELETE FROM "Session" WHERE id = ${row.session_id}`;
+	if (Date.now() >= session.expires_at.getTime()) {
+		await sql`DELETE FROM "Session" WHERE session_id = ${row.session_id}`;
 		return { session: null, user: null };
 	}
-	const renewThreshold = session.expiresAt.getTime() - DAY_IN_MS * 15;
+	const renewThreshold = session.expires_at.getTime() - DAY_IN_MS * 15;
 	if (Date.now() >= renewThreshold) {
 		const newExpiresAt = new Date(Date.now() + DAY_IN_MS * 30);
 		// Convert to ISO string for postgres.js
 		const newExpiresAtStr = newExpiresAt.toISOString();
-		await sql`UPDATE "Session" SET expires_at = ${newExpiresAtStr}::timestamp WHERE id = ${session.id}`;
-		session.expiresAt = newExpiresAt;
+		await sql`UPDATE "Session" SET expires_at = ${newExpiresAtStr}::timestamp WHERE session_id = ${session.session_id}`;
+		session.expires_at = newExpiresAt;
 	}
 	return { session, user };
 }

@@ -190,14 +190,17 @@
 	// Initialize manufacturer form with superForm
 	const { form: manufacturerForm, errors: manufacturerErrors, enhance: manufacturerEnhance, submitting: manufacturerSubmitting, message: manufacturerMessage } = superForm(data.manufacturerForm, {
 		dataType: 'json',
+		resetForm: false, // Keep form values on submission
+		onSubmit: () => {
+			console.log('Submitting manufacturer form');
+		},
 		onResult: ({ result }) => {
-			// Handle successful submission
 			if (result.type === 'success') {
-				showManufacturerForm = false;
-				// Reload the page to get updated manufacturers list
-				window.location.reload();
+				// Successfully submitted, hide form after a delay
+				setTimeout(() => {
+					showManufacturerForm = false;
+				}, 2000); // Delay to allow user to see success message
 			}
-			// Don't reset the form on error to preserve user input
 		}
 	});
 
@@ -562,13 +565,13 @@
 								<label for="mfr-name" class="form-label">Name <span class="required">*</span></label>
 								<input 
 									id="mfr-name" 
-									name="name" 
-									bind:value={$manufacturerForm.name} 
+									name="manufacturer_name" 
+									bind:value={$manufacturerForm.manufacturer_name} 
 									class="form-input enhanced-input"
 									placeholder="Enter manufacturer name"
 									required 
 								/>
-								{#if $manufacturerErrors.name}
+								{#if $manufacturerErrors.manufacturer_name}
 									<span class="field-error">{$manufacturerErrors.name}</span>
 								{/if}
 							</div>
@@ -577,13 +580,13 @@
 								<label for="mfr-description" class="form-label">Description</label>
 								<textarea 
 									id="mfr-description" 
-									name="description" 
-									bind:value={$manufacturerForm.description}
-									class="form-textarea enhanced-input"
+									name="manufacturer_description" 
+									bind:value={$manufacturerForm.manufacturer_description}
+									class="form-textarea enhanced-textarea"
+									placeholder="Enter manufacturer description"
 									rows="3"
-									placeholder="Enter a description of the manufacturer"
 								></textarea>
-								{#if $manufacturerErrors.description}
+								{#if $manufacturerErrors.manufacturer_description}
 									<span class="field-error">{$manufacturerErrors.description}</span>
 								{/if}
 							</div>

@@ -1,19 +1,21 @@
 // src/routes/manufacturer/[id]/edit/+page.server.ts
 import sql from '$lib/server/db/index';
-import { getManufacturer } from '@/core/manufacturer';
-import { manufacturerSchema } from '@/schema/schema';
+import { getManufacturerById } from '$lib/core/manufacturer';
+import { manufacturerSchema } from '$lib/schema/schema';
 import { fail, redirect } from '@sveltejs/kit';
 import { message, superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
-import * as z from 'zod';
+import { z } from 'zod';
 import type { Actions, PageServerLoad } from './$types';
 
 // Create a schema for manufacturer updates, omitting fields that shouldn't be in the form
-const updateManufacturerSchema =manufacturerSchema
-                 .partial()
-                 .extend(
-                  {manufacturer_id:z.string().uuid()}
-                 );
+const updateManufacturerSchema = manufacturerSchema
+  .partial()
+  .extend({
+    manufacturer_id: z.string().uuid(),
+    // Add explicit support for custom fields storage in form
+    custom_fields: z.string().optional()
+  });
 
 
 
@@ -28,7 +30,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
   
   try {
     // Fetch the manufacturer by ID
-    const manufacturer = await getManufacturer(manufacturerId);
+    const manufacturer = await getManufacturerById(manufacturerId);
     
     if (!manufacturer) {
       console.log('Manufacturer not found, redirecting');
@@ -37,7 +39,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     
     // Check if the user is allowed to edit this manufacturer
     // Only the creator or admin should be able to edit
-    if (manufacturer.created_by !== user.id && user.role !== 'admin') {
+    if (manufacturer.created_by !== user.user_id && user.role !== 'admin') {
       console.log('User not authorized to edit this manufacturer');
       throw redirect(302, '/manufacturer');
     }
@@ -48,25 +50,23 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     console.log('Custom fields:', manufacturer.custom_fields);
     
     // Format initial data with custom fields as a JSON string
-    // Map camelCase TypeScript properties to snake_case form fields
+    // Map camelCase TypeScript properties to snake_case form fields to match schema
+    // Convert fields to expected schema format
     const initialData = {
       // Core fields
-      id: manufacturer.manufacturer_id,
-      name: manufacturer.manufacturer_name,
-      description: manufacturer.manufacturer_description || '',
-      website_url: manufacturer.website_url || '', // Convert camelCase to snake_case
-      logo_url: manufacturer.logo_url || '', // Convert camelCase to snake_case
+      manufacturer_id: manufacturer.manufacturer_id,
+      manufacturer_name: manufacturer.manufacturer_name,
+      manufacturer_description: manufacturer.manufacturer_description || '',
+      website_url: manufacturer.website_url || '',
+      logo_url: manufacturer.logo_url || '',
       
-      // Custom fields as JSON string
-      custom_fields_json: manufacturer.custom_fields && Object.keys(manufacturer.custom_fields).length > 0
-        ? JSON.stringify(manufacturer.custom_fields, null, 2) 
-        : '',
+      // Convert custom fields to string for form editing
+      custom_fields: manufacturer.custom_fields && 
+                     Object.keys(manufacturer.custom_fields || {}).length > 0 ?
+                     JSON.stringify(manufacturer.custom_fields, null, 2) : ''
       
-      // Metadata fields
-      created_by: manufacturer.created_by || null,
-      created_at: manufacturer.created_at || new Date(),
-      updated_by: manufacturer.updated_by || null,
-      updated_at: manufacturer.updated_at || new Date()
+      // No longer including metadata fields as they're not needed for the form
+      // and they cause type issues with superValidate
     };
     
     console.log('Complete initialData for form:', initialData);
@@ -95,7 +95,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 export const actions: Actions = {
   // Update manufacturer action
-  update: async ({ request, params, locals }: { request: Request, params: { id: string }, locals: { user: any } }) => {
+  update: async ({ request, params, locals }) => {
     const user = locals.user;
     const manufacturerId = params.id;
     
@@ -117,10 +117,13 @@ export const actions: Actions = {
     
     try {
       // Parse custom fields JSON if provided
-      let customFields = null;
-      if (form.data.custom_fields?.trim()) {
+      let customFields: Record<string, any> | null = null;
+      const customFieldsStr = form.data.custom_fields;
+      
+      // Only process if it's a non-empty string
+      if (typeof customFieldsStr === 'string' && customFieldsStr.trim()) {
         try {
-          customFields = JSON.parse(form.data.custom_fields);
+          customFields = JSON.parse(customFieldsStr);
           console.log('Successfully parsed custom fields:', customFields);
         } catch (e) {
           console.error('Invalid JSON format for custom fields:', e);
@@ -131,15 +134,24 @@ export const actions: Actions = {
       console.log('Updating manufacturer with ID:', manufacturerId);
       
       // Execute the update query for the main fields
+      // Use separate values for SQL parameters to avoid type issues
+      const manufacturerName = form.data.manufacturer_name || null;
+      const manufacturerDescription = form.data.manufacturer_description || null;
+      const websiteUrl = form.data.website_url || null;
+      const logoUrl = form.data.logo_url || null;
+      const updatedBy = user.user_id;
+      
       const result = await sql`
-        UPDATE manufacturer
+        UPDATE "Manufacturer"
         SET 
-          manufacturer_name = ${form.data.manufacturer_name},
-          manufacturer_description = ${form.data.manufacturer_description || null},
-          website_url = ${form.data.website_url || null},
-          logo_url = ${form.data.logo_url || null}
-        WHERE id = ${manufacturerId}
-        RETURNING id, name
+          manufacturer_name = ${manufacturerName},
+          manufacturer_description = ${manufacturerDescription},
+          website_url = ${websiteUrl},
+          logo_url = ${logoUrl},
+          updated_by = ${updatedBy},
+          updated_at = NOW()
+        WHERE manufacturer_id = ${manufacturerId}
+        RETURNING manufacturer_id, manufacturer_name
       `;
       
       console.log('Basic update successful, returned data:', result);
@@ -149,47 +161,57 @@ export const actions: Actions = {
         console.log('Processing custom fields...');
         
         try {
-          if (form.data.custom_fields) {
-            // Delete existing custom fields first
-            await sql`DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${manufacturerId}`;
-            console.log('Deleted existing custom fields');
+          // Delete existing custom fields first
+          await sql`DELETE FROM "ManufacturerCustomField" WHERE manufacturer_id = ${manufacturerId}`;
+          console.log('Deleted existing custom fields');
 
-            const customFields = JSON.parse(form.data.custom_fields);
-            for (const [fieldName, fieldValue] of Object.entries(customFields)) {
-              // Check if this field already exists
-              const existingField = await sql`
-                SELECT id FROM customfield WHERE field_name = ${fieldName}
-              `;
+          for (const [fieldName, fieldValue] of Object.entries(customFields)) {
+            // Check if this field already exists
+            const existingField = await sql`
+              SELECT field_id FROM "CustomField" WHERE field_name = ${fieldName}
+            `;
+            
+            let fieldId;
+            if (existingField.length > 0) {
+              fieldId = existingField[0].field_id;
+              console.log(`Using existing field ID ${fieldId} for ${fieldName}`);
+            } else {
+              // Create a new custom field with correct data_type according to schema
+              let dataType;
+              if (typeof fieldValue === 'string') dataType = 'text';  // Use 'text' instead of 'string'
+              else if (typeof fieldValue === 'number') dataType = 'number';
+              else if (typeof fieldValue === 'boolean') dataType = 'boolean';
+              else if (fieldValue instanceof Date) dataType = 'date';
+              else dataType = 'text';  // Default to text for other types
               
-              let fieldId;
-              if (existingField.length > 0) {
-                fieldId = existingField[0].id;
-                console.log(`Using existing field ID ${fieldId} for ${fieldName}`);
-              } else {
-                // Create a new custom field with correct data_type according to schema
-                let dataType;
-                if (typeof fieldValue === 'string') dataType = 'text';  // Use 'text' instead of 'string'
-                else if (typeof fieldValue === 'number') dataType = 'number';
-                else if (typeof fieldValue === 'boolean') dataType = 'boolean';
-                else if (fieldValue instanceof Date) dataType = 'date';
-                else dataType = 'text';  // Default to text for other types
-                
-                const newField = await sql`
-                  INSERT INTO customfield (field_name, data_type, applies_to)
-                  VALUES (${fieldName}, ${dataType}, ${'manufacturer'})
-                  RETURNING id
-                `;
-                fieldId = newField[0].id;
-                console.log(`Created new field ID ${fieldId} for ${fieldName}`);
-              }
-              
-              // Now add the value
-              await sql`
-                INSERT INTO manufacturercustomfield (manufacturer_id, field_id, value)
-                VALUES (${manufacturerId}, ${fieldId}, ${JSON.stringify(fieldValue)})
+              const newField = await sql`
+                INSERT INTO "CustomField" (field_name, data_type, applies_to)
+                VALUES (${fieldName}, ${dataType}, ${'manufacturer'})
+                RETURNING field_id
               `;
-              console.log(`Added value ${fieldValue} for field ${fieldName}`);
+              fieldId = newField[0].field_id;
+              console.log(`Created new field ID ${fieldId} for ${fieldName}`);
             }
+            
+            // Convert any value to string for safe storage in db
+            // Explicitly handle different types to avoid errors
+            let fieldValueStr = '';
+            if (typeof fieldValue === 'string') {
+              fieldValueStr = fieldValue;
+            } else if (typeof fieldValue === 'number' || 
+                      typeof fieldValue === 'boolean' || 
+                      fieldValue === null) {
+              fieldValueStr = JSON.stringify(fieldValue);
+            } else if (typeof fieldValue === 'object') {
+              fieldValueStr = JSON.stringify(fieldValue);
+            }
+            
+            // Now add the value
+            await sql`
+              INSERT INTO "ManufacturerCustomField" (manufacturer_id, field_id, field_value)
+              VALUES (${manufacturerId}, ${fieldId}, ${fieldValueStr})
+            `;
+            console.log(`Added value for field ${fieldName}`);
           }
         } catch (error) {
           console.error('Error handling custom fields:', error);
@@ -207,7 +229,7 @@ export const actions: Actions = {
   },
   
   // Delete manufacturer action
-  delete: async ({ params, locals }: { params: { id: string }, locals: { user: any } }) => {
+  delete: async ({ params, locals }) => {
     const user = locals.user;
     if (!user) {
       return fail(401, { message: 'Unauthorized' });
@@ -218,9 +240,9 @@ export const actions: Actions = {
     try {
       // Check if manufacturer exists and user has permission to delete it
       const manufacturerCheck = await sql`
-        SELECT id FROM manufacturer
-        WHERE id = ${manufacturerId}
-        AND created_by = ${user.id}
+        SELECT manufacturer_id FROM "Manufacturer"
+        WHERE manufacturer_id = ${manufacturerId}
+        AND created_by = ${user.user_id}
       `;
       
       if (manufacturerCheck.length === 0) {
@@ -229,9 +251,9 @@ export const actions: Actions = {
       
       // Delete the manufacturer directly
       await sql`
-        DELETE FROM manufacturer
-        WHERE id = ${manufacturerId}
-        AND created_by = ${user.id}
+        DELETE FROM "Manufacturer"
+        WHERE manufacturer_id = ${manufacturerId}
+        AND created_by = ${user.user_id}
       `;
       
       // Redirect to the manufacturer list

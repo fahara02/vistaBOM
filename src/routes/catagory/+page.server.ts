@@ -1,18 +1,19 @@
 //src/routes/catagory/+page.server.ts
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
-import { getCategoryTree, createCategory } from '@/core/category';
-import { categorySchema } from '@/schema/schema';
+import { getCategoryTree, createCategory, type UiCategory } from '$lib/core/category';
+import { categorySchema } from '$lib/schema/schema';
+import { z } from 'zod';
 import { superValidate } from 'sveltekit-superforms';
 import { zod } from 'sveltekit-superforms/adapters';
 import { fail, redirect } from '@sveltejs/kit';
 
-// pick only create fields
-const createCategorySchema = categorySchema.pick({
-  name: true,
-  parent_id: true,
-  description: true,
-  is_public: true
+// Create a new schema with only the fields we need for category creation
+const createCategorySchema = z.object({
+  category_name: z.string().min(1),
+  parent_id: z.string().uuid().optional().nullable(),
+  category_description: z.string().optional().nullable(),
+  is_public: z.boolean().default(true)
 });
 
 export const load: PageServerLoad = async (event) => {
@@ -30,11 +31,12 @@ export const actions: Actions = {
     if (!form.valid) return fail(400, { form });
     // Call createCategory with just the parameters object
     await createCategory({
-      name: form.data.name,
-      parentId: form.data.parent_id ?? undefined,
-      description: form.data.description ?? undefined,
-      isPublic: form.data.is_public,
-      createdBy: locals.user.id
+      name: form.data.category_name,
+      // Convert null to undefined using nullish coalescing
+      parentId: form.data.parent_id === null ? undefined : form.data.parent_id,
+      description: form.data.category_description === null ? undefined : form.data.category_description,
+      isPublic: form.data.is_public ?? true,
+      createdBy: locals.user.user_id
     });
     throw redirect(303, '/catagory');
   }
