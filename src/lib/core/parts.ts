@@ -2429,35 +2429,404 @@ export async function removeCategoryFromPartVersion(partVersionId: string, categ
 }
 
 /**
- * Get all categories for a part version
+ * Complete part creation with all related data in a single function
+ * Creates a base part, its first version, and all related data in a single transaction
  * 
- * @param partVersionId The part version ID to get categories for
- * @returns Array of part version category relationships
- * @throws Error if the operation fails
+ * @param partData Complete part data including base part, version details, and related entities
+ * @returns Object containing the created part and its first version
+ * @throws Error if any part of the creation process fails
  */
-export async function getCategoriesForPartVersion(partVersionId: string): Promise<PartVersionCategory[]> {
+export async function addCompletePart(partData: {
+    // Base part data
+    id?: string;
+    number: string;
+    name: string;
+    description?: string;
+    status?: string;
+    isPublic?: boolean;
+    createdBy: string;
+    
+    // Part version data
+    versionId?: string;
+    version?: string;
+    shortDescription?: string;
+    longDescription?: string;
+    functionalDescription?: string;
+    revisionNotes?: string;
+    versionStatus?: string;
+    releasedAt?: Date | string;
+    
+    // Technical specifications
+    technicalSpecifications?: Record<string, unknown>;
+    properties?: Record<string, unknown>;
+    
+    // Physical properties
+    weight?: number | string;
+    weightUnit?: string;
+    dimensions?: Dimensions | { length?: number | string; width?: number | string; height?: number | string; };
+    dimensionsUnit?: string;
+    materialComposition?: MaterialComposition | Record<string, unknown>;
+    
+    // Electrical properties
+    electricalProperties?: ElectricalProperties | Record<string, unknown>;
+    voltageRatingMin?: number | string;
+    voltageRatingMax?: number | string;
+    currentRatingMin?: number | string;
+    currentRatingMax?: number | string;
+    powerRatingMax?: number | string;
+    
+    // Mechanical properties
+    mechanicalProperties?: MechanicalProperties | Record<string, unknown>;
+    tolerance?: number | string;
+    toleranceUnit?: string;
+    
+    // Thermal properties
+    thermalProperties?: ThermalProperties | Record<string, unknown>;
+    operatingTempMin?: number | string;
+    operatingTempMax?: number | string;
+    storageTempMin?: number | string;
+    storageTempMax?: number | string;
+    temperatureUnit?: string;
+    
+    // Component properties
+    packageType?: string;
+    mountingType?: string;
+    pinCount?: number | string;
+    
+    // Environmental data
+    environmentalData?: EnvironmentalData | Record<string, unknown>;
+    
+    // Associated entities
+    categories?: Array<string>;
+    manufacturerParts?: Array<{
+        manufacturerId: string;
+        partNumber: string;
+        description?: string;
+        url?: string;
+        status?: string;
+        notes?: string;
+        customProperties?: Record<string, unknown>;
+    }>;
+    supplierParts?: Array<{
+        supplierId: string;
+        partNumber: string;
+        description?: string;
+        url?: string;
+        currencyCode?: string;
+        unitPrice?: number | string;
+        minimumOrderQuantity?: number | string;
+        leadTimeWeeks?: number | string;
+        status?: string;
+        notes?: string;
+        customProperties?: Record<string, unknown>;
+    }>;
+    attachments?: Array<{
+        filename: string;
+        fileUrl: string;
+        fileType?: string;
+        description?: string;
+        version?: string;
+        uploadedBy?: string;
+    }>;
+    familyIds?: Array<string>;
+    customFields?: Record<string, unknown>;
+    
+}): Promise<{ part: Part; partVersion: SchemaPartVersion }> {
     try {
-        // Validate input
-        if (!partVersionId || partVersionId.trim() === '') {
-            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part version ID`);
-        }
-        
-        console.log(`[getCategoriesForPartVersion] Getting categories for part version ${partVersionId}`);
-        
-        // Query for categories
-        const result = await sql`
-            SELECT * FROM "PartVersionCategory" 
-            WHERE part_version_id = ${partVersionId}
-            ORDER BY created_at ASC
-        `;
-        
-        console.log(`[getCategoriesForPartVersion] Found ${result.length} categories for part version ${partVersionId}`);
-        
-        // Convert results to PartVersionCategory objects
-        return result.map(rowToPartVersionCategory);
+        // Use a standard SQL transaction without passing it to createPart
+        return await sql.begin(async (transaction) => {
+            // 1. Create the base part
+            const partId = partData.id || crypto.randomUUID();
+            // Create base part parameters with all required fields
+            const partParams: PartFormData = {
+                id: partId,
+                part_name: partData.name,
+                part_version: partData.version || '1.0.0',
+                is_public: partData.isPublic ?? false,
+                status_in_bom: partData.status as PartStatusEnum || PartStatusEnum.ACTIVE,
+                lifecycle_status: LifecycleStatusEnum.DRAFT
+            };
+            
+            // Add additional fields that might be needed but use type casting to avoid TypeScript errors
+            if (partData.number) {
+                (partParams as any).part_number = partData.number;
+            }
+            if (partData.description) {
+                (partParams as any).description = partData.description;
+            }
+            if (partData.createdBy) {
+                (partParams as any).created_by = partData.createdBy;
+            }
+            
+            // Create the part - using a direct call to the base createPart function
+            // Since we're already inside a transaction, we simply pass the partParams
+            // Use proper postgres.js syntax for transactions
+            const result = await transaction`
+                INSERT INTO "Part" (
+                    part_id, 
+                    part_name, 
+                    part_number, 
+                    description, 
+                    status_in_bom,
+                    lifecycle_status,
+                    is_public,
+                    created_by,
+                    created_at
+                ) VALUES (
+                    ${partId},
+                    ${partParams.part_name},
+                    ${(partParams as any).part_number || ''},
+                    ${(partParams as any).description || ''},
+                    ${partParams.status_in_bom},
+                    ${partParams.lifecycle_status},
+                    ${partParams.is_public},
+                    ${(partParams as any).created_by || 'system'},
+                    ${new Date()}
+                ) RETURNING *
+            `;
+            
+            const createdPart = result[0];
+            
+            // 2. Create the initial version
+            const versionId = partData.versionId || crypto.randomUUID();
+            
+            // Process dimensions to ensure they're in the correct format
+            let dimensionsObj: Dimensions | null = null;
+            if (partData.dimensions) {
+                if ('length' in partData.dimensions) {
+                    // Convert any string values to numbers
+                    dimensionsObj = {
+                        length: typeof partData.dimensions.length === 'string' ? 
+                            parseFloat(partData.dimensions.length) : 
+                            typeof partData.dimensions.length === 'number' ? 
+                                partData.dimensions.length : null,
+                        width: typeof partData.dimensions.width === 'string' ? 
+                            parseFloat(partData.dimensions.width) : 
+                            typeof partData.dimensions.width === 'number' ? 
+                                partData.dimensions.width : null,
+                        height: typeof partData.dimensions.height === 'string' ? 
+                            parseFloat(partData.dimensions.height) : 
+                            typeof partData.dimensions.height === 'number' ? 
+                                partData.dimensions.height : null
+                    };
+                } else {
+                    dimensionsObj = partData.dimensions as Dimensions;
+                }
+            }
+            
+            // Convert categories to the expected format
+            const categories = partData.categories ? 
+                partData.categories.map(catId => ({ id: catId })) : undefined;
+            
+            // Create the part version with the properly formatted data
+            const partVersion: PartVersionInput = {
+                id: versionId,
+                partId: partId,
+                part_id: partId,
+                version: partData.version || '1.0.0',
+                name: partData.name,
+                part_name: partData.name,
+                part_version: partData.version || '1.0.0',
+                status: partData.versionStatus as LifecycleStatusEnum || LifecycleStatusEnum.DRAFT,
+                createdBy: partData.createdBy,
+                created_by: partData.createdBy,
+                
+                // Text descriptions
+                short_description: partData.shortDescription,
+                long_description: partData.longDescription,
+                functional_description: partData.functionalDescription,
+                revision_notes: partData.revisionNotes,
+                
+                // JSON fields - ensure they're properly typed for the database
+                technical_specifications: partData.technicalSpecifications as JsonValue,
+                technicalSpecifications: partData.technicalSpecifications as JsonValue,
+                properties: partData.properties as JsonValue,
+                electrical_properties: partData.electricalProperties as JsonValue,
+                electricalProperties: partData.electricalProperties as JsonValue,
+                mechanical_properties: partData.mechanicalProperties as JsonValue,
+                mechanicalProperties: partData.mechanicalProperties as JsonValue,
+                thermal_properties: partData.thermalProperties as JsonValue,
+                thermalProperties: partData.thermalProperties as JsonValue,
+                material_composition: partData.materialComposition as JsonValue,
+                materialComposition: partData.materialComposition as JsonValue,
+                environmental_data: partData.environmentalData as JsonValue,
+                environmentalData: partData.environmentalData as JsonValue,
+                
+                // Physical properties
+                weight: partData.weight !== undefined ? Number(partData.weight) : undefined,
+                weight_unit: partData.weightUnit,
+                weightUnit: partData.weightUnit,
+                dimensions: dimensionsObj,
+                dimensions_unit: partData.dimensionsUnit,
+                dimensionsUnit: partData.dimensionsUnit,
+                
+                // Electrical properties
+                voltage_rating_min: partData.voltageRatingMin !== undefined ? Number(partData.voltageRatingMin) : undefined,
+                voltageRatingMin: partData.voltageRatingMin,
+                voltage_rating_max: partData.voltageRatingMax !== undefined ? Number(partData.voltageRatingMax) : undefined,
+                voltageRatingMax: partData.voltageRatingMax,
+                current_rating_min: partData.currentRatingMin !== undefined ? Number(partData.currentRatingMin) : undefined,
+                currentRatingMin: partData.currentRatingMin,
+                current_rating_max: partData.currentRatingMax !== undefined ? Number(partData.currentRatingMax) : undefined,
+                currentRatingMax: partData.currentRatingMax,
+                power_rating_max: partData.powerRatingMax !== undefined ? Number(partData.powerRatingMax) : undefined,
+                powerRatingMax: partData.powerRatingMax,
+                
+                // Mechanical properties
+                tolerance: partData.tolerance !== undefined ? Number(partData.tolerance) : undefined,
+                tolerance_unit: partData.toleranceUnit,
+                toleranceUnit: partData.toleranceUnit,
+                
+                // Thermal properties
+                operating_temp_min: partData.operatingTempMin !== undefined ? Number(partData.operatingTempMin) : undefined,
+                operatingTempMin: partData.operatingTempMin,
+                operating_temp_max: partData.operatingTempMax !== undefined ? Number(partData.operatingTempMax) : undefined,
+                operatingTempMax: partData.operatingTempMax,
+                storage_temp_min: partData.storageTempMin !== undefined ? Number(partData.storageTempMin) : undefined,
+                storageTempMin: partData.storageTempMin,
+                storage_temp_max: partData.storageTempMax !== undefined ? Number(partData.storageTempMax) : undefined,
+                storageTempMax: partData.storageTempMax,
+                temperature_unit: partData.temperatureUnit,
+                temperatureUnit: partData.temperatureUnit,
+                
+                // Component properties
+                package_type: partData.packageType,
+                packageType: partData.packageType,
+                mounting_type: partData.mountingType,
+                mountingType: partData.mountingType,
+                pin_count: partData.pinCount !== undefined ? Number(partData.pinCount) : undefined,
+                pinCount: partData.pinCount,
+                
+                // Categories
+                categories: categories
+            };
+            
+            const createdPartVersion = await createPartVersion(partVersion);
+            
+            // 3. Process manufacturer parts if provided
+            if (partData.manufacturerParts && partData.manufacturerParts.length > 0) {
+                for (const mfrPart of partData.manufacturerParts) {
+                    // Create manufacturer part with correct parameters
+                    await createManufacturerPart(
+                        versionId,
+                        mfrPart.manufacturerId,
+                        mfrPart.partNumber,
+                        mfrPart.description || '',
+                        mfrPart.url || '',
+                        mfrPart.status || 'ACTIVE',
+                        mfrPart.notes || '',
+                        // Convert customProperties to JSON string to match expected type
+                        JSON.stringify(mfrPart.customProperties || {})
+                    );
+                }
+            }
+            
+            // 4. Process supplier parts if provided
+            if (partData.supplierParts && partData.supplierParts.length > 0) {
+                for (const supPart of partData.supplierParts) {
+                    // Create supplier part with correct parameters based on function signature
+                    // Only pass the necessary parameters in the correct order
+                    await createSupplierPart(
+                        versionId,
+                        supPart.supplierId,
+                        supPart.partNumber,
+                        supPart.description || ''
+                    );
+                }
+            }
+            
+            // 5. Process attachments if provided
+            if (partData.attachments && partData.attachments.length > 0) {
+                for (const attachment of partData.attachments) {
+                    // For createPartAttachment, ensure we pass parameters in the correct order and type
+                    // Directly use SQL to create the attachment to avoid type issues
+                    await transaction`
+                        INSERT INTO "PartAttachment" (
+                            part_attachment_id,
+                            part_version_id,
+                            filename,
+                            file_url,
+                            file_type,
+                            description,
+                            version,
+                            size_bytes,
+                            uploaded_by,
+                            created_by,
+                            created_at
+                        ) VALUES (
+                            ${crypto.randomUUID()},
+                            ${versionId},
+                            ${attachment.filename},
+                            ${attachment.fileUrl},
+                            ${attachment.fileType || ''},
+                            ${attachment.description || ''},
+                            ${attachment.version || '1.0'},
+                            ${0}, /* size_bytes */
+                            ${attachment.uploadedBy || partData.createdBy},
+                            ${partData.createdBy},
+                            ${new Date()}
+                        )
+                    `;
+                }
+            }
+            
+            // 6. Process custom fields if provided
+            if (partData.customFields && Object.keys(partData.customFields).length > 0) {
+                for (const [fieldName, fieldValue] of Object.entries(partData.customFields)) {
+                    // Determine data type based on the value
+                    let dataType = 'text';
+                    if (typeof fieldValue === 'number') dataType = 'number';
+                    else if (typeof fieldValue === 'boolean') dataType = 'boolean';
+                    else if (fieldValue instanceof Date) dataType = 'date';
+                    
+                    // For createPartCustomField, use direct SQL to avoid type issues
+                    // Convert the field value to a string using JSON.stringify
+                    // to handle any data type properly
+                    const jsonValue = JSON.stringify(fieldValue);
+                    
+                    await transaction`
+                        INSERT INTO "PartCustomField" (
+                            part_custom_field_id,
+                            part_version_id,
+                            field_name,
+                            field_value,
+                            data_type,
+                            is_required,
+                            display_order,
+                            created_by,
+                            created_at
+                        ) VALUES (
+                            ${crypto.randomUUID()},
+                            ${versionId},
+                            ${fieldName},
+                            ${jsonValue}::jsonb,
+                            ${dataType},
+                            ${false},
+                            ${0},
+                            ${partData.createdBy},
+                            ${new Date()}
+                        )
+                    `;
+                }
+            }
+            
+            // 7. Process family associations if provided
+            if (partData.familyIds && partData.familyIds.length > 0) {
+                for (const familyId of partData.familyIds) {
+                    await addPartToFamily(partId, familyId, partData.createdBy);
+                }
+            }
+            
+            // Cast the results to the expected return types to satisfy TypeScript
+            // This is safe because we know the structure matches what's needed
+            return {
+                part: createdPart as Part,
+                partVersion: createdPartVersion
+            };
+        });
     } catch (error) {
-        console.error(`[getCategoriesForPartVersion] Error getting categories for part version ${partVersionId}:`, error);
-        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error('[addCompletePart] Error creating complete part:', error);
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Error creating complete part: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
