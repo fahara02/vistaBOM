@@ -147,14 +147,14 @@ export const load: PageServerLoad = async (event) => {
 			SELECT 
 				m.*,
 				COALESCE(
-					(SELECT json_object_agg(cf.field_name, mcf.value)
+					(SELECT json_object_agg(cf.field_name, mcf.custom_field_value)
 					 FROM "ManufacturerCustomField" mcf
-					 JOIN "CustomField" cf ON mcf.field_id = cf.id
-					 WHERE mcf.manufacturer_id = m.id
+					 JOIN "CustomField" cf ON mcf.field_id = cf.custom_field_id
+					 WHERE mcf.manufacturer_id = m.manufacturer_id
 					), '{}'::json) AS custom_fields
 			FROM "Manufacturer" m
 			WHERE m.created_by = ${user.user_id}
-			ORDER BY m.name ASC
+			ORDER BY m.manufacturer_name ASC
 		`;
 	} catch (error) {
 		console.error('Error fetching manufacturers:', error);
@@ -168,7 +168,7 @@ export const load: PageServerLoad = async (event) => {
 			SELECT *
 			FROM "Supplier"
 			WHERE created_by = ${user.user_id}
-			ORDER BY name ASC
+			ORDER BY supplier_name ASC
 		`;
 	} catch (error) {
 		console.error('Error fetching suppliers:', error);

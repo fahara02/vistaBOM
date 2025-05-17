@@ -1,12 +1,12 @@
 // src/routes/supplier/[id]/edit/+page.server.ts
-import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
-import { getSupplier } from '@/core/supplier';
-import { z } from 'zod';
-import { superValidate, message } from 'sveltekit-superforms/server';
-import { zod } from 'sveltekit-superforms/adapters';
-import { error, fail, redirect } from '@sveltejs/kit';
 import { parseContactInfo } from '$lib/utils/util';
+import { getSupplier } from '@/core/supplier';
+import { fail, redirect } from '@sveltejs/kit';
+import { zod } from 'sveltekit-superforms/adapters';
+import { message, superValidate } from 'sveltekit-superforms/server';
+import { z } from 'zod';
+import type { Actions, PageServerLoad } from './$types';
 
 // Edit schema - allow more fields to be optional for updates
 const supplierEditSchema = z.object({
@@ -28,9 +28,9 @@ const supplierEditSchema = z.object({
 async function getSupplierCustomFields(supplierId: string): Promise<Record<string, any>> {
   try {
     const customFieldRows = await sql`
-      SELECT cf.field_name, cf.data_type, scf.value
+      SELECT cf.field_name, cf.data_type, scf.custom_field_value
       FROM suppliercustomfield scf
-      JOIN customfield cf ON scf.field_id = cf.id
+      JOIN customfield cf ON scf.field_id = cf.custom_field_id
       WHERE scf.supplier_id = ${supplierId}
     `;
     
