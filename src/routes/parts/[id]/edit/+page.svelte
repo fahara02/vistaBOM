@@ -12,14 +12,15 @@
 	type Manufacturer = { id: string; name: string; [key: string]: any };
 	type Category = { id: string; name: string; [key: string]: any };
 	
-	// Get manufacturers and categories properly from the data
-	const categoriesData = data.currentVersion?.categories || [];
-	const manufacturersData = data.currentVersion?.manufacturerParts?.map(mp => {
+	// Get manufacturers and categories with proper type safety
+	// Type assertion is needed because currentVersion might not directly expose these properties in TypeScript
+	const categoriesData = ((data.currentVersion as any)?.category_links || []) as any[];
+	const manufacturersData = ((data.currentVersion as any)?.manufacturer_parts || []).map((mp: any) => {
 		return {
-			id: mp.manufacturerId,
-			name: mp.manufacturerName || 'Unknown'
+			id: mp.manufacturer_id,
+			name: mp.manufacturer_name || 'Unknown'
 		};
-	}) || [];
+	});
 	
 	// Convert to proper arrays with type assertions
 	const categories = categoriesData as Category[];
@@ -34,13 +35,14 @@
 		manufacturersCount: manufacturers.length
 	});
 
-	// CRITICAL FIX: Ensure relationship data is properly logged
-	if (data.currentVersion?.categories) {
-		console.log('Categories from currentVersion:', data.currentVersion.categories);
+	// CRITICAL FIX: Ensure relationship data is properly logged with type assertions
+	const currentVersionAny = data.currentVersion as any;
+	if (currentVersionAny?.category_links) {
+		console.log('Categories from currentVersion:', currentVersionAny.category_links);
 	}
 	
-	if (data.currentVersion?.manufacturerParts) {
-		console.log('Manufacturer parts from currentVersion:', data.currentVersion.manufacturerParts);
+	if (currentVersionAny?.manufacturer_parts) {
+		console.log('Manufacturer parts from currentVersion:', currentVersionAny.manufacturer_parts);
 	}
 
 	// Pre-process form data to ensure JSON fields are correctly formatted before validation
@@ -114,16 +116,13 @@
 </script>
 
 <div class="edit-part-container">
-	<h1>Edit Part - {data.currentVersion?.name}</h1>
+	<h1>Edit Part - {data.currentVersion?.part_name}</h1>
 	<!-- Pass all relationship data explicitly to ensure it's available for display -->
 	<PartForm 
 		form={form} 
 		enhance={enhance} 
 		errors={errors} 
-		partData={{
-			...data.part, 
-			status: data.part.status as unknown as LifecycleStatusEnum
-		}} 
+		partData={data.part as any} 
 		versionData={{
 			...data.currentVersion, 
 			// Handle all JSON fields with proper typing
@@ -140,13 +139,14 @@
 		}} 
 		isEditMode={true} 
 		manufacturers={manufacturers.map((m: Manufacturer) => ({
-			...m, 
+			manufacturer_id: m.id,
+			manufacturer_name: m.name,
 			created_at: new Date(),
 			updated_at: new Date()
-		}))} 
-		categories={categories}
-		selectedCategoryIds={data.currentVersion?.categories?.map((cat: any) => cat.id) || []}
-		selectedManufacturerParts={data.currentVersion?.manufacturerParts?.map((mp: any) => ({
+		})) as any} 
+		categories={categories as any}
+		selectedCategoryIds={currentVersionAny?.category_links?.map((cat: any) => cat.category_id) || []}
+		selectedManufacturerParts={currentVersionAny?.manufacturer_parts?.map((mp: any) => ({
 			id: mp.id,
 			manufacturer_id: mp.manufacturerId,
 			manufacturer_part_number: mp.partNumber,

@@ -32,17 +32,17 @@
     <form method="POST" use:enhance>
       <div class="form-grid">
         <div class="form-group">
-          <label for="name">Category Name*</label>
+          <label for="category_name">Category Name*</label>
           <input 
             type="text" 
-            id="name" 
-            name="name" 
-            bind:value={$form.name} 
+            id="category_name" 
+            name="category_name"
+            bind:value={$form.category_name}
             required 
-            class:error={$errors.name}
+            class:error={$errors.category_name}
           />
-          {#if $errors.name}
-            <span class="error-text">{$errors.name}</span>
+          {#if $errors.category_name}
+            <span class="error-text">{$errors.category_name}</span>
           {/if}
         </div>
 
@@ -65,16 +65,16 @@
       </div>
 
       <div class="form-group full-width">
-        <label for="description">Description</label>
+        <label for="category_description">Description</label>
         <textarea 
-          id="description" 
-          name="description" 
-          bind:value={$form.description} 
+          id="category_description" 
+          name="category_description"
+          bind:value={$form.category_description} 
           rows="4"
-          class:error={$errors.description}
+          class:error={$errors.category_description}
         ></textarea>
-        {#if $errors.description}
-          <span class="error-text">{$errors.description}</span>
+        {#if $errors.category_description}
+          <span class="error-text">{$errors.category_description}</span>
         {/if}
       </div>
 

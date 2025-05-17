@@ -73,7 +73,7 @@
 </script>
 
 <svelte:head>
-  <title>Edit Supplier: {supplier.name}</title>
+  <title>Edit Supplier: {supplier.supplier_name}</title>
 </svelte:head>
 
 <div class="edit-page-container">
@@ -101,17 +101,17 @@
     <div class="form-container">
       <form method="POST" action="?/update" use:enhance on:submit={handleSubmit} class="edit-form">
         <div class="form-header">
-          <h2>Edit {supplier.name}</h2>
-          {#if supplier.logoUrl}
+          <h2>Edit {supplier.supplier_name}</h2>
+          {#if supplier.logo_url}
             <div class="logo-preview">
-              <img src={supplier.logoUrl} alt="{supplier.name} logo" />
+              <img src={supplier.logo_url} alt="{supplier.supplier_name} logo" />
             </div>
           {/if}
         </div>
         
         <div class="form-fields">
           <div class="form-group">
-            <label for="name">Name <span class="required">*</span></label>
+            <label for="supplier_name">Name <span class="required">*</span></label>
             <input 
               id="name" 
               name="name" 
@@ -330,12 +330,12 @@
         <h3>About This Supplier</h3>
         <div class="info-item">
           <span class="info-label">Created:</span>
-          <span class="info-value">{new Date(supplier.createdAt).toLocaleDateString()}</span>
+          <span class="info-value">{new Date(supplier.created_at).toLocaleDateString()}</span>
         </div>
-        {#if supplier.updatedAt}
+        {#if supplier.updated_at}
           <div class="info-item">
             <span class="info-label">Last Updated:</span>
-            <span class="info-value">{new Date(supplier.updatedAt).toLocaleDateString()}</span>
+            <span class="info-value">{new Date(supplier.updated_at).toLocaleDateString()}</span>
           </div>
         {/if}
         <div class="info-hint">
@@ -354,7 +354,7 @@
   <div class="modal-overlay">
     <div class="modal-content">
       <h2>Confirm Deletion</h2>
-      <p>Are you sure you want to delete <strong>{supplier.name}</strong>?</p>
+      <p>Are you sure you want to delete <strong>{supplier.supplier_name}</strong>?</p>
       <p class="warning">This action cannot be undone.</p>
       
       <div class="modal-actions">

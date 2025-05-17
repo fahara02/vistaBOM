@@ -2,7 +2,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { updateSupplier, deleteSupplier } from '@/core/supplier';
+import { updateSupplier, deleteSupplier } from '$lib/core/supplier';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!locals.user) {
@@ -26,9 +26,9 @@ export const PUT: RequestHandler = async ({ request, params, locals }) => {
                 description: data.description,
                 websiteUrl: data.websiteUrl,
                 contactInfo: data.contactInfo,
-                logoUrl: data.logoUrl
-            },
-            userId // Use authenticated user ID
+                logoUrl: data.logoUrl,
+                updatedBy: userId // Include user ID as part of the params object
+            }
         );
         return json(updated);
     } catch (e: any) {

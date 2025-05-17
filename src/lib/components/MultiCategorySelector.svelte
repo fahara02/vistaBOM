@@ -1,14 +1,19 @@
 <!-- src/lib/components/MultiCategorySelector.svelte -->
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, createEventDispatcher } from "svelte";
   import Check from "lucide-svelte/icons/check";
   import X from "lucide-svelte/icons/x";
   import ChevronsUpDown from "lucide-svelte/icons/chevrons-up-down";
   import * as Popover from "$lib/components/ui/popover/index.js";
-  import * as Command from "$lib/components/ui/command/index.js";
+  import { Command } from "$lib/components/ui/command-wrapper";
   import { Button } from "$lib/components/ui/button/index.js";
   import { cn } from "$lib/utils.js";
-  import type { Category } from '$lib/server/db/types';
+  import type { Category } from '$lib/types/schemaTypes';
+  
+  // Initialize event dispatcher
+  const dispatch = createEventDispatcher<{
+    change: string[];
+  }>();
   
   // Props
   export let categories: Category[] = [];
@@ -24,17 +29,17 @@
   
   // Function to get parent name for a category
   function getParentName(category: Category): string {
-    if (!category.parentId) return '';
-    const parent = categories.find(c => c.id === category.parentId);
-    return parent ? parent.name : '';
+    if (!category.parent_id) return '';
+    const parent = categories.find(c => c.category_id === category.parent_id);
+    return parent ? parent.category_name : '';
   }
 
   // Create formatted options for the combobox
   $: options = categories.map(category => {
     return {
-      value: category.id,
-      label: category.name,
-      parentId: category.parentId,
+      value: category.category_id,
+      label: category.category_name,
+      parentId: category.parent_id,
       parentName: getParentName(category)
     };
   });
@@ -59,11 +64,16 @@
   }
   
   function toggleCategory(categoryId: string) {
-    if (selectedCategoryIds.includes(categoryId)) {
+    const index = selectedCategoryIds.indexOf(categoryId);
+    if (index >= 0) {
+      // Category is already selected, remove it
       selectedCategoryIds = selectedCategoryIds.filter(id => id !== categoryId);
     } else {
+      // Category is not selected, add it
       selectedCategoryIds = [...selectedCategoryIds, categoryId];
     }
+    // Dispatch change event for parent component
+    dispatch('change', selectedCategoryIds);
   }
   
   function getCategoryNameById(id: string): string {
@@ -94,7 +104,7 @@
           {#each options as option}
             <Command.Item
               value={option.label}
-              onSelect={() => {
+              onSelect={(value: string) => {
                 toggleCategory(option.value);
               }}
             >

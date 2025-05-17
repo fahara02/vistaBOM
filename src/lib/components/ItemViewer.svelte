@@ -63,7 +63,15 @@
   </table>
 
   {#if modalOpen}
-      <div transition:fade class="modal-backdrop" on:click|self={closeModal}>
+      <div 
+          transition:fade 
+          class="modal-backdrop" 
+          on:click|self={closeModal}
+          on:keydown={(e) => e.key === 'Escape' && closeModal()}
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+      >
           <div class="modal-content">
               {#if selectedItem}
                   {#if selectedItem.manufacturer}
@@ -72,7 +80,11 @@
                       <Supplier supplier={selectedItem.supplier} currentUserId={currentUserId} />
                   {/if}
               {/if}
-              <button class="close-btn" on:click={closeModal}>✕</button>
+              <button 
+                  class="close-btn" 
+                  on:click={closeModal}
+                  aria-label="Close modal"
+              >✕</button>
           </div>
       </div>
   {/if}

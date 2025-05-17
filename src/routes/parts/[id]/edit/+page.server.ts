@@ -1,15 +1,38 @@
 // src/routes/parts/[id]/edit/+page.server.ts
-import { partVersionSchema, partVersionEditSchema } from '@/schema/schema';
-// Import types from lib/types.ts for client-side compatibility
-import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, PartStatusEnum, TemperatureUnitEnum, DimensionUnitEnum } from '$lib/types';
-import { createPartVersion, getPartWithCurrentVersion, updatePartWithStatus } from '@/core/parts';
-import { error, fail } from '@sveltejs/kit';
-import { zod } from 'sveltekit-superforms/adapters';
+import { z } from 'zod';
+import { fail, error, type Actions } from '@sveltejs/kit';
 import { superValidate } from 'sveltekit-superforms/server';
-import type { Actions, PageServerLoad } from './$types';
-import { randomUUID } from 'crypto';
-// Import utilities for JSON field handling
+import { zod } from 'sveltekit-superforms/adapters';
+import type { PageServerLoad } from './$types';
+
+// Import schemas from correct paths
+import { partVersionSchema, partSchema } from '$lib/schema/schema';
+
+// Import part related functions
+import { 
+  createPartVersion, 
+  updatePartWithStatus,
+  getPartWithCurrentVersion
+} from '$lib/core/parts';
+
+// Import types and enums
+import {
+  LifecycleStatusEnum, 
+  PartStatusEnum, 
+  WeightUnitEnum, 
+  DimensionUnitEnum, 
+  TemperatureUnitEnum, 
+  PackageTypeEnum
+} from '$lib/types';
+import type { 
+  ElectricalProperties, 
+  MechanicalProperties, 
+  ThermalProperties 
+} from '$lib/types/schemaTypes';
+
+// Import utility functions
 import { parsePartJsonField } from '$lib/utils/util';
+import crypto from 'crypto';
 
 export const load: PageServerLoad = async ({ params }) => {
   const { part, currentVersion } = await getPartWithCurrentVersion(params.id as string);
@@ -18,55 +41,51 @@ export const load: PageServerLoad = async ({ params }) => {
   // Map PartVersion to data matching schema with all properties
   // Properly cast the enum values to match the expected types
   const initialData = {
-    id: currentVersion.id,
-    part_id: currentVersion.partId,
-    version: currentVersion.version,
-    name: currentVersion.name,
-    short_description: currentVersion.shortDescription ?? '',
-    functional_description: currentVersion.functionalDescription ?? '',
-    long_description: currentVersion.longDescription ?? null,
-    status: currentVersion.status as LifecycleStatusEnum,
-    partStatus: part.status as PartStatusEnum,
+    part_id: part.part_id,
+    part_version: currentVersion.part_version,
+    part_name: currentVersion.part_name,
+    short_description: currentVersion.short_description,
+    // Map long_description in database to full_description in form schema
+    full_description: currentVersion.long_description || null,
+    functional_description: currentVersion.functional_description,
+    version_status: currentVersion.version_status,
+    status_in_bom: part.status_in_bom,
     
     // Electrical properties 
-    voltage_rating_min: currentVersion.voltageRatingMin ?? null,
-    voltage_rating_max: currentVersion.voltageRatingMax ?? null,
-    current_rating_min: currentVersion.currentRatingMin ?? null,
-    current_rating_max: currentVersion.currentRatingMax ?? null,
-    power_rating_max: currentVersion.powerRatingMax ?? null,
+    voltage_rating_min: currentVersion.voltage_rating_min ?? null,
+    voltage_rating_max: currentVersion.voltage_rating_max ?? null,
+    current_rating_min: currentVersion.current_rating_min ?? null, 
+    current_rating_max: currentVersion.current_rating_max ?? null,
+    power_rating_max: currentVersion.power_rating_max ?? null,
     tolerance: currentVersion.tolerance ?? null,
-    tolerance_unit: currentVersion.toleranceUnit ?? null,
-    electrical_properties: currentVersion.electricalProperties ?? null,
+    tolerance_unit: currentVersion.tolerance_unit ?? null,
     
-    // Mechanical properties
-    dimensions: currentVersion.dimensions ?? { length: null, width: null, height: null },
-    dimensions_unit: currentVersion.dimensionsUnit as DimensionUnitEnum || null,
-    weight: currentVersion.weight ?? null,
-    weight_unit: currentVersion.weightUnit as WeightUnitEnum || null,
-    package_type: currentVersion.packageType as PackageTypeEnum || null,
-    pin_count: currentVersion.pinCount ?? null,
-    mechanical_properties: currentVersion.mechanicalProperties ?? null,
-    material_composition: currentVersion.materialComposition ?? null,
+    // Dimensions and physical properties
+    dimensions: currentVersion.dimensions ?? null,
+    dimensions_unit: currentVersion.dimensions_unit ?? null, // Match schema field name
+    weight: currentVersion.part_weight ?? null,
+    weight_unit: currentVersion.weight_unit ?? null,
+    package_type: currentVersion.package_type ?? null,
+    pin_count: currentVersion.pin_count ?? null,
+    material_composition: currentVersion.material_composition ?? null,
     
     // Thermal properties
-    operating_temperature_min: currentVersion.operatingTemperatureMin ?? null,
-    operating_temperature_max: currentVersion.operatingTemperatureMax ?? null,
-    storage_temperature_min: currentVersion.storageTemperatureMin ?? null,
-    storage_temperature_max: currentVersion.storageTemperatureMax ?? null,
-    temperature_unit: currentVersion.temperatureUnit as TemperatureUnitEnum || null,
-    thermal_properties: currentVersion.thermalProperties ?? null,
+    operating_temperature_min: currentVersion.operating_temperature_min ?? null,
+    operating_temperature_max: currentVersion.operating_temperature_max ?? null,
+    storage_temperature_min: currentVersion.storage_temperature_min ?? null,
+    storage_temperature_max: currentVersion.storage_temperature_max ?? null,
+    temperature_unit: currentVersion.temperature_unit ?? null,
     
     // Other properties
-    technical_specifications: currentVersion.technicalSpecifications ?? null,
-    properties: currentVersion.properties ?? null,
-    environmental_data: currentVersion.environmentalData ?? null,
-    revision_notes: currentVersion.revisionNotes ?? '',
+    technical_specifications: currentVersion.technical_specifications ?? null,
+    environmental_data: currentVersion.environmental_data ?? null,
+    revision_notes: currentVersion.revision_notes ?? '',
     
     // Metadata
-    created_by: currentVersion.createdBy,
-    created_at: currentVersion.createdAt,
-    updated_by: currentVersion.updatedBy ?? null,
-    updated_at: currentVersion.updatedAt
+    created_by: currentVersion.created_by,
+    created_at: currentVersion.created_at,
+    updated_by: currentVersion.updated_by ?? null,
+    updated_at: currentVersion.updated_at
   };
   
   // Use schema from Zod to validate the form data
@@ -99,13 +118,8 @@ export const load: PageServerLoad = async ({ params }) => {
   };
 };
 
-// Import the sql client directly if needed
-import sql from '$lib/server/db/index';
-
-
-
 export const actions: Actions = {
-  default: async ({ request, params }) => {
+  default: async ({ request, params, locals }) => {
     // STRICTLY FOLLOW THE PROPER APPROACH: FORM VALIDATION → DATABASE UPDATE
     console.error('============= PART EDIT FORM SUBMISSION =============');
     
@@ -223,7 +237,7 @@ export const actions: Actions = {
       }
     });
     
-    const form = await superValidate(formData, zod(partVersionEditSchema));
+    const form = await superValidate(formData, zod(partVersionSchema));
     
     // COMPREHENSIVE FORM DATA LOGGING - print EVERY form field
     console.error('============= COMPLETE FORM DATA DUMP =============');
@@ -243,8 +257,8 @@ export const actions: Actions = {
       data: {
         ...form.data,
         // Don't log entire rich text objects to keep logs readable
-        longDescription: form.data.long_description ? '(JSON data)' : null,
-        technicalSpecifications: form.data.technical_specifications ? '(JSON data)' : null,
+        full_description: form.data.long_description ? '(JSON data)' : null,
+        technical_specifications: form.data.technical_specifications ? '(JSON data)' : null,
       }
     });
     
@@ -297,114 +311,82 @@ export const actions: Actions = {
       console.error('PREPARING DATABASE UPDATE');
       
       // Generate new version ID
-      const newVersionId = randomUUID();
+      const newVersionId = crypto.randomUUID();
       console.error('New version ID:', newVersionId);
       
       // COMPLETE APPROACH: Map the ENTIRE form data directly to the version data
       // This ensures we use ALL fields from the form submission without any manual extraction
       const versionData: any = {
         // Required system fields for database integrity
-        id: newVersionId,
-        partId: part.id,
-        createdBy: part.creatorId,
+        part_id: part.part_id,
+        part_version_id: newVersionId,
+        created_by: locals.user?.id,
         
         // MAP EVERYTHING from the validated form data - no cherry picking
         // This properly follows superform validation without bypassing any fields
-        name: form.data.name,
-        version: form.data.version,
-        status: form.data.status,
-        shortDescription: form.data.short_description,
-        longDescription: form.data.long_description,
-        functionalDescription: form.data.functional_description,
+        part_name: form.data.part_name,
+        part_version: form.data.part_version,
+        version_status: form.data.version_status,
+        short_description: form.data.short_description,
+        full_description: form.data.long_description,
+        functional_description: form.data.functional_description,
         
         // Electrical properties 
-        voltageRatingMin: form.data.voltage_rating_min,
-        voltageRatingMax: form.data.voltage_rating_max,
-        currentRatingMin: form.data.current_rating_min, 
-        currentRatingMax: form.data.current_rating_max,
-        powerRatingMax: form.data.power_rating_max,
+        voltage_rating_min: form.data.voltage_rating_min,
+        voltage_rating_max: form.data.voltage_rating_max,
+        current_rating_min: form.data.current_rating_min, 
+        current_rating_max: form.data.current_rating_max,
+        power_rating_max: form.data.power_rating_max,
         tolerance: form.data.tolerance,
-        toleranceUnit: form.data.tolerance_unit,
-        electricalProperties: form.data.electrical_properties,
+        tolerance_unit: form.data.tolerance_unit,
         
-        // Mechanical properties
-        // Handle dimensions to meet database constraints
-        // For database insertion, dimensions must be either:
-        // 1. null, or
-        // 2. an object with all positive number values
-        dimensions: (() => {
-          console.log('DIMENSIONS DATABASE TRANSFORMATION:', { original: form.data.dimensions });
-          
-          // If dimensions is null, keep it null (valid for DB)
-          if (form.data.dimensions === null) {
-            console.log('DIMENSIONS DB: Already null, keeping as is');
-            return null;
-          }
-          
-          // If dimensions is an object with all null values
-          // (valid by schema but needs to be NULL for database)
-          if (form.data.dimensions && typeof form.data.dimensions === 'object') {
-            const dims = form.data.dimensions as any;
-            
-            // Case 1: All dimension values are null - set to null for database
-            // Our schema allows this but database needs NULL
-            if (dims.length === null && dims.width === null && dims.height === null) {
-              console.log('DIMENSIONS DB: All null values -> Converting to null for database');
-              return null;
-            }
-            
-            // Case 2: Empty object - convert to null for database
-            if (Object.keys(dims).length === 0) {
-              console.log('DIMENSIONS DB: Empty object -> Converting to null for database');
-              return null;
-            }
-            
-            // Case 3: If we have numeric values, they must all be positive
-            if (typeof dims.length === 'number' && 
-                typeof dims.width === 'number' && 
-                typeof dims.height === 'number') {
-              
-              if (dims.length > 0 && dims.width > 0 && dims.height > 0) {
-                console.log('DIMENSIONS DB: All positive numbers, valid for database');
-                return dims; // Valid for database as is
-              } else {
-                // Not all positive - log warning and set to null
-                console.log('DIMENSIONS DB WARNING: Not all values positive, setting to null');
-                return null;
-              }
-            }
-            
-            // Case 4: Mixed types or missing properties - invalid for database
-            console.log('DIMENSIONS DB: Invalid structure for database, setting to null');
-            return null;
-          }
-          
-          // Default: If we get here, something unexpected - set to null
-          console.log('DIMENSIONS DB: Unexpected format, setting to null');
-          return null;
-        })(),
-        dimensionsUnit: form.data.dimensions_unit,
-        weight: form.data.weight,
-        weightUnit: form.data.weight_unit,
-        packageType: form.data.package_type,
-        pinCount: form.data.pin_count,
-        mechanicalProperties: form.data.mechanical_properties,
-        materialComposition: form.data.material_composition,
+        // Dimensions and physical properties
+        dimensions: form.data.dimensions,
+        dimensions_unit: form.data.dimensions_unit, // Use dimensions_unit instead of dimension_unit per schema
+        weight: form.data.part_weight,
+        weight_unit: form.data.weight_unit,
+        package_type: form.data.package_type,
+        pin_count: form.data.pin_count,
+        material_composition: form.data.material_composition,
         
         // Thermal properties
-        operatingTemperatureMin: form.data.operating_temperature_min,
-        operatingTemperatureMax: form.data.operating_temperature_max,
-        storageTemperatureMin: form.data.storage_temperature_min,
-        storageTemperatureMax: form.data.storage_temperature_max,
-        temperatureUnit: form.data.temperature_unit,
-        thermalProperties: form.data.thermal_properties,
+        operating_temperature_min: form.data.operating_temperature_min,
+        operating_temperature_max: form.data.operating_temperature_max,
+        storage_temperature_min: form.data.storage_temperature_min,
+        storage_temperature_max: form.data.storage_temperature_max,
+        temperature_unit: form.data.temperature_unit,
         
-        // Other properties
-        technicalSpecifications: form.data.technical_specifications,
-        properties: form.data.properties,
-        environmentalData: form.data.environmental_data,
-        revisionNotes: form.data.revision_notes
+        // Other properties - ensure properly typed
+        technical_specifications: form.data.technical_specifications || {},
+        environmental_data: form.data.environmental_data || null,
+        revision_notes: form.data.revision_notes || '',
       };
+      
+      // Process technical specifications properly to ensure object structure
+      try {
+        if (versionData.technical_specifications) {
+          // Parse if it's a string, otherwise keep as object
+          const techSpec = typeof versionData.technical_specifications === 'string' 
+            ? JSON.parse(versionData.technical_specifications)
+            : versionData.technical_specifications;
+            
+          // Make sure we have the expected structure
+          versionData.technical_specifications = {
+            ...techSpec,
+            electrical_properties: techSpec.electrical_properties || {},
+            mechanical_properties: techSpec.mechanical_properties || {},
+            thermal_properties: techSpec.thermal_properties || {}
+          };
+        }
+      } catch (error) {
+        console.error('Error processing technical specifications:', error);
+        // Fallback to empty object with expected structure
+        versionData.technical_specifications = {
+          electrical_properties: {},
+          mechanical_properties: {},
+          thermal_properties: {}
+        };
+      }
       
       // Final pre-submission validation to catch any lingering issues
       console.log('FINAL DATA VALIDATION:');
@@ -482,27 +464,60 @@ export const actions: Actions = {
       
       console.log('[editPart] Creating new version with submitted form data:', versionData);    
    
-      const partStatus = form.data.partStatus || part.status;  
+      const partStatus = form.data.version_status || part.lifecycle_status;
       
       // Step 1: Log full status information for debugging
       console.log('COMPLETE PART STATUS INFO:', {
-        currentPartStatus: part.status,
+        currentPartStatus: part.lifecycle_status,
         newPartStatus: partStatus,
-        isStatusChanging: part.status !== partStatus,
-        formPartStatus: form.data.partStatus
+        isStatusChanging: part.lifecycle_status !== partStatus,
+        formPartStatus: form.data.version_status
       });
       
       // Step 2: Create the new part version using validated data
       console.error('Creating new part version...');
+      const result = await getPartWithCurrentVersion(params.id as string)
+        .catch(error => {
+          console.error('Error fetching current part version:', error);
+          return null;
+        });
+      
+      if (!result || !result.currentVersion) return fail(404, { message: 'Part version not found' });
+      const currentVersion = result.currentVersion;
+      
       const newVersion = await createPartVersion(versionData);
-      console.error('New version created with ID:', newVersion.id);
+      console.error('New version created with ID:', newVersion.part_version_id);
         
       // Step 3: Update the part record to point to this new version
       console.error('Updating part record to use new version...');
+      // Convert lifecycle status to part status for the update function
+      // Use explicit type conversion according to enum values rather than unsafe casting
+      const partStatusForUpdate: PartStatusEnum = (() => {
+        // Map lifecycle status to corresponding part status
+        switch(partStatus) {
+          case LifecycleStatusEnum.DRAFT:
+          case LifecycleStatusEnum.IN_REVIEW:
+          case LifecycleStatusEnum.APPROVED:
+          case LifecycleStatusEnum.PRE_RELEASE:
+            return PartStatusEnum.CONCEPT;
+          case LifecycleStatusEnum.RELEASED:
+          case LifecycleStatusEnum.PRODUCTION:
+            return PartStatusEnum.ACTIVE;
+          case LifecycleStatusEnum.ON_HOLD:
+            return PartStatusEnum.ACTIVE; // Map on-hold to active for database
+          case LifecycleStatusEnum.OBSOLETE:
+            return PartStatusEnum.OBSOLETE;
+          case LifecycleStatusEnum.ARCHIVED:
+            return PartStatusEnum.ARCHIVED;
+          default:
+            return PartStatusEnum.CONCEPT; // Default fallback
+        }
+      })();
+      
       await updatePartWithStatus(
-        part.id,
+        part.part_id,
         newVersionId,
-        partStatus as PartStatusEnum
+        partStatusForUpdate
       );
       console.error('Part record updated successfully to point to new version');
       

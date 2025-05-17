@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { Part, PartVersion } from '@/types/types';
+  import type { Part, PartVersion } from '$lib/types/types';
   import { formatDate } from '$lib/utils';
-	import { displayJSONData, formatUsername, formatWithUnit } from '@/utils/util';
+	import { displayJSONData, formatUsername, formatWithUnit } from '$lib/utils/util';
   export let part: Part;
   export let currentVersion: PartVersion;
 
@@ -9,11 +9,11 @@
 
 <div class="part-card">
   <header class="card-header">
-    <h1>{currentVersion.name} <span class="part-number">{part.globalPartNumber || 'No Part Number'}</span></h1>
+    <h1>{currentVersion.part_name} <span class="part-number">{part.global_part_number || 'No Part Number'}</span></h1>
     <div class="status-badges">
-      <span class="badge status-badge">{part.status}</span>
-      <span class="badge lifecycle-badge">{part.lifecycleStatus}</span>
-      {#if part.isPublic}
+      <span class="badge status-badge">{part.status_in_bom}</span>
+      <span class="badge lifecycle-badge">{part.lifecycle_status}</span>
+      {#if part.is_public}
         <span class="badge public-badge">Public</span>
       {/if}
     </div>
@@ -24,34 +24,34 @@
     <h2>Basic Information</h2>
     <div class="grid-2">
       <div>
-        <p><strong>Name:</strong> {currentVersion.name}</p>
-        <p><strong>Version:</strong> {currentVersion.version}</p>
-        <p><strong>Global Part Number:</strong> {part.globalPartNumber || 'Not assigned'}</p>
+        <p><strong>Name:</strong> {currentVersion.part_name}</p>
+        <p><strong>Version:</strong> {currentVersion.part_version}</p>
+        <p><strong>Global Part Number:</strong> {part.global_part_number || 'Not assigned'}</p>
         <!-- <p><strong>Category:</strong> {getCategory()}</p> -->
       </div>
       <div>
-        <p><strong>Status:</strong> {part.status}</p>
-        <p><strong>Lifecycle Status:</strong> {part.lifecycleStatus}</p>
-        <p><strong>Public:</strong> {part.isPublic ? 'Yes' : 'No'}</p>
+        <p><strong>Status:</strong> {part.status_in_bom}</p>
+        <p><strong>Lifecycle Status:</strong> {part.lifecycle_status}</p>
+        <p><strong>Public:</strong> {part.is_public ? 'Yes' : 'No'}</p>
         <!-- <p><strong>Family:</strong> {getFamily()}</p> -->
       </div>
     </div>
-    {#if currentVersion.shortDescription}
+    {#if currentVersion.short_description}
       <div class="description">
         <h3>Short Description</h3>
-        <p>{currentVersion.shortDescription}</p>
+        <p>{currentVersion.short_description}</p>
       </div>
     {/if}
-    {#if currentVersion.functionalDescription}
+    {#if currentVersion.functional_description}
       <div class="description">
         <h3>Functional Description</h3>
-        <p>{currentVersion.functionalDescription}</p>
+        <p>{currentVersion.functional_description}</p>
       </div>
     {/if}
-    {#if currentVersion.longDescription}
+    {#if currentVersion.long_description}
       <div class="description">
         <h3>Detailed Description</h3>
-        <p>{currentVersion.longDescription}</p>
+        <p>{currentVersion.long_description}</p>
       </div>
     {/if}
   </section>
@@ -65,34 +65,34 @@
         <h3>Electrical Properties</h3>
         <div class="tech-grid">
           <p><strong>Voltage Rating:</strong> 
-            {#if currentVersion.voltageRatingMin !== undefined && currentVersion.voltageRatingMax !== undefined}
-              {currentVersion.voltageRatingMin}V - {currentVersion.voltageRatingMax}V
-            {:else if currentVersion.voltageRatingMax !== undefined}
-              Max {currentVersion.voltageRatingMax}V
+            {#if currentVersion.voltage_rating_min !== undefined && currentVersion.voltage_rating_max !== undefined}
+              {currentVersion.voltage_rating_min}V - {currentVersion.voltage_rating_max}V
+            {:else if currentVersion.voltage_rating_max !== undefined}
+              Max {currentVersion.voltage_rating_max}V
             {:else}
               Not specified
             {/if}
           </p>
           <p><strong>Current Rating:</strong> 
-            {#if currentVersion.currentRatingMin !== undefined && currentVersion.currentRatingMax !== undefined}
-              {currentVersion.currentRatingMin}A - {currentVersion.currentRatingMax}A
-            {:else if currentVersion.currentRatingMax !== undefined}
-              Max {currentVersion.currentRatingMax}A
+            {#if currentVersion.current_rating_min !== undefined && currentVersion.current_rating_max !== undefined}
+              {currentVersion.current_rating_min}A - {currentVersion.current_rating_max}A
+            {:else if currentVersion.current_rating_max !== undefined}
+              Max {currentVersion.current_rating_max}A
             {:else}
               Not specified
             {/if}
           </p>
-          <p><strong>Power Rating:</strong> {formatWithUnit(currentVersion.powerRatingMax, 'W')}</p>
-          <p><strong>Tolerance:</strong> {formatWithUnit(currentVersion.tolerance, currentVersion.toleranceUnit)}</p>
+          <p><strong>Power Rating:</strong> {formatWithUnit(currentVersion.power_rating_max, 'W')}</p>
+          <p><strong>Tolerance:</strong> {formatWithUnit(currentVersion.tolerance, currentVersion.tolerance_unit)}</p>
           
          
         </div>
         
-        {#if currentVersion.electricalProperties}
+        {#if currentVersion.electrical_properties}
           <div class="json-data-section">
             <h4>Additional Electrical Properties</h4>
             <div class="json-data-grid">
-              {#each displayJSONData(currentVersion.electricalProperties) as { key, value }}
+              {#each displayJSONData(currentVersion.electrical_properties) as { key, value }}
                 <div class="json-data-item">
                   <div class="json-data-key">{key}:</div>
                   <div class="json-data-value">{value}</div>
@@ -107,9 +107,9 @@
       <div class="subsection">
         <h3>Mechanical Properties</h3>
         <div class="tech-grid">
-          <p><strong>Package Type:</strong> {currentVersion.packageType || 'Not specified'}</p>
-          <p><strong>Pin Count:</strong> {currentVersion.pinCount !== undefined ? currentVersion.pinCount : 'Not specified'}</p>
-          <!-- <p><strong>Mounting Type:</strong> {currentVersion.mountingType || 'Not specified'}</p> -->
+          <p><strong>Package Type:</strong> {currentVersion.package_type || 'Not specified'}</p>
+          <p><strong>Pin Count:</strong> {currentVersion.pin_count !== undefined ? currentVersion.pin_count : 'Not specified'}</p>
+          <!-- <p><strong>Mounting Type:</strong> {currentVersion.mounting_type || 'Not specified'}</p> -->
         </div>
         
         <!-- Dimensions -->
@@ -127,11 +127,11 @@
           </div>
         {/if}
         
-        {#if currentVersion.mechanicalProperties}
+        {#if currentVersion.mechanical_properties}
           <div class="json-data-section">
             <h4>Additional Mechanical Properties</h4>
             <div class="json-data-grid">
-              {#each displayJSONData(currentVersion.mechanicalProperties) as { key, value }}
+              {#each displayJSONData(currentVersion.mechanical_properties) as { key, value }}
                 <div class="json-data-item">
                   <div class="json-data-key">{key}:</div>
                   <div class="json-data-value">{value}</div>
@@ -146,27 +146,27 @@
       <div class="subsection">
         <h3>Thermal Properties</h3>
         <div class="tech-grid">
-          {#if currentVersion.operatingTemperatureMin !== undefined || currentVersion.operatingTemperatureMax !== undefined}
+          {#if currentVersion.operating_temperature_min !== undefined || currentVersion.operating_temperature_max !== undefined}
             <p><strong>Operating Temperature:</strong> 
-              {#if currentVersion.operatingTemperatureMin !== undefined && currentVersion.operatingTemperatureMax !== undefined}
-                {currentVersion.operatingTemperatureMin}°C to {currentVersion.operatingTemperatureMax}°C
-              {:else if currentVersion.operatingTemperatureMin !== undefined}
-                Min {currentVersion.operatingTemperatureMin}°C
-              {:else if currentVersion.operatingTemperatureMax !== undefined}
-                Max {currentVersion.operatingTemperatureMax}°C
+              {#if currentVersion.operating_temperature_min !== undefined && currentVersion.operating_temperature_max !== undefined}
+                {currentVersion.operating_temperature_min}°C to {currentVersion.operating_temperature_max}°C
+              {:else if currentVersion.operating_temperature_min !== undefined}
+                Min {currentVersion.operating_temperature_min}°C
+              {:else if currentVersion.operating_temperature_max !== undefined}
+                Max {currentVersion.operating_temperature_max}°C
               {:else}
                 Not specified
               {/if}
             </p>
           {/if}
-          <!-- <p><strong>Thermal Resistance:</strong> {formatWithUnit(currentVersion.thermalResistance, '°C/W')}</p> -->
+          <!-- <p><strong>Thermal Resistance:</strong> {formatWithUnit(currentVersion.thermal_resistance, '°C/W')}</p> -->
         </div>
         
-        {#if currentVersion.thermalProperties}
+        {#if currentVersion.thermal_properties}
           <div class="json-data-section">
             <h4>Additional Thermal Properties</h4>
             <div class="json-data-grid">
-              {#each displayJSONData(currentVersion.thermalProperties) as { key, value }}
+              {#each displayJSONData(currentVersion.thermal_properties) as { key, value }}
                 <div class="json-data-item">
                   <div class="json-data-key">{key}:</div>
                   <div class="json-data-value">{value}</div>
@@ -178,15 +178,15 @@
       </div>
   
       <!-- Additional Properties -->
-      {#if currentVersion.materialComposition || currentVersion.properties || currentVersion.environmentalData}
+      {#if currentVersion.material_composition || currentVersion.properties || currentVersion.environmental_data}
         <div class="subsection">
           <h3>Additional Properties</h3>
           
-          {#if currentVersion.materialComposition}
+          {#if currentVersion.material_composition}
             <div class="json-data-section">
               <h4>Material Composition</h4>
               <div class="json-data-grid">
-                {#each displayJSONData(currentVersion.materialComposition) as { key, value }}
+                {#each displayJSONData(currentVersion.material_composition) as { key, value }}
                   <div class="json-data-item">
                     <div class="json-data-key">{key}:</div>
                     <div class="json-data-value">{value}</div>
@@ -210,11 +210,11 @@
             </div>
           {/if}
           
-          {#if currentVersion.environmentalData}
+          {#if currentVersion.environmental_data}
             <div class="json-data-section">
               <h4>Environmental Data</h4>
               <div class="json-data-grid">
-                {#each displayJSONData(currentVersion.environmentalData) as { key, value }}
+                {#each displayJSONData(currentVersion.environmental_data) as { key, value }}
                   <div class="json-data-item">
                     <div class="json-data-key">{key}:</div>
                     <div class="json-data-value">{value}</div>
@@ -232,18 +232,16 @@
       <h2>System Information</h2>
       <div class="grid-2">
         <div>
-          <p><strong>Created:</strong> {formatDate(part.createdAt)}</p>
-          <p><strong>Created By:</strong> {formatUsername(part.creatorId)}</p>
+          <p><strong>Created:</strong> {formatDate(part.created_at)} by {formatUsername(part.creator_id)}</p>
         </div>
         <div>
-          <p><strong>Last Updated:</strong> {formatDate(part.updatedAt)}</p>
-          <p><strong>Updated By:</strong> {formatUsername(part.updatedBy)}</p>
+          <p><strong>Last Updated:</strong> {formatDate(part.updated_at)} by {formatUsername(part.updated_by)}</p>
         </div>
       </div>
     </section>
   
     <nav class="actions">
-      <a href="/parts/{part.id}/edit" class="btn">Edit</a>
+      <a href="/parts/{part.part_id}/edit" class="btn">Edit</a>
       <a href="/parts" class="btn btn-secondary">Back to Parts</a>
       <form method="POST" action="?delete">
         <button type="submit" class="btn btn-danger">Delete</button>

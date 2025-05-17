@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
-	import type { Project } from '@/types/types';
+	import type { Project } from '$lib/types/types';
 	export let data: PageData;
 	const project = data.project as Project;
 </script>
@@ -11,16 +11,16 @@
 		<button class="back-button" on:click={() => goto('/dashboard')} aria-label="Back to Dashboard"
 			>← Dashboard</button
 		>
-		<h1 class="project-title">{project.name}</h1>
+		<h1 class="project-title">{project.project_name}</h1>
 	</header>
 	<section class="project-info">
 		<div class="info-card">
 			<h2>Project ID</h2>
-			<p>{project.id}</p>
+			<p>{project.project_id}</p>
 		</div>
 		<div class="info-card">
 			<h2>Created At</h2>
-			<p>{project.createdAt.toLocaleString()}</p>
+			<p>{project.created_at.toLocaleString()}</p>
 		</div>
 	</section>
 </div>

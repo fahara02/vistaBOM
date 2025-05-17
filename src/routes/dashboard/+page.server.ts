@@ -1,13 +1,13 @@
 //src/routes/dashboard/+page.server.ts
 import sql from '$lib/server/db/index';
 import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, WeightUnitEnum } from '$lib/types';
-import { createCategory, getAllCategories } from '@/core/category';
-import { createManufacturer } from '@/core/manufacturer';
-import { createPart, getPartWithCurrentVersion } from '@/core/parts';
-import { createSupplier } from '@/core/supplier';
-import { categorySchema, createPartSchema, manufacturerSchema, supplierSchema } from '@/schema/schema';
-import type { Category, Manufacturer, Part, Supplier, User } from '@/types/schemaTypes';
-import type { DbProject } from '@/types/types';
+import { createCategory, getAllCategories } from '$lib/core/category';
+import { createManufacturer } from '$lib/core/manufacturer';
+import { createPart, getPartWithCurrentVersion } from '$lib/core/parts';
+import { createSupplier } from '$lib/core/supplier';
+import { categorySchema, createPartSchema, manufacturerSchema, supplierSchema } from '$lib/schema/schema';
+import type { Category, Manufacturer, Part, Supplier, User } from '$lib/types/schemaTypes';
+import type { DbProject } from '$lib/types/types';
 import { fail, redirect } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { zod } from 'sveltekit-superforms/adapters';
@@ -429,14 +429,20 @@ export const actions: Actions = {
 
 		try {
 			// Parse contact info if provided
-			let contactInfo: string = '';
+			let contactInfo: Record<string, any> = {};
 			if (form.data.contact_info) {
 				try {
 					// Try to parse as JSON first
-					contactInfo = JSON.parse(form.data.contact_info);
+					const parsed = JSON.parse(form.data.contact_info);
+					if (typeof parsed === 'object' && parsed !== null) {
+						contactInfo = parsed;
+					} else {
+						// If it's not an object, create a structured object
+						contactInfo = { value: parsed };
+					}
 				} catch (e) {
-					// If not valid JSON, use as a string
-					contactInfo = form.data.contact_info;
+					// If not valid JSON, store as a value in an object
+					contactInfo = { value: form.data.contact_info };
 				}
 			}
 			
@@ -958,13 +964,16 @@ export const actions: Actions = {
 					return message(form, 'Category not found or you do not have permission to edit it.', { status: 403 });
 				}
 				
+				// Convert empty string to null for parent_id
+				const parentId = form.data.parent_id === '' ? null : form.data.parent_id || null;
+				
 				// Update the category
 				await sql`
 					UPDATE "Category" 
 					SET 
 						category_name = ${form.data.category_name},
 						category_description = ${form.data.category_description || null},
-						parent_id = ${form.data.parent_id || null},
+						parent_id = ${parentId},
 						is_public = ${Boolean(form.data.is_public)},
 						updated_at = NOW(),
 						updated_by = ${user.user_id}
@@ -975,9 +984,12 @@ export const actions: Actions = {
 				return message(form, 'Category updated successfully');
 			} else {
 				// CREATE MODE: Create new category
+				// Convert empty string to undefined for parent_id
+				const parentId = form.data.parent_id === '' ? undefined : form.data.parent_id || undefined;
+				
 				await createCategory({
 					name: form.data.category_name,
-					parentId: form.data.parent_id ?? undefined,
+					parentId,
 					description: form.data.category_description ?? undefined,
 					isPublic: form.data.is_public,
 					createdBy: user.user_id

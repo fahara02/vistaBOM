@@ -57,8 +57,8 @@
     <h2>Add New Category</h2>
     <label>
       Name*
-      <input id="name" name="name" bind:value={$form.name} required />
-      {#if $errors.name}<span class="error">{$errors.name}</span>{/if}
+      <input id="category_name" name="category_name" bind:value={$form.category_name} required />
+      {#if $errors.category_name}<span class="error">{$errors.category_name}</span>{/if}
     </label>
     <label>
       Parent
@@ -72,8 +72,8 @@
     </label>
     <label>
       Description
-      <textarea id="description" name="description" bind:value={$form.description}></textarea>
-      {#if $errors.description}<span class="error">{$errors.description}</span>{/if}
+      <textarea id="category_description" name="category_description" bind:value={$form.category_description}></textarea>
+      {#if $errors.category_description}<span class="error">{$errors.category_description}</span>{/if}
     </label>
     <label>
       <input type="checkbox" name="is_public" bind:checked={$form.is_public} /> Public

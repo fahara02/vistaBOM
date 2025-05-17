@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-  <title>Part {data.part.globalPartNumber || data.part.id}</title>
+  <title>Part {data.part.global_part_number || data.part.part_id}</title>
 </svelte:head>
 
 <PartCard part={data.part} currentVersion={data.currentVersion} />

@@ -31,4 +31,5 @@ vite.config.ts.timestamp-*
 !src/lib/paraglide/.gitignore
 
 *storybook.log
+.windsurfrules
 

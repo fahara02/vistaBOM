@@ -81,12 +81,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
   
   // Extract contact_info as a separate field instead of putting it in customFields
   let contactInfoString = '';
-  if (supplier.contactInfo) {
-    if (typeof supplier.contactInfo === 'string') {
-      contactInfoString = supplier.contactInfo;
+  if (supplier.contact_info) {
+    if (typeof supplier.contact_info === 'string') {
+      contactInfoString = supplier.contact_info;
     } else {
       // If it's already an object, convert it to string
-      contactInfoString = JSON.stringify(supplier.contactInfo);
+      contactInfoString = JSON.stringify(supplier.contact_info);
     }
   }
   
@@ -94,18 +94,18 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
   // Create the form with initial data
   const formData = {
-    id: supplier.id,
-    name: supplier.name,
-    description: supplier.description || null,
-    website_url: supplier.websiteUrl || null,
-    logo_url: supplier.logoUrl || null,
+    id: supplier.supplier_id,
+    name: supplier.supplier_name,
+    description: supplier.supplier_description || null,
+    website_url: supplier.website_url || null,
+    logo_url: supplier.logo_url || null,
     contact_info: contactInfoString || null,
     custom_fields_json: Object.keys(customFields).length > 0 ? 
       JSON.stringify(customFields, null, 2) : '',
-    created_by: supplier.createdBy || null,
-    created_at: supplier.createdAt,
-    updated_by: supplier.updatedBy || null,
-    updated_at: supplier.updatedAt
+    created_by: supplier.created_by || null,
+    created_at: supplier.created_at,
+    updated_by: supplier.updated_by || null,
+    updated_at: supplier.updated_at
   };
   console.log('Initial form data:', formData);
 

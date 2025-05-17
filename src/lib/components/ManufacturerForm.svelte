@@ -29,9 +29,9 @@
     
     // Initialize formData with default empty values
     $: formData = isStoreForm ? $form : (form && form.data ? form.data : {
-      id: '',
-      name: '',
-      description: '',
+      manufacturer_id: '',
+      manufacturer_name: '',
+      manufacturer_description: '',
       website_url: '',
       logo_url: '',
       contact_info: '',
@@ -67,15 +67,15 @@
       <label for="name">Name <span class="required">*</span></label>
       <input 
         id="name" 
-        name="name" 
+        name="manufacturer_name" 
         type="text" 
-        bind:value={formData.name} 
-        on:input={() => { if(isStoreForm) $form.name = formData.name; }}
+        bind:value={formData.manufacturer_name} 
+        on:input={() => { if(isStoreForm) $form.manufacturer_name = formData.manufacturer_name; }}
         class="form-control" 
         required
       />
-      {#if errors.name}
-        <span class="error-message">{errors.name}</span>
+      {#if errors.manufacturer_name}
+        <span class="error-message">{errors.manufacturer_name}</span>
       {/if}
     </div>
     
@@ -83,14 +83,14 @@
       <label for="description">Description</label>
       <textarea 
         id="description" 
-        name="description" 
-        bind:value={formData.description} 
-        on:input={() => { if(isStoreForm) $form.description = formData.description; }}
+        name="manufacturer_description" 
+        bind:value={formData.manufacturer_description} 
+        on:input={() => { if(isStoreForm) $form.manufacturer_description = formData.manufacturer_description; }}
         class="form-control"
         rows="4"
       ></textarea>
-      {#if errors.description}
-        <span class="error-message">{errors.description}</span>
+      {#if errors.manufacturer_description}
+        <span class="error-message">{errors.manufacturer_description}</span>
       {/if}
     </div>
     

@@ -1,8 +1,8 @@
 // src/routes/api/parts/[id]/+server.ts
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-import { getPartWithCurrentVersion } from '@/core/parts';
-import type { Part, PartVersion } from '@/types/types';
+import { getPartWithCurrentVersion } from '$lib/core/parts';
+import type { Part, PartVersion } from '$lib/types/types';
 
 export async function GET({ params, locals }: RequestEvent): Promise<Response> {
     try {
@@ -25,7 +25,7 @@ export async function GET({ params, locals }: RequestEvent): Promise<Response> {
         const { part, currentVersion } = await getPartWithCurrentVersion(id);
 
         // Verify that the user has permission to access this part
-        if (part.creatorId !== user.id && !part.isPublic) {
+        if (part.creator_id !== user.user_id && !part.is_public) {
             return new Response(JSON.stringify({ error: 'You do not have permission to access this part' }), {
                 status: 403,
                 headers: { 'Content-Type': 'application/json' }

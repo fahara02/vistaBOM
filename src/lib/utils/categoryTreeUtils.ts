@@ -25,43 +25,43 @@ export function categoriesToTreeNodes(categories: Category[]): TreeNode[] {
   
   // Group categories by parent ID
   for (const category of categories) {
-    if (category.parentId) {
-      if (!childrenMap.has(category.parentId)) {
-        childrenMap.set(category.parentId, []);
+    if (category.parent_id) {
+      if (!childrenMap.has(category.parent_id)) {
+        childrenMap.set(category.parent_id, []);
       }
-      childrenMap.get(category.parentId)?.push(category);
+      childrenMap.get(category.parent_id)?.push(category);
     }
   }
   
   // Create tree nodes for all categories first
   for (const category of categories) {
-    const nodePath = category.path || category.id;
-    const hasChildren = childrenMap.has(category.id);
+    const nodePath = category.category_path || category.category_id;
+    const hasChildren = childrenMap.has(category.category_id);
     
     const node: TreeNode = {
       nodePath,
-      title: category.name,
+      title: category.category_name,
       hasChildren,
       data: category,
       expanded: false,
       selected: false
     };
     
-    nodeMap.set(category.id, node);
+    nodeMap.set(category.category_id, node);
   }
   
   // Build the tree structure by adding children to parent nodes
   for (const [parentId, children] of childrenMap.entries()) {
     const parentNode = nodeMap.get(parentId);
     if (parentNode) {
-      parentNode.children = children.map(child => nodeMap.get(child.id)).filter(Boolean) as TreeNode[];
+      parentNode.children = children.map(child => nodeMap.get(child.category_id)).filter(Boolean) as TreeNode[];
     }
   }
   
   // Return only top-level categories (those without a parent)
   return categories
-    .filter(category => !category.parentId)
-    .map(category => nodeMap.get(category.id))
+    .filter(category => !category.parent_id)
+    .map(category => nodeMap.get(category.category_id))
     .filter(Boolean) as TreeNode[];
 }
 
@@ -74,7 +74,7 @@ export function categoriesToTreeNodes(categories: Category[]): TreeNode[] {
 export function findNodeById(tree: TreeNode[], categoryId: string): TreeNode | undefined {
   // Look through the top level
   for (const node of tree) {
-    if (node.data?.id === categoryId) {
+    if (node.data?.category_id === categoryId) {
       return node;
     }
     
@@ -101,7 +101,7 @@ export function findPathToNode(tree: TreeNode[], categoryId: string, currentPath
     const newPath = [...currentPath, node];
     
     // If this is the node we're looking for, return the path
-    if (node.data?.id === categoryId) {
+    if (node.data?.category_id === categoryId) {
       return newPath;
     }
     

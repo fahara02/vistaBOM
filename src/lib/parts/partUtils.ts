@@ -1,19 +1,71 @@
 // src/lib/parts/partUtils.ts
 import type { 
-  PartAttachment, 
-  PartCompliance, 
-  PartCustomField, 
+  PartAttachment,
   PartRepresentation, 
-  PartRevision, 
-  PartStructure, 
-  PartValidation, 
-  PartVersion, 
-  PartVersionCategory, 
-  PartVersionTag 
-} from '../types/types';
+  PartVersion,
+} from '../types/schemaTypes';
+
+// Use CustomField from schema types since PartCustomField isn't directly available
+import type { CustomField } from '../types/schemaTypes';
+
+// Define internal interfaces for the utility functions
+interface PartVersionCategory {
+  partVersionId: string;
+  categoryId: string;
+}
+
+interface PartStructure {
+  id: string;
+  parentPartId: string;
+  childPartId: string;
+  relationType: string;
+  quantity: number;
+  notes?: string;
+  createdBy: string;
+  createdAt: Date;
+  updatedBy?: string;
+  updatedAt: Date;
+  validFrom: Date;
+  validUntil?: Date;
+}
+
+interface PartCompliance {
+  id: string;
+  partVersionId: string;
+  complianceType: string;
+  certificateUrl?: string;
+  certifiedAt?: Date;
+  expiresAt?: Date;
+  notes?: string;
+}
+
+interface PartRevision {
+  id: string;
+  partVersionId: string;
+  changeDescription: string;
+  changedBy: string;
+  changedFields: any;
+  revisionDate: Date;
+}
+
+interface PartValidation {
+  partVersionId: string;
+  validatedBy: string;
+  validationDate: Date;
+  testResults?: any;
+  certificationInfo?: any;
+  isCompliant: boolean;
+}
+
+interface PartVersionTag {
+  partVersionId: string;
+  tagId: string;
+  assignedBy?: string;
+  assignedAt: Date;
+}
 
 export const isVersionEditable = (version: PartVersion): boolean => {
-	return version.status === 'draft' || version.status === 'in_review';
+	return version.version_status === 'draft' || version.version_status === 'in_review';
 };
 
 export function rowToPartVersionCategory(raw: any): PartVersionCategory {
@@ -54,38 +106,38 @@ export function rowToPartCompliance(raw: any): PartCompliance {
 
 export function rowToPartAttachment(raw: any): PartAttachment {
 	return {
-	  id: raw.id,
-	  partVersionId: raw.part_version_id,
-	  fileUrl: raw.file_url,
-	  fileName: raw.file_name,
-	  fileType: raw.file_type ?? undefined,
-	  fileSizeBytes: raw.file_size_bytes ?? undefined,
-	  checksum: raw.checksum ?? undefined,
-	  description: raw.description ?? undefined,
-	  attachmentType: raw.attachment_type ?? undefined,
-	  isPrimary: raw.is_primary,
-	  thumbnailUrl: raw.thumbnail_url ?? undefined,
-	  uploadedBy: raw.uploaded_by,
-	  uploadedAt: raw.uploaded_at,
-	  updatedBy: raw.updated_by ?? undefined,
-	  updatedAt: raw.updated_at,
+	  part_attachment_id: raw.id || raw.part_attachment_id,
+	  part_version_id: raw.part_version_id,
+	  file_url: raw.file_url,
+	  file_name: raw.file_name,
+	  file_type: raw.file_type ?? undefined,
+	  file_size_bytes: raw.file_size_bytes ?? undefined,
+	  attachment_checksum: raw.checksum ?? undefined,
+	  attachment_description: raw.description ?? undefined,
+	  attachment_type: raw.attachment_type ?? undefined,
+	  is_primary: raw.is_primary,
+	  thumbnail_url: raw.thumbnail_url ?? undefined,
+	  uploaded_by: raw.uploaded_by,
+	  uploaded_at: raw.uploaded_at,
+	  updated_by: raw.updated_by ?? undefined,
+	  updated_at: raw.updated_at,
 	  metadata: raw.metadata ?? undefined
 	};
 }
 
 export function rowToPartRepresentation(raw: any): PartRepresentation {
 	return {
-	  id: raw.id,
-	  partVersionId: raw.part_version_id,
-	  type: raw.type,
+	  part_representation_id: raw.id || raw.part_representation_id,
+	  part_version_id: raw.part_version_id,
+	  representation_type: raw.type || raw.representation_type,
 	  format: raw.format ?? undefined,
-	  fileUrl: raw.file_url ?? undefined,
+	  file_url: raw.file_url ?? undefined,
 	  metadata: raw.metadata ?? undefined,
-	  isRecommended: raw.is_recommended,
-	  createdBy: raw.created_by ?? undefined,
-	  createdAt: raw.created_at,
-	  updatedBy: raw.updated_by ?? undefined,
-	  updatedAt: raw.updated_at
+	  is_recommended: raw.is_recommended,
+	  created_by: raw.created_by ?? undefined,
+	  created_at: raw.created_at,
+	  updated_by: raw.updated_by ?? undefined,
+	  updated_at: raw.updated_at
 	};
 }
 
@@ -120,10 +172,20 @@ export function rowToPartVersionTag(raw: any): PartVersionTag {
 	};
 }
 
-export function rowToPartCustomField(raw: any): PartCustomField {
+// Map database row to custom field data structure
+// Using proper property names from the schema
+export function rowToPartCustomField(raw: any): any {
 	return {
-	  partVersionId: raw.part_version_id,
-	  fieldId: raw.field_id,
-	  value: raw.value
+	  custom_field_id: raw.custom_field_id || raw.field_id,
+	  field_name: raw.field_name || 'unknown',
+	  data_type: raw.data_type || 'text',
+	  applies_to: raw.applies_to || 'part',
+	  // Add any other required fields
+	  // Store the original values in a metadata object to preserve them
+	  metadata: {
+	    part_version_id: raw.part_version_id,
+	    field_id: raw.field_id,
+	    value: raw.value
+	  }
 	};
 }

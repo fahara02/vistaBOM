@@ -1,6 +1,6 @@
 // src/routes/dashboard/[projectId]/+page.server.ts
 import sql from '$lib/server/db/index';
-import type { Project, User, LifecycleStatusEnum } from '@/types/types';
+import type { Project, User, LifecycleStatusEnum } from '$lib/types/types';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
@@ -13,16 +13,17 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// Query all fields from the Project table using template literals
 	const result = await sql`
 		SELECT
-			id,
-			name,
-			description,
-			owner_id AS "ownerId",
-			status,
-			created_at AS "createdAt",
-			updated_by AS "updatedBy",
-			updated_at AS "updatedAt"
+			project_id,
+			project_name,
+			project_description,
+			owner_id,
+			project_status,
+			created_at,
+			updated_by,
+			updated_at,
+            custom_fields
 		FROM "Project"
-		WHERE owner_id = ${user.id} AND id = ${projectId}
+		WHERE owner_id = ${user.user_id} AND project_id = ${projectId}
 	`;
 
 	// Redirect if no project is found
@@ -30,14 +31,15 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	// With porsager/postgres, we get the object directly
 	const project: Project = {
-		id: result[0].id,
-		name: result[0].name,
-		description: result[0].description || undefined,
-		ownerId: result[0].ownerId,
-		status: result[0].status as LifecycleStatusEnum,
-		createdAt: result[0].createdAt,
-		updatedBy: result[0].updatedBy || undefined,
-		updatedAt: result[0].updatedAt
+		project_id: result[0].project_id,
+		project_name: result[0].project_name,
+		project_description: result[0].project_description || undefined,
+		owner_id: result[0].owner_id,
+		project_status: result[0].project_status as LifecycleStatusEnum,
+		created_at: result[0].created_at,
+		updated_by: result[0].updated_by || undefined,
+		updated_at: result[0].updated_at,
+        custom_fields: result[0].custom_fields || undefined
 	};
 
 	return { user, project };

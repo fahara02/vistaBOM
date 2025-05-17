@@ -23,16 +23,16 @@
       <h2>Add New Manufacturer</h2>
       <div class="field">
         <label for="name">Name</label>
-        <input id="name" name="name" bind:value={$form.name} required />
-        {#if $errors.name}
-          <span class="error">{$errors.name}</span>
+        <input id="manufacturer_name" name="manufacturer_name" bind:value={$form.manufacturer_name} required />
+        {#if $errors.manufacturer_name}
+          <span class="error">{$errors.manufacturer_name}</span>
         {/if}
       </div>
       <div class="field">
         <label for="description">Description</label>
-        <textarea id="description" name="description" bind:value={$form.description}></textarea>
-        {#if $errors.description}
-          <span class="error">{$errors.description}</span>
+        <textarea id="manufacturer_description" name="manufacturer_description" bind:value={$form.manufacturer_description}></textarea>
+        {#if $errors.manufacturer_description}
+          <span class="error">{$errors.manufacturer_description}</span>
         {/if}
       </div>
       <div class="field">

@@ -2,8 +2,10 @@
 
 <script lang="ts">
 import { createPartSchema } from '$lib/schema/schema';
-import type { Category, Manufacturer } from '$lib/types/types';
-import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, TemperatureUnitEnum, WeightUnitEnum, type Dimensions } from '@/types/types';
+import type { Category, CreatePart, Dimensions, JsonValue, Manufacturer, ManufacturerPart, PartFormData, PartVersion } from '$lib/types/schemaTypes';
+import type { ManufacturerDisplay, ManufacturerPartInput } from '$lib/types/componentTypes';
+import { adaptManufacturer, prepareManufacturerPartForSubmission } from '$lib/types/componentTypes';
+import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, TemperatureUnitEnum, WeightUnitEnum } from '$lib/types/enums';
 import { createEventDispatcher, onMount } from 'svelte';
 import { superForm } from 'sveltekit-superforms/client';
 import type { z } from 'zod';
@@ -16,86 +18,25 @@ const dispatch = createEventDispatcher<{
   formUpdate: Record<string, any>;
 }>();
 
-// // DECLARATION OF TYPES 
- type SnakeCasePartSchema = z.infer<typeof createPartSchema>;
-// // Define Category and Manufacturer types based on schema
-// type Category = z.infer<typeof categorySchema>;
-// // Define Manufacturer type with proper handling of null/undefined
-// type Manufacturer = {
-//   id: string;
-//   name: string;
-//   created_at: Date;
-//   updated_at: Date;
-//   description?: string | undefined;  // Remove null to match expected type
-//   created_by?: string | undefined;
-//   updated_by?: string | undefined;
-//   website_url?: string | undefined;
-//   contact_info?: any;
-//   logo_url?: string | undefined;
-// };
-// Updated type based on new schema
-type PartsFormData = Omit<SnakeCasePartSchema, 'lifecycle_status'> & {
-  id?: string;
-  status: LifecycleStatusEnum; // Using status instead of lifecycle_status to match schema
-  category_ids?: string;
-  manufacturer_parts?: string;
-  dimensions?: Dimensions | null;
-  
-  // All electrical properties
-  voltage_rating_min?: number | null;
-  voltage_rating_max?: number | null;
-  current_rating_min?: number | null;
-  current_rating_max?: number | null;
-  power_rating_max?: number | null;
-  tolerance?: number | null;
-  tolerance_unit?: string | null;
-  
-  // Thermal properties
-  operating_temperature_min?: number | null;
-  operating_temperature_max?: number | null;
-  storage_temperature_min?: number | null;
-  storage_temperature_max?: number | null;
-  temperature_unit?: TemperatureUnitEnum | null;
-  
-  // Additional fields
-  pin_count?: number | null;
-  functional_description?: string | null;
-  revision_notes?: string | null;
-  
-  // JSON fields
-  electrical_properties?: any;
-  mechanical_properties?: any;
-  thermal_properties?: any;
-  material_composition?: any;
-  environmental_data?: any;
-};   
- 
-// This type accommodates the various field name variations that might come from the server
-type ServerPartData = Partial<z.infer<typeof createPartSchema>> & {
-  // Standard fields that may have different names on the server
-  id?: string;
-  part_id?: string;
-  // Status field variations
-  lifecycle_status?: string;
-  version_status?: string;
-  // Description field variations
-  long_description?: string | null;
-  full_description?: string | null;
-  // JSON fields that might be stored as strings
-  technical_specifications?: string | Record<string, any>;
-  properties?: string | Record<string, any>;
-  electrical_properties?: string | Record<string, any>;
-  mechanical_properties?: string | Record<string, any>;
-  thermal_properties?: string | Record<string, any>;
-  material_composition?: string | Record<string, any>;
-  environmental_data?: string | Record<string, any>;
-  // Dimensions might be a string, object, or have different structure
-  dimensions?: string | { length?: number | string; width?: number | string; height?: number | string } | null;
-  // Any other potential variations
-  [key: string]: any;
-};
+// We now import ManufacturerPartInput from componentTypes.ts
+// No need to redefine it here;
 
-type FlexiblePartSchema = z.infer<typeof createPartSchema> | SnakeCasePartSchema | PartsFormData;
+// Extend CreatePart with the additional fields needed for the form
+type PartFormExtended = CreatePart & {
+  id: string;
+  part_id?: string;
+  status_in_bom: PartStatusEnum;
+  weight_value?: number | null;
+  manufacturer_parts: ManufacturerPartInput[] | string;
+  // Ensure all properties from schema.ts are included
+  properties: Record<string, JsonValue>;
+  technical_specifications: Record<string, JsonValue>;
+  electrical_properties: Record<string, JsonValue>;
+  mechanical_properties: Record<string, JsonValue>;
+  thermal_properties: Record<string, JsonValue>;
+  material_composition: Record<string, JsonValue>;
+  environmental_data: Record<string, JsonValue>;
+};
 
 // Define a FormData type for our component's use
 type FormDataType = {
@@ -105,7 +46,6 @@ type FormDataType = {
 
 // Define an ErrorsType for our component's use that accommodates SuperForm validation errors
 type ErrorsType = Record<string, string | string[] | undefined> | Record<string, any> | undefined;
-
 
 // REACTIVE DATAS
 // These are input props provided to the component
@@ -118,34 +58,47 @@ export let form: any = undefined;
 export let enhance: any = undefined; // Will be used in SuperForm initialization
 // Direct access to server form data - reliable source for edit mode
 // We're expecting SuperForm's structure which contains a data property
-export let serverFormData: { data: Record<string, any>; [key: string]: any } | undefined = undefined;
+export let serverFormData: { data: Record<string, unknown>; [key: string]: unknown } | undefined = undefined;
 
 // Initialize reactive form data with schema defaults
-let formData: PartsFormData = {
+let formData: PartFormExtended = {
   id: '',
-  name: '',
-  version: '0.1.0',
-  status: LifecycleStatusEnum.DRAFT, // Changed from lifecycle_status to match schema
-  part_status: PartStatusEnum.CONCEPT,
-  full_description: '',
-  manufacturer_parts: '',
+  part_name: '',
+  part_version: '0.1.0',
+  version_status: LifecycleStatusEnum.DRAFT,
+  status_in_bom: PartStatusEnum.CONCEPT,
+  long_description: '',
+  manufacturer_parts: [], // Initialize as empty array
   category_ids: '',
   short_description: '',
-  technical_specifications: {},
   properties: {},
+  part_weight: undefined, // Changed from null to undefined for type correctness
+  weight_unit: undefined, // Changed from null to undefined for type correctness
+  weight_value: undefined, // Changed from null to undefined for type correctness
+  technical_specifications: {},
   electrical_properties: {},
   mechanical_properties: {},
   thermal_properties: {},
   material_composition: {},
   environmental_data: {},
+  // Add missing required properties
+  compliance_info: [],
+  attachments: [],
+  representations: [],
+  structure: [],
+  supplier_parts: [],
+  custom_fields: {},
+  dimensions_unit: null,
+  package_type: null,
   is_public: false,
-  dimensions: { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number }
+  dimensions: { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number },
+
 };
 
 // Initialize SuperForm at component top level
-const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm<FlexiblePartSchema>(
+const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm(
   // Use provided form data or empty object
-  (form !== undefined ? form : data?.form || {}) as FlexiblePartSchema, 
+  (form !== undefined ? form : data?.form || {}) as PartFormExtended,
   {
     resetForm: false,
     dataType: 'json',
@@ -171,7 +124,6 @@ const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm
 // Form variables - initialize to empty string by default, will be set during initialization
 // Default all sections to be active in edit mode
 
-
 // Options for enum fields
 export const options = {
   statuses: Object.values(LifecycleStatusEnum),
@@ -194,29 +146,60 @@ let activeSection = isEditMode ? 'basic' : '';
 let dimensions: Dimensions = { length: null as unknown as number, width: null as unknown as number, height: null as unknown as number };
 let dimensionsUnit: DimensionUnitEnum | null = null;
 // Component props
-export let partData: ServerPartData | undefined = undefined;
-export let versionData: Partial<z.infer<typeof createPartSchema>> | undefined = undefined;
+export let partData: CreatePart | undefined = undefined;
+export let versionData: PartVersion | undefined = undefined;
 export let categories: Category[] = [];
-export let manufacturers: Manufacturer[] = [];
-export let selectedCategoryIds: string[] = [];
-// Define ManufacturerPart type to match what's expected by ManufacturerSelector
-export let selectedManufacturerParts: Array<{
-  id?: string;
-  manufacturer_id: string;
-  manufacturer_part_number: string;
-  manufacturer_name?: string;
-  is_recommended: boolean; // Making this required and always boolean
-  description?: string;
-  datasheet_url?: string;
-  product_url?: string;
-}> = [];
+// Using ManufacturerDisplay from componentTypes.ts
+export let manufacturers: ManufacturerDisplay[] = [];
+// Initialize with explicit type to avoid 'never[]' type inference issues
+export let selectedCategoryIds: Array<string> = [];
+// Using ManufacturerPart from schema.ts
 
+export let selectedManufacturerParts: ManufacturerPartInput[] = [];
 
 // Safe parsing helper for dimensions and other numeric fields
 function parseFloatOrNull(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = typeof value === 'string' ? parseFloat(value) : value;
   return isNaN(parsed) ? null : parsed;
+}
+
+// Helper function to safely parse manufacturer_parts from any source
+function parseManufacturerParts(value: any): ManufacturerPartInput[] {
+  if (!value) return [];
+  
+  // Already an array of the right type
+  if (Array.isArray(value)) {
+    return value.map(part => ({
+      manufacturer_id: part.manufacturer_id || '',
+      manufacturer_part_number: part.manufacturer_part_number || '',
+      is_recommended: !!part.is_recommended,
+      description: part.description,
+      datasheet_url: part.datasheet_url,
+      product_url: part.product_url
+    }));
+  }
+  
+  // It's a string, try to parse it
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(part => ({
+          manufacturer_id: part.manufacturer_id || '',
+          manufacturer_part_number: part.manufacturer_part_number || '',
+          is_recommended: !!part.is_recommended,
+          description: part.description,
+          datasheet_url: part.datasheet_url,
+          product_url: part.product_url
+        }));
+      }
+    } catch (e) {
+      console.error('Error parsing manufacturer_parts:', e);
+    }
+  }
+  
+  return [];
 }
 
 // Initialize JSON editors with empty objects
@@ -248,7 +231,7 @@ function jsonToString(json: any): string {
       } catch (e) {
         // Not valid JSON, return empty object
         return '{}';
-      }
+    }
     } else {
       return JSON.stringify(json, null, 2);
     }
@@ -336,7 +319,7 @@ function updateFormData(fieldName: string, value: unknown): void {
     // Handle enum fields properly - convert empty strings to null
     if (value === '') {
       // Check if this is an enum field that should be nullable
-      const enumFields = ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'];
+      const enumFields = ['version_status', 'status_in_bom', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'];
       if (enumFields.includes(fieldName)) {
         value = null;
       }
@@ -384,7 +367,7 @@ function prepareFormSubmission(): Record<string, unknown> {
   
   // CRITICAL FIX: Check other paired fields to avoid database constraint violations
   const pairedFields = [
-    ['weight', 'weight_unit'],
+    ['weight_value', 'weight_unit'],
     ['tolerance', 'tolerance_unit'],
     ['operating_temperature_min', 'temperature_unit'],
     ['operating_temperature_max', 'temperature_unit'],
@@ -421,8 +404,14 @@ function prepareFormSubmission(): Record<string, unknown> {
     is_recommended: !!part.is_recommended // Ensure boolean
   })));
   
+  // Use our helper function to prepare manufacturer parts for submission
+  // This ensures consistent transformation from input types to schema types
+  extractedFormData.manufacturer_parts = JSON.stringify(
+    selectedManufacturerParts.map(part => prepareManufacturerPartForSubmission(part))
+  );
+  
   // Ensure all enum fields are either valid enum values or null (not empty strings)
-  ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'].forEach(field => {
+  ['version_status', 'status_in_bom', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'].forEach(field => {
     if (extractedFormData[field] === '') {
       extractedFormData[field] = null;
     }
@@ -445,7 +434,7 @@ function prepareFormSubmission(): Record<string, unknown> {
       } catch (e) {
         console.error(`Error parsing ${field}:`, e);
         // For fields that should be strings but might be handled as JSON
-        if (['full_description', 'functional_description', 'long_description'].includes(field)) {
+        if (['long_description', 'functional_description'].includes(field)) {
           return val; // Keep as string
         }
         return {}; // For actual JSON fields, return empty object
@@ -490,8 +479,8 @@ onMount(() => {
       
       if (Object.keys(serverData).length > 0) {
         try {
-          // Create a properly structured object that conforms to PartsFormData
-          const processedData: PartsFormData = {
+          // Create a properly structured object that conforms to our form data structure
+          const processedData: PartFormExtended = {
             // Start with existing defaults
             ...formData,
             
@@ -500,18 +489,18 @@ onMount(() => {
             part_id: serverData.part_id ?? '',
             // Map the status correctly - server uses lifecycle_status but client uses status
             // We're using type assertion to handle this field name mismatch
-            status: (serverData.status ?? (serverData as any).lifecycle_status ?? 'draft') as LifecycleStatusEnum,
-            part_status: (serverData.part_status ?? 'concept') as PartStatusEnum,
+            version_status: (serverData.version_status ?? serverData.status ?? (serverData as any).lifecycle_status ?? 'draft') as LifecycleStatusEnum,
+            status_in_bom: (serverData.status_in_bom ?? serverData.part_status ?? 'concept') as PartStatusEnum,
             short_description: serverData.short_description ?? '',
             is_public: !!serverData.is_public,
             
             // Map long_description (server) to full_description (client)
             // Using type assertion to access server field
-            full_description: (serverData as any).long_description ?? '',
+            long_description: (serverData as any).long_description ?? ((serverData as any).full_description ?? ''),
             
             // Object fields - ensure they're objects even if null
             technical_specifications: serverData.technical_specifications ?? {},
-            properties: serverData.properties ?? {},
+            properties: serverData.properties ?? {}, 
             electrical_properties: serverData.electrical_properties ?? {},
             mechanical_properties: serverData.mechanical_properties ?? {},
             thermal_properties: serverData.thermal_properties ?? {},
@@ -523,7 +512,7 @@ onMount(() => {
             dimensions_unit: serverData.dimensions_unit ?? '',
             
             // Physical properties
-            weight: serverData.weight ?? null,
+            part_weight: serverData.weight ?? null,
             weight_unit: serverData.weight_unit ?? '',
             package_type: serverData.package_type ?? '',
             pin_count: serverData.pin_count ?? null,
@@ -533,7 +522,7 @@ onMount(() => {
             voltage_rating_max: serverData.voltage_rating_max ?? null,
             
             // Default values for remaining required fields
-            manufacturer_parts: '',
+            manufacturer_parts: [] as ManufacturerPartInput[], // Use empty array instead of string
             category_ids: '',
           };
           
@@ -545,9 +534,9 @@ onMount(() => {
           // Log all form inputs to debug which fields are binding correctly
           console.log('FORM FIELDS AFTER DATA MAPPING:');
           console.log('- id:', formData.id);
-          console.log('- name:', formData.name);
-          console.log('- version:', formData.version);
-          console.log('- status:', formData.status);
+          console.log('- part_name:', formData.part_name);
+          console.log('- part_version:', formData.part_version);
+          console.log('- version_status:', formData.version_status);
           console.log('- short_description:', formData.short_description);
           console.log('- dimensions:', formData.dimensions);
         } catch (error) {
@@ -580,24 +569,25 @@ onMount(() => {
       // Use Record<string, any> to safely access properties that might not exist in PartsFormData
       const serverData = serverFormData.data as Record<string, any>;
       
-      // Create a complete PartsFormData object with all required fields
-      const updatedData: PartsFormData = {
+      // Create a complete object with all required fields
+      const updatedData: PartFormExtended = {
         // Start with existing defaults
         ...formData,
         
         // Essential fields with fallbacks to current values
         id: serverData.id ?? formData.id,
-        name: serverData.name ?? formData.name,
-        version: serverData.version ?? formData.version,
-        status: (serverData.status ?? (serverData as any).lifecycle_status ?? formData.status) as LifecycleStatusEnum,
-        part_status: (serverData.part_status ?? formData.part_status) as PartStatusEnum,
+        part_name: serverData.part_name ?? (serverData.name ?? formData.part_name),
+        part_version: serverData.part_version ?? (serverData.version ?? formData.part_version),
+        // Handle specific case of Lifecycle and Part status enums
+        version_status: (serverData.version_status ?? serverData.status ?? (serverData as any).lifecycle_status ?? formData.version_status) as LifecycleStatusEnum,
+        status_in_bom: (serverData.status_in_bom ?? serverData.part_status ?? formData.status_in_bom) as PartStatusEnum,
         short_description: serverData.short_description ?? formData.short_description,
         is_public: serverData.is_public ?? formData.is_public,
-        full_description: (serverData as any).long_description ?? formData.full_description,
+        long_description: (serverData as any).long_description ?? ((serverData as any).full_description ?? formData.long_description),
         
-        // Map object properties safely
+        // Object fields - ensure they're objects even if null
         technical_specifications: serverData.technical_specifications ?? formData.technical_specifications,
-        properties: serverData.properties ?? formData.properties,
+        properties: serverData.properties ?? formData.properties, 
         electrical_properties: serverData.electrical_properties ?? formData.electrical_properties,
         mechanical_properties: serverData.mechanical_properties ?? formData.mechanical_properties,
         thermal_properties: serverData.thermal_properties ?? formData.thermal_properties,
@@ -607,7 +597,7 @@ onMount(() => {
         // Physical properties
         dimensions: serverData.dimensions ?? formData.dimensions,
         dimensions_unit: serverData.dimensions_unit ?? formData.dimensions_unit,
-        weight: serverData.weight ?? formData.weight,
+        weight_value: serverData.weight_value ?? (serverData.weight ?? formData.weight_value),
         weight_unit: serverData.weight_unit ?? formData.weight_unit,
         package_type: serverData.package_type ?? formData.package_type,
         pin_count: serverData.pin_count ?? formData.pin_count,
@@ -617,7 +607,7 @@ onMount(() => {
         voltage_rating_max: serverData.voltage_rating_max ?? formData.voltage_rating_max,
         
         // Other defaults
-        manufacturer_parts: serverData.manufacturer_parts ?? formData.manufacturer_parts,
+        manufacturer_parts: serverData.manufacturer_parts ?? formData.manufacturer_parts, 
         category_ids: serverData.category_ids ?? formData.category_ids
       };
       
@@ -626,9 +616,11 @@ onMount(() => {
       
       // Log field values to verify data is properly loaded
       console.log('UPDATED FORM FIELDS:');
-      console.log('- name:', formData.name);
-      console.log('- short_description:', formData.short_description);
-      console.log('- version:', formData.version);
+      console.log('- part_name:', updatedData.part_name);
+      console.log('- short_description:', updatedData.short_description);
+      console.log('- part_version:', updatedData.part_version);
+      console.log('- version_status:', updatedData.version_status);
+      console.log('- status_in_bom:', updatedData.status_in_bom);
       $formStore = updatedData;
     } else if (data?.form && Object.keys(data.form).length > 0) {
       console.log('DIRECT INITIALIZATION: Using data.form');
@@ -657,12 +649,19 @@ onMount(() => {
       formData = {
         ...formData,
         id: '',
-        name: '',
-        version: '0.1.0',
-        status: LifecycleStatusEnum.DRAFT,
-        part_status: PartStatusEnum.CONCEPT,
+        part_name: '',
+        part_version: '0.1.0',
+        version_status: LifecycleStatusEnum.DRAFT,
+        status_in_bom: PartStatusEnum.CONCEPT,
         short_description: '',
-        is_public: false
+        is_public: false,
+        properties: {},
+        technical_specifications: {},
+        electrical_properties: {},
+        mechanical_properties: {},
+        thermal_properties: {},
+        material_composition: {},
+        environmental_data: {}
       };
     }
     
@@ -680,27 +679,27 @@ onMount(() => {
         // Use Record<string, any> for flexibility with server data
         const serverData = serverFormData.data as Record<string, any>;
         
-        // Create a complete PartsFormData object with all required fields
-        const mappedData: PartsFormData = {
+        // Create a complete object with all required fields
+        const mappedData: PartFormExtended = {
           // Include defaults for missing fields
           ...formData,
           
           // Essential fields
           id: serverData.id ?? '',
-          name: serverData.name ?? '',
-          version: serverData.version ?? '0.1.0',
-          status: (serverData.status ?? serverData.lifecycle_status ?? 'draft') as LifecycleStatusEnum,
-          part_status: (serverData.part_status ?? 'concept') as PartStatusEnum,
+          part_name: serverData.part_name ?? (serverData.name ?? ''),
+          part_version: serverData.part_version ?? (serverData.version ?? '0.1.0'),
+          version_status: (serverData.version_status ?? serverData.status ?? serverData.lifecycle_status ?? 'draft') as LifecycleStatusEnum,
+          status_in_bom: (serverData.status_in_bom ?? serverData.part_status ?? 'concept') as PartStatusEnum,
           short_description: serverData.short_description ?? '',
           is_public: !!serverData.is_public,
           
-          // Convert long_description to full_description
-          full_description: (serverData as any).long_description ?? '',
+          // Use the correct field name
+          long_description: serverData.long_description ?? ((serverData as any).full_description ?? ''),
           
           // Physical properties
           dimensions: serverData.dimensions ?? { length: null, width: null, height: null },
           dimensions_unit: serverData.dimensions_unit ?? '',
-          weight: serverData.weight ?? null,
+          weight_value: serverData.weight_value ?? (serverData.weight ?? null),
           weight_unit: serverData.weight_unit ?? '',
           package_type: serverData.package_type ?? '',
           pin_count: serverData.pin_count ?? null,
@@ -713,7 +712,7 @@ onMount(() => {
           
           // Object properties
           technical_specifications: serverData.technical_specifications ?? {},
-          properties: serverData.properties ?? {},
+          properties: serverData.properties ?? {}, 
           electrical_properties: serverData.electrical_properties ?? {},
           mechanical_properties: serverData.mechanical_properties ?? {},
           thermal_properties: serverData.thermal_properties ?? {},
@@ -721,7 +720,7 @@ onMount(() => {
           environmental_data: serverData.environmental_data ?? {},
           
           // Other required fields
-          manufacturer_parts: serverData.manufacturer_parts ?? '',
+          manufacturer_parts: serverData.manufacturer_parts ?? [], // Use empty array instead of string
           category_ids: serverData.category_ids ?? '',
         };
         
@@ -732,11 +731,11 @@ onMount(() => {
         
         // Detailed field logging for debugging
         console.log('MAPPED FIELD VALUES:');
-        console.log('- name:', mappedData.name);
+        console.log('- part_name:', mappedData.part_name);
         console.log('- short_description:', mappedData.short_description);
-        console.log('- version:', mappedData.version);
+        console.log('- part_version:', mappedData.part_version);
         console.log('- dimensions:', mappedData.dimensions);
-        console.log('- weight:', mappedData.weight);
+        console.log('- weight_value:', mappedData.weight_value);
         console.log('- package_type:', mappedData.package_type);
       } else if (data?.form && Object.keys(data.form).length > 0) {
         console.log('Using data.form for edit mode - contains:', Object.keys(data.form).length, 'fields');
@@ -774,11 +773,11 @@ onMount(() => {
         // FINAL VERIFICATION: After all initialization, verify data actually made it to the form
         // Double check by logging key fields from the store to make debugging easier
         console.log('FORM DATA VERIFICATION:', {
-          'name': $formStore.name,
-          'version': $formStore.version,
+          'part_name': $formStore.part_name,
+          'part_version': $formStore.part_version,
           'short_description': $formStore.short_description,
-          'status': $formStore.status,
-          'part_status': $formStore.part_status,
+          'version_status': $formStore.version_status,
+          'status_in_bom': $formStore.status_in_bom,
           'dimensions': $formStore.dimensions
         });
         
@@ -834,11 +833,11 @@ onMount(() => {
         // FINAL VERIFICATION: After all initialization, verify data actually made it to the form
         // Double check by logging key fields from the store to make debugging easier
         console.log('FORM DATA VERIFICATION:', {
-          'name': $formStore.name,
-          'version': $formStore.version,
+          'part_name': $formStore.part_name,
+          'part_version': $formStore.part_version,
           'short_description': $formStore.short_description,
-          'status': $formStore.status,
-          'part_status': $formStore.part_status,
+          'version_status': $formStore.version_status,
+          'status_in_bom': $formStore.status_in_bom,
           'dimensions': $formStore.dimensions
         });
         
@@ -892,8 +891,9 @@ onMount(() => {
         };
         
         // Ensure core fields are properly set
-        if (versionData.status) formData.status = versionData.status as LifecycleStatusEnum;
-        if (versionData.part_status) formData.part_status = versionData.part_status as PartStatusEnum;
+        if (versionData.version_status) formData.version_status = versionData.version_status as LifecycleStatusEnum;
+        // Use type assertion for status_in_bom
+        if ((versionData as any).status_in_bom) formData.status_in_bom = (versionData as any).status_in_bom as PartStatusEnum;
         
         // Handle dimensions specially
         if (versionData.dimensions) {
@@ -963,35 +963,33 @@ onMount(() => {
           console.log('No category IDs data in form');
         }
         
-        // Initialize manufacturer parts from form data
-        if (isEditMode && $formStore?.manufacturer_parts) {
-          let manParts = $formStore.manufacturer_parts;
+        // Try to extract active manufacturers from the form data
+        if ($formStore?.manufacturer_parts) {
+          // Get the manufacturer parts data
+          const manParts = $formStore.manufacturer_parts;
           
-          // Convert from string if necessary
-          if (typeof manParts === 'string') {
-            try {
-              manParts = JSON.parse(manParts);
-            } catch (e) {
-              console.error('Error parsing manufacturer parts:', e);
-              manParts = [];
+          try {
+            // If it's a string, try to parse it
+            if (typeof manParts === 'string') {
+              // Only try to parse if it's not an empty string
+              if (manParts.trim()) {
+                try {
+                  const parsed = JSON.parse(manParts);
+                  selectedManufacturerParts = parseManufacturerParts(parsed);
+                } catch (e) {
+                  console.error('Error parsing manufacturer parts:', e);
+                  selectedManufacturerParts = [];
+                }
+              } else {
+                selectedManufacturerParts = [];
+              }
+            } else {
+              // Use our helper function to safely parse manufacturer parts
+              selectedManufacturerParts = parseManufacturerParts(manParts);
+              console.log('Selected manufacturer parts after init:', selectedManufacturerParts);
             }
-          }
-          
-          // Ensure it's an array and map to match our expected type
-          if (Array.isArray(manParts)) {
-            selectedManufacturerParts = manParts.map(part => ({
-              id: part.id,
-              manufacturer_id: part.manufacturer_id,
-              manufacturer_part_number: part.manufacturer_part_number,
-              manufacturer_name: part.manufacturer_name,
-              is_recommended: part.is_recommended === true ? true : false, // Force boolean
-              description: part.description,
-              datasheet_url: part.datasheet_url,
-              product_url: part.product_url
-            }));
-            console.log('Selected manufacturer parts after init:', selectedManufacturerParts);
-          } else {
-            console.warn('manufacturer_parts is not an array:', manParts);
+          } catch (e) {
+            console.error('Error processing manufacturer parts:', e);
             selectedManufacturerParts = [];
           }
         } else {
@@ -1000,6 +998,7 @@ onMount(() => {
       } catch (err) {
         console.error('Error in form initialization:', err);
       }
+// End of try-catch block
     } else {
       console.log('Form already initialized, skipping initialization');
     }
@@ -1015,24 +1014,28 @@ onMount(() => {
       
       // Apply all validated data to the form store
       Object.entries(validatedFormData).forEach(([key, value]) => {
-        ($formStore as any)[key] = value;
+        // Use type-safe approach for indexing
+        ($formStore as Record<string, unknown>)[key] = value;
+        // Use safer type checking for form data display in console
+  console.log('Form fully prepared for submission:', {
+    category_ids: $formStore.category_ids,
+    // Use safe type assertions to avoid 'never' type issues with manufacturer_parts
+    manufacturer_parts: (() => {
+      const parts = $formStore?.manufacturer_parts;
+      if (!parts) return 'no value';
+      if (Array.isArray(parts)) return `Array with ${(parts as any[]).length} items`;
+      if (typeof parts === 'string') return `String with length ${(parts as string).length}`;
+      return `Unknown type: ${typeof parts}`;
+    })(),
+    dimensions: $formStore.dimensions,
+    dimensions_unit: $formStore.dimensions_unit,
+    weight_value: $formStore.weight_value,
+    weight_unit: $formStore.weight_unit,
+    tolerance: $formStore.tolerance,
+    tolerance_unit: $formStore.tolerance_unit
+  });
       });
-      
-      console.log('Form fully prepared for submission:', {
-        categoryIds: $formStore.category_ids,
-        manufacturerParts: typeof $formStore.manufacturer_parts === 'string' 
-          ? `JSON string of length ${$formStore.manufacturer_parts.length}` 
-          : $formStore.manufacturer_parts,
-        // Log paired fields to verify they follow constraints
-        dimensions: $formStore.dimensions,
-        dimensions_unit: $formStore.dimensions_unit,
-        weight: $formStore.weight,
-        weight_unit: $formStore.weight_unit,
-        tolerance: $formStore.tolerance,
-        tolerance_unit: $formStore.tolerance_unit
-      });
-      
-      // Form will be submitted via SuperForm enhance action
+
     } catch (error) {
       console.error('Error in form submission:', error);
     }
@@ -1047,10 +1050,10 @@ onMount(() => {
 
 <form class="part-form" method="POST" use:enhance={enhanceStore} on:submit={handleSubmit} data-section-all={activeSection === 'all' ? 'true' : 'false'}>  
   <!-- Hidden inputs for form submission - bound to formStore for consistency -->
-  <input type="hidden" name="name" value={$formStore.name || ''} />
-  <input type="hidden" name="version" value={$formStore.version || '0.1.0'} />
-  <input type="hidden" name="status" value={$formStore.status || LifecycleStatusEnum.DRAFT} />
-  <input type="hidden" name="part_status" value={$formStore.part_status || PartStatusEnum.CONCEPT} />
+  <input type="hidden" name="part_name" value={$formStore.part_name || ''} />
+  <input type="hidden" name="part_version" value={$formStore.part_version || '0.1.0'} />
+  <input type="hidden" name="version_status" value={$formStore.version_status || LifecycleStatusEnum.DRAFT} />
+  <input type="hidden" name="status_in_bom" value={$formStore.status_in_bom || PartStatusEnum.CONCEPT} />
 
   <!-- Basic Information -->
   <div class="form-section {activeSection === 'basic' ? 'active' : ''}">
@@ -1061,32 +1064,32 @@ onMount(() => {
     <div class="section-content" class:visible={activeSection === 'basic' || activeSection === 'all'}>
       <div class="form-grid">
         <div class="form-group">
-          <label for="name">Name</label>
-          <input name="name" id="name" bind:value={$formStore.name} required />
-          {#if $formErrors?.name}<span class="error">{$formErrors.name}</span>{/if}
+          <label for="part_name">Name</label>
+          <input name="part_name" id="part_name" bind:value={$formStore.part_name} required />
+          {#if $formErrors?.part_name}<span class="error">{$formErrors.part_name}</span>{/if}
         </div>
         <div class="form-group">
-          <label for="version">Version</label>
-          <input name="version" id="version" bind:value={$formStore.version} required pattern="\d+\.\d+\.\d+" />
-          {#if $formErrors?.version}<span class="error">{$formErrors.version}</span>{/if}
+          <label for="part_version">Version</label>
+          <input name="part_version" id="part_version" bind:value={$formStore.part_version} required pattern="\d+\.\d+\.\d+" />
+          {#if $formErrors?.part_version}<span class="error">{$formErrors.part_version}</span>{/if}
         </div>
         <div class="form-group">
-          <label for="status">Lifecycle Status</label>
-          <select name="status" id="status" bind:value={$formStore.status} required>
+          <label for="version_status">Lifecycle Status</label>
+          <select name="version_status" id="version_status" bind:value={$formStore.version_status} required>
             {#each options.statuses as statusOption}
               <option value={statusOption}>{statusOption}</option>
             {/each}
           </select>
-          {#if $formErrors?.status}<span class="error">{$formErrors.status}</span>{/if}
+          {#if $formErrors?.version_status}<span class="error">{$formErrors.version_status}</span>{/if}
         </div>
         <div class="form-group">
-          <label for="part_status">Part Status</label>
-          <select name="part_status" id="part_status" bind:value={$formStore.part_status}>
+          <label for="status_in_bom">Part Status</label>
+          <select name="status_in_bom" id="status_in_bom" bind:value={$formStore.status_in_bom}>
             {#each options.partStatuses as status}
               <option value={status}>{status}</option>
             {/each}
           </select>
-          {#if $formErrors?.part_status}<span class="error">{$formErrors.part_status}</span>{/if}
+          {#if $formErrors?.status_in_bom}<span class="error">{$formErrors.status_in_bom}</span>{/if}
         </div>
       </div>
       <div class="form-group">
@@ -1094,8 +1097,8 @@ onMount(() => {
         <input name="short_description" id="short_description" bind:value={$formStore.short_description} />
       </div>
       <div class="form-group">
-        <label for="full_description">Description</label>
-        <textarea name="full_description" id="full_description" bind:value={$formStore.full_description} rows="3"></textarea>
+        <label for="long_description">Description</label>
+        <textarea name="long_description" id="long_description" bind:value={$formStore.long_description} rows="3"></textarea>
       </div>
       <div class="form-group">
         <label for="functional_description">Functional Description</label>
@@ -1207,8 +1210,8 @@ onMount(() => {
 
       <div class="form-grid">
         <div class="form-group">
-          <label for="weight">Weight</label>
-          <input type="number" name="weight" id="weight" bind:value={formData.weight} min="0" step="any">
+          <label for="weight_value">Weight</label>
+          <input type="number" name="weight_value" id="weight_value" bind:value={formData.weight_value} min="0" step="any">
         </div>
 
         <div class="form-group">
@@ -1326,19 +1329,19 @@ onMount(() => {
         />
         {#if isEditMode}
           <div class="debug-info">
-            <small>Selected categories: {selectedCategoryIds.length}</small>
+            <small>Selected categories: {Array.isArray(selectedCategoryIds) ? selectedCategoryIds.length : 0}</small>
           </div>
         {/if}
       </div>
       <div class="form-group">
         <label for="manufacturers">Manufacturers</label>
         <ManufacturerSelector 
-          {manufacturers} 
+          manufacturers={manufacturers} 
           bind:selectedManufacturerParts 
         />
         {#if isEditMode}
           <div class="debug-info">
-            <small>Selected manufacturer parts: {selectedManufacturerParts.length}</small>
+            <small>Selected manufacturer parts: {Array.isArray(selectedManufacturerParts) ? selectedManufacturerParts.length : 0}</small>
           </div>
         {/if}
       </div>

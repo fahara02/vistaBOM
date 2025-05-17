@@ -1,10 +1,28 @@
 /**
  * Utility function for combining class names conditionally
  * Needed for shadcn-svelte components
+ * Enhanced to handle strings, objects, arrays, and null values
+ * @param {...(string|object|array|null|undefined)} inputs - Class values to be combined
+ * @returns {string} - Combined class string
  */
 export function cn(...inputs) {
   return inputs
     .flat()
+    .filter(Boolean)
+    .map(input => {
+      if (typeof input === 'string') return input;
+      if (typeof input !== 'object') return '';
+      
+      // Handle object notation { 'class-name': true/false }
+      if (input && !Array.isArray(input)) {
+        return Object.entries(input)
+          .filter(([_key, value]) => Boolean(value))
+          .map(([key]) => key)
+          .join(' ');
+      }
+      
+      return '';
+    })
     .filter(Boolean)
     .join(" ");
 }

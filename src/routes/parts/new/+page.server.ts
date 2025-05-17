@@ -1,7 +1,8 @@
 //src/routes/part/new/+page.server.ts
 
 import { createPart } from '@/core/parts';
-import type { CreatePartInput } from '@/core/parts';
+// Import directly from core parts module without defining our own type
+// The createPart function knows its parameter type
 import type { PageServerLoad, Actions } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { superValidate, message } from 'sveltekit-superforms/server';
@@ -26,8 +27,8 @@ export const load: PageServerLoad = async (event) => {
   }
   
   // Add default status if not set
-  if (!form.data.status) {
-    form.data.status = LifecycleStatusEnum.DRAFT;
+  if (!form.data.version_status) {
+    form.data.version_status = LifecycleStatusEnum.DRAFT;
   }
   
   // Initialize dimensions_unit property with a safer type approach
@@ -112,8 +113,10 @@ export const load: PageServerLoad = async (event) => {
 /**
  * Form actions for creating new parts with initial version
  */
-export const actions: Actions = {
+export const actions = {
   default: async ({ request, locals }) => {
+    // No need to explicitly access the database here
+    // The createPart function will handle the database access
     // Validate user authentication
     const user = locals.user;
     if (!user) return fail(401, { message: 'Unauthorized' });
@@ -121,11 +124,11 @@ export const actions: Actions = {
     // Validate form data using superForm
     const form = await superValidate(request, zod(createPartSchema));
     console.log('Form data RAW:', form.data);
-    console.log('Form data STATUS (original):', form.data.status);
+    console.log('Form data STATUS (original):', form.data.version_status);
     
     // We'll create a separate variable to track what status is supposed to be used
     // This avoids TypeScript issues while allowing us to debug
-    let actualStatusToUse = form.data.status;
+    let actualStatusToUse = form.data.version_status;
     console.log('ACTUAL STATUS that should be used:', actualStatusToUse);
     console.log('Form data:', JSON.stringify(form.data, null, 2));
     
@@ -139,7 +142,7 @@ export const actions: Actions = {
     }
     
     // Fix weight/weight_unit mismatch - if weight is present but unit is not
-    if (form.data.weight && !form.data.weight_unit) {
+    if (form.data.part_weight && !form.data.weight_unit) {
       form.data.weight_unit = WeightUnitEnum.G; // Default to grams
     }
     
@@ -150,20 +153,20 @@ export const actions: Actions = {
     
     // Log critical values for debugging
     console.log('Critical values:', {
-      name: form.data.name,
-      version: form.data.version,
-      status: form.data.status,
+      name: form.data.part_name,
+      version: form.data.part_version,
+      status: form.data.version_status,
       dimensions: form.data.dimensions
     });
     
   
     try {
       // DIRECT APPROACH: Get the lifecycle status from the form
-      const selectedLifecycleStatus = form.data.status;
+      const selectedLifecycleStatus = form.data.version_status;
       
       // Get the part status from the form or default to CONCEPT if not provided
       // This is the status for the Part table separate from its lifecycle status
-      const selectedPartStatus = form.data.partStatus || PartStatusEnum.CONCEPT;
+      const selectedPartStatus = form.data.status_in_bom || PartStatusEnum.CONCEPT;
       
       console.log('SELECTED LIFECYCLE STATUS:', selectedLifecycleStatus);
       console.log('SELECTED PART STATUS:', selectedPartStatus);
@@ -172,17 +175,28 @@ export const actions: Actions = {
       const lifecycleStatusToUse = String(selectedLifecycleStatus) as LifecycleStatusEnum;
       
       // Create part data with both status fields
-      const partData: CreatePartInput = {
-        name: form.data.name,
-        version: form.data.version || '0.1.0',
+      const partData = {
+        part_name: form.data.part_name,
+        part_version: form.data.part_version || '0.1.0',
         // Use the lifecycle status for the status field
-        status: lifecycleStatusToUse,
-        // Add the part status separately
-        partStatus: selectedPartStatus,
-        // Include simple fields
-        shortDescription: form.data.short_description,
-        functionalDescription: form.data.functional_description,
-        // Skip complex objects for now to ensure it works
+        version_status: lifecycleStatusToUse,
+        // Required field: lifecycle_status to match the interface requirement
+        lifecycle_status: lifecycleStatusToUse,
+        // Include status_in_bom field
+        status_in_bom: form.data.status_in_bom || PartStatusEnum.CONCEPT,
+        // Part requires is_public field
+        is_public: form.data.is_public || false,
+        short_description: form.data.short_description,
+        functional_description: form.data.functional_description,
+        // Required empty arrays for form validation
+        compliance_info: [],
+        attachments: [],
+        representations: [],
+        supplier_parts: [],
+        manufacturer_parts: [],
+        structure: [],
+        // Required empty objects
+        technical_specifications: {}
       };
       
       // Create the part with all the form data

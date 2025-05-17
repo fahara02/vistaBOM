@@ -66,7 +66,7 @@
 </script>
 
 <svelte:head>
-  <title>Edit Manufacturer: {manufacturer.name}</title>
+  <title>Edit Manufacturer: {manufacturer.manufacturer_name}</title>
 </svelte:head>
 
 <div class="edit-page-container">
@@ -94,10 +94,10 @@
     <div class="form-container">
       <form method="POST" action="?/update" use:enhance on:submit={handleSubmit} class="edit-form">
         <div class="form-header">
-          <h2>Edit {manufacturer.name}</h2>
-          {#if manufacturer.logoUrl}
+          <h2>Edit {manufacturer.manufacturer_name}</h2>
+          {#if manufacturer.logo_url}
             <div class="logo-preview">
-              <img src={manufacturer.logoUrl} alt="{manufacturer.name} logo" />
+              <img src={manufacturer.logo_url} alt="{manufacturer.manufacturer_name} logo" />
             </div>
           {/if}
         </div>
@@ -131,12 +131,12 @@
         <h3>About This Manufacturer</h3>
         <div class="info-item">
           <span class="info-label">Created:</span>
-          <span class="info-value">{new Date(manufacturer.createdAt).toLocaleDateString()}</span>
+          <span class="info-value">{new Date(manufacturer.created_at).toLocaleDateString()}</span>
         </div>
-        {#if manufacturer.updatedAt}
+        {#if manufacturer.updated_at}
           <div class="info-item">
             <span class="info-label">Last Updated:</span>
-            <span class="info-value">{new Date(manufacturer.updatedAt).toLocaleDateString()}</span>
+            <span class="info-value">{new Date(manufacturer.updated_at).toLocaleDateString()}</span>
           </div>
         {/if}
         <div class="info-hint">
@@ -160,7 +160,7 @@
   <div class="modal-overlay">
     <div class="modal-content">
       <h2>Confirm Deletion</h2>
-      <p>Are you sure you want to delete <strong>{manufacturer.name}</strong>?</p>
+      <p>Are you sure you want to delete <strong>{manufacturer.manufacturer_name}</strong>?</p>
       <p class="warning">This action cannot be undone.</p>
       
       <div class="modal-actions">

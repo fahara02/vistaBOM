@@ -1,10 +1,10 @@
 <!-- src/lib/components/CategoryComboBox.svelte -->
 <script lang="ts">
   import { Button } from "$lib/components/ui/button/index.js";
-  import * as Command from "$lib/components/ui/command/index.js";
+  import { Command } from "$lib/components/ui/command-wrapper";
   import * as Popover from "$lib/components/ui/popover/index.js";
   import { cn } from "$lib/utils.js";
-  import type { Category } from '@/types/types';
+  import type { Category } from '$lib/types/schemaTypes';
   import Check from "lucide-svelte/icons/check";
   import ChevronsUpDown from "lucide-svelte/icons/chevrons-up-down";
   import { tick } from "svelte";
@@ -33,7 +33,7 @@
     ...categories.map(category => ({
       value: category.category_id,
       label: category.category_name,
-      parentId: category.parent_id,
+      parent_id: category.parent_id,
       parentName: getParentName(category)
     }))
   ];
@@ -75,7 +75,7 @@
           {#each options as option}
             <Command.Item
               value={option.label}
-              onSelect={() => {
+              onSelect={(selectedValue: string) => {
                 value = option.value;
                 closeAndFocusTrigger(ids.trigger);
               }}

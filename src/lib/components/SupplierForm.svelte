@@ -8,7 +8,11 @@
 
 
   // Props
-  export let form: SuperForm<SupplierFormData> | SuperFormData<SupplierFormData>;
+  export let form: SuperForm<Record<string, unknown>> | SuperFormData<Record<string, unknown>>;
+  // Define form data as SupplierFormData with index signature to satisfy constraints
+  interface IndexedSupplierFormData extends SupplierFormData {
+    [key: string]: unknown;
+  }
   export let errors: any; // Form validation errors
   export let submitting: boolean = false;
   export let delayed: boolean = false;
@@ -22,7 +26,7 @@
   let showContactExamples = false;
   let showCustomFieldsHelp = false;
   let contactInfoFormatted = false;
-  let formData: SupplierFormData;
+  let formData: IndexedSupplierFormData;
   
   // Initialize formData with default values to prevent undefined errors
   formData = {
@@ -36,7 +40,9 @@
     created_by: '',
     created_at: new Date(),
     updated_by: '',
-    updated_at: new Date()
+    updated_at: new Date(),
+    // Include id field for backward compatibility
+    id: ''
   };
   
   // Handle form data - access differently based on whether it's a SuperForm or SuperFormData
@@ -45,8 +51,8 @@
       // For SuperForm type which has a subscribe method
       form.subscribe((value) => {
         // Safe way to merge values without spread operator type issues
-        if (value && value.data) {
-          const newData = value.data as Partial<SupplierFormData>;
+        if (value) {
+          const newData = value as unknown as Partial<IndexedSupplierFormData>;
           // Update each property individually
           if (newData.supplier_id !== undefined) formData.supplier_id = newData.supplier_id;
           if (newData.supplier_name !== undefined) formData.supplier_name = newData.supplier_name;
@@ -61,11 +67,11 @@
           if (newData.updated_at !== undefined) formData.updated_at = newData.updated_at;
         }
       });
-    } else if ('data' in form && form.data) {
+    } else if (form) {
       // For direct SuperFormData type
-      const newData = form.data as Partial<SupplierFormData>;
+      const newData = form as unknown as Partial<IndexedSupplierFormData>;
       // Update each property individually
-      if (newData.id !== undefined) formData.id = newData.id;
+      if (newData.supplier_id !== undefined) formData.supplier_id = newData.supplier_id;
       if (newData.supplier_name !== undefined) formData.supplier_name = newData.supplier_name;
       if (newData.supplier_description !== undefined) formData.supplier_description = newData.supplier_description;
       if (newData.website_url !== undefined) formData.website_url = newData.website_url;
@@ -86,31 +92,31 @@
 
 <div class="form-fields">
   <div class="form-group">
-    <label for="name">Name <span class="required">*</span></label>
+    <label for="supplier_name">Name <span class="required">*</span></label>
     <input 
-      id="name" 
-      name="name" 
+      id="supplier_name" 
+      name="supplier_name" 
       type="text" 
       bind:value={formData.supplier_name}
       class="form-control" 
       required
     />
-    {#if errors.name}
-      <span class="error-message">{errors.name}</span>
+    {#if errors.supplier_name}
+      <span class="error-message">{errors.supplier_name}</span>
     {/if}
   </div>
   
   <div class="form-group">
-    <label for="description">Description</label>
+    <label for="supplier_description">Description</label>
     <textarea 
-      id="description" 
-      name="description" 
+      id="supplier_description" 
+      name="supplier_description" 
       bind:value={formData.supplier_description}
       class="form-control"
       rows="4"
     ></textarea>
-    {#if errors.description}
-      <span class="error-message">{errors.description}</span>
+    {#if errors.supplier_description}
+      <span class="error-message">{errors.supplier_description}</span>
     {/if}
   </div>
   

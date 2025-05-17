@@ -9,28 +9,15 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import { cn } from "$lib/utils.js";
   
-  // Define types for manufacturer data
-  type Manufacturer = {
-    id: string;
-    name: string;
-    description?: string;
-    website_url?: string;
-  };
+  // Import types from our component types file which builds on schemaTypes
+  import type { ManufacturerDisplay, ManufacturerPartInput } from '$lib/types/componentTypes';
+  import { createEventDispatcher } from 'svelte';
   
-  type ManufacturerPart = {
-    id?: string;
-    manufacturer_id: string;
-    manufacturer_name?: string; // For display purposes
-    manufacturer_part_number: string;
-    description?: string;
-    datasheet_url?: string;
-    product_url?: string;
-    is_recommended: boolean;
-  };
-
-  // Props
-  export let manufacturers: Manufacturer[] = [];
-  export let selectedManufacturerParts: ManufacturerPart[] = [];
+  const dispatch = createEventDispatcher();
+  
+  // Props with proper types from our component types
+  export let manufacturers: ManufacturerDisplay[] = [];
+  export let selectedManufacturerParts: ManufacturerPartInput[] = [];
   export let disabled: boolean = false;
   export let width: string = "w-full";
   
@@ -38,11 +25,11 @@
   let open = false;
   let currentManufacturerId: string = "";
   let editingIndex: number = -1; // -1 means we're adding a new manufacturer part
-  let currentPart: ManufacturerPart = createEmptyManufacturerPart();
+  let currentPart: ManufacturerPartInput = createEmptyManufacturerPart();
   let showForm = false;
 
   // Create a new empty manufacturer part object
-  function createEmptyManufacturerPart(): ManufacturerPart {
+  function createEmptyManufacturerPart(): ManufacturerPartInput {
     return {
       manufacturer_id: "",
       manufacturer_part_number: "",
@@ -60,9 +47,8 @@
       return;
     }
     
-    // Find manufacturer name for display
-    const manufacturer = manufacturers.find(m => m.id === currentPart.manufacturer_id);
-    currentPart.manufacturer_name = manufacturer?.name || "Unknown Manufacturer";
+    // We don't need to set manufacturer_name on the part object anymore
+    // It's derived from the manufacturer data when needed for display
     
     if (editingIndex >= 0) {
       // Update existing manufacturer part
@@ -72,6 +58,9 @@
       // Add new manufacturer part
       selectedManufacturerParts = [...selectedManufacturerParts, { ...currentPart }];
     }
+    
+    // Notify parent of the change
+    dispatch('change', selectedManufacturerParts);
     
     // Reset form
     resetForm();
@@ -98,6 +87,8 @@
   
   // Get manufacturer name by ID
   function getManufacturerName(id: string): string {
+    // Find manufacturer by ID and access the name property
+    // This safely maps manufacturer_id to the name property
     return manufacturers.find(m => m.id === id)?.name || "Unknown";
   }
   
@@ -121,16 +112,28 @@
           <tr>
             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part Number</th>
-            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recommended</th>
+            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Recommended</th>
             <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
           {#each selectedManufacturerParts as mfgPart, index}
             <tr>
-              <td class="px-4 py-2 whitespace-nowrap">{mfgPart.manufacturer_name || getManufacturerName(mfgPart.manufacturer_id)}</td>
-              <td class="px-4 py-2 whitespace-nowrap">{mfgPart.manufacturer_part_number}</td>
-              <td class="px-4 py-2 whitespace-nowrap">{mfgPart.is_recommended ? 'Yes' : 'No'}</td>
+              <td class="px-4 py-2 whitespace-nowrap">
+                {getManufacturerName(mfgPart.manufacturer_id)}
+              </td>
+              <td class="px-4 py-2 whitespace-nowrap">
+                {mfgPart.manufacturer_part_number}
+              </td>
+              <td class="px-4 py-2">
+                {#if mfgPart.description}
+                  {mfgPart.description.length > 60 ? `${mfgPart.description.substring(0, 60)}...` : mfgPart.description}
+                {/if}
+              </td>
+              <td class="px-4 py-2 whitespace-nowrap text-center">
+                {mfgPart.is_recommended ? 'Yes' : 'No'}
+              </td>
               <td class="px-4 py-2 whitespace-nowrap text-right">
                 <button
                   type="button"
@@ -195,22 +198,20 @@
             </Popover.Trigger>
             <Popover.Content class="w-[var(--radix-popover-trigger-width)] p-0 max-h-[300px] overflow-y-auto dropdown-content" side="bottom" align="start" sideOffset={8}>
               <Command.Root>
-                <Command.Input placeholder="Search manufacturers..." />
+                {#if true}
+                  <Command.Input />
+                {/if}
                 <Command.Empty>No manufacturer found.</Command.Empty>
                 <Command.Group>
                   {#each manufacturers as manufacturer}
                     <Command.Item
-                      value={manufacturer.name}
-                      onSelect={() => {
+                      on:click={() => {
                         currentPart.manufacturer_id = manufacturer.id;
                         closeAndFocusTrigger(ids.trigger);
                       }}
                     >
                       <Check
-                        class={cn(
-                          "mr-2 h-4 w-4",
-                          currentPart.manufacturer_id !== manufacturer.id && "text-transparent"
-                        )}
+                        class="mr-2 h-4 w-4 {currentPart.manufacturer_id !== manufacturer.id ? 'opacity-0' : ''}"
                       />
                       {manufacturer.name}
                     </Command.Item>

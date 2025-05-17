@@ -57,16 +57,13 @@
   
   <div class="form-container">
     <h2>Form Component</h2>
+    <!-- The PartForm already defines these options internally -->
+    <!-- Removed custom statuses, packageTypes, etc. arrays -->
     <PartForm
       {form}
       {errors}
       {enhance}
       isEditMode={isEditMode}
-      statuses={['draft', 'active', 'discontinued']}
-      packageTypes={['DIP', 'QFP', 'SOIC']}
-      weightUnits={['g', 'kg', 'oz']}
-      dimensionUnits={['mm', 'cm', 'in']}
-      partStatuses={['concept', 'development', 'production']}
     />
   </div>
 </div>

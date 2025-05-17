@@ -110,12 +110,24 @@
 			// Reset the part form to default values with proper enum values
 			// Use proper schema field names matching the createPartSchema
 			$partForm = {
-				name: '',
-				version: '0.1.0',
+				part_name: '',
+				part_version: '0.1.0',
 				short_description: '',
 				// Use proper enum values to ensure type safety
-				status: LifecycleStatusEnum.DRAFT, // Use status as per schema
-				part_status: PartStatusEnum.CONCEPT
+				version_status: LifecycleStatusEnum.DRAFT,
+				status_in_bom: PartStatusEnum.CONCEPT,
+				// Required fields
+				is_public: false,
+				compliance_info: [],
+				attachments: [],
+				representations: [],
+				technical_specifications: {},
+				// Note: properties is handled via technical_specifications
+				custom_fields: {},
+				// Required fields from schema
+				structure: [],
+				manufacturer_parts: [],
+				supplier_parts: []
 			};
 		}
 		
@@ -255,12 +267,12 @@
 	// Function to handle edit button click
 	function editCategory(category: any) {
 		// Set category ID being edited
-		currentCategoryId = category.id;
+		currentCategoryId = category.category_id;
 		
 		// Populate form with category data
 		$categoryForm = {
-			category_name: category.name,
-			category_description: category.description || '',
+			category_name: category.category_name,
+			category_description: category.category_description || '',
 			parent_id: category.parent_id || '',
 			is_public: Boolean(category.is_public)
 		};
@@ -283,8 +295,8 @@
 		
 		// Reset form to initial state
 		$categoryForm = {
-			name: '',
-			description: '',
+			category_name: '',
+			category_description: '',
 			parent_id: '',
 			is_public: false
 		};
@@ -302,8 +314,8 @@
 				currentCategoryId = null;
 				// Reset form
 				$categoryForm = {
-					name: '',
-					description: '',
+					category_name: '',
+					category_description: '',
 					parent_id: '',
 					is_public: false
 				};
@@ -394,14 +406,14 @@
 				<h2>Your Parts</h2>
 				{#if userParts.length > 0}
 					<div class="user-items-grid">
-						{#each userParts as part (part.id)}
+						{#each userParts as part (part.part_id)}
 							<div class="entity-card">
-								<h3>{part.name}</h3>
-								<p class="entity-meta">Version: {part.version || '1.0.0'}</p>
-								<p class="entity-meta">Status: {part.status || 'Draft'}</p>
+								<h3>{(part as any).name || 'Unnamed Part'}</h3>
+								<p class="entity-meta">Version: {(part as any).part_version || '1.0.0'}</p>
+								<p class="entity-meta">Status: {part.lifecycle_status || 'Draft'}</p>
 								<div class="entity-actions">
-									<a href={`/parts/${part.id}`} class="icon-btn view-btn" title="View Part Details">👁️</a>
-									<a href={`/parts/${part.id}/edit`} class="icon-btn edit-btn" title="Edit Part">✏️</a>
+									<a href={`/parts/${part.part_id}`} class="icon-btn view-btn" title="View Part Details">👁️</a>
+									<a href={`/parts/${part.part_id}/edit`} class="icon-btn edit-btn" title="Edit Part">✏️</a>
 								</div>
 							</div>
 						{/each}
@@ -472,27 +484,27 @@
 				<h2>Your Manufacturers</h2>
 				{#if userManufacturers.length > 0}
 					<div class="user-items-grid">
-						{#each userManufacturers as manufacturer (manufacturer.id)}
+						{#each userManufacturers as manufacturer (manufacturer.manufacturer_id)}
 							<div class="entity-card manufacturer-card">
 								<div class="card-header">
 									{#if manufacturer.logo_url}
 										<div class="logo-container">
-											<img src={manufacturer.logo_url} alt={`${manufacturer.name} logo`} class="manufacturer-logo" />
+											<img src={manufacturer.logo_url} alt={`${manufacturer.manufacturer_name} logo`} class="manufacturer-logo" />
 										</div>
 									{:else}
 										<div class="logo-placeholder">
-											<span>{manufacturer.name.substring(0, 2).toUpperCase()}</span>
+											<span>{manufacturer.manufacturer_name.substring(0, 2).toUpperCase()}</span>
 										</div>
 									{/if}
-									<h3 class="manufacturer-name">{manufacturer.name}</h3>
+									<h3 class="manufacturer-name">{manufacturer.manufacturer_name}</h3>
 								</div>
 								
 								<div class="card-content">
-									{#if manufacturer.description}
+									{#if manufacturer.manufacturer_description}
 										<p class="entity-description">
-											{manufacturer.description.length > 100 ? 
-												`${manufacturer.description.substring(0, 100)}...` : 
-												manufacturer.description}
+											{manufacturer.manufacturer_description.length > 100 ? 
+												`${manufacturer.manufacturer_description.substring(0, 100)}...` : 
+												manufacturer.manufacturer_description}
 										</p>
 									{:else}
 										<p class="entity-no-description">No description provided</p>
@@ -516,7 +528,7 @@
 								</div>
 								
 								<div class="entity-actions">
-									<a href={`/manufacturer/${manufacturer.id}/edit`} class="icon-btn edit-btn" title="Edit Manufacturer">✏️</a>
+									<a href={`/manufacturer/${manufacturer.manufacturer_id}/edit`} class="icon-btn edit-btn" title="Edit Manufacturer">✏️</a>
 									<a href="/manufacturer" class="icon-btn view-btn" title="View All Manufacturers">👁️</a>
 								</div>
 							</div>
@@ -568,7 +580,7 @@
 									required 
 								/>
 								{#if $manufacturerErrors.manufacturer_name}
-									<span class="field-error">{$manufacturerErrors.name}</span>
+									<span class="field-error">{$manufacturerErrors.manufacturer_name}</span>
 								{/if}
 							</div>
 							
@@ -583,7 +595,7 @@
 									rows="3"
 								></textarea>
 								{#if $manufacturerErrors.manufacturer_description}
-									<span class="field-error">{$manufacturerErrors.description}</span>
+									<span class="field-error">{$manufacturerErrors.manufacturer_description}</span>
 								{/if}
 							</div>
 							
@@ -658,27 +670,27 @@
 				<h2>Your Suppliers</h2>
 				{#if userSuppliers.length > 0}
 					<div class="user-items-grid">
-						{#each userSuppliers as supplier (supplier.id)}
+						{#each userSuppliers as supplier (supplier.supplier_id)}
 							<div class="entity-card">
 								<div class="card-header">
 									{#if supplier.logo_url}
 										<div class="logo-container">
-											<img src={supplier.logo_url} alt={`${supplier.name} logo`} class="entity-logo" />
+											<img src={supplier.logo_url} alt={`${supplier.supplier_name} logo`} class="entity-logo" />
 										</div>
 									{:else}
 										<div class="logo-placeholder">
-											<span>{supplier.name.substring(0, 2).toUpperCase()}</span>
+											<span>{supplier.supplier_name.substring(0, 2).toUpperCase()}</span>
 										</div>
 									{/if}
-									<h3 class="entity-name">{supplier.name}</h3>
+									<h3 class="entity-name">{supplier.supplier_name}</h3>
 								</div>
 								
 								<div class="card-content">
-									{#if supplier.description}
+									{#if supplier.supplier_description}
 										<p class="entity-description">
-											{supplier.description.length > 60 ? 
-												`${supplier.description.substring(0, 60)}...` : 
-												supplier.description}
+											{supplier.supplier_description.length > 60 ? 
+												`${supplier.supplier_description.substring(0, 60)}...` : 
+												supplier.supplier_description}
 										</p>
 									{:else}
 										<p class="entity-no-description">No description provided</p>
@@ -718,7 +730,7 @@
 								</div>
 								
 								<div class="entity-actions">
-									<a href={`/supplier/${supplier.id}/edit`} class="icon-btn edit-btn" title="Edit Supplier">✏️</a>
+									<a href={`/supplier/${supplier.supplier_id}/edit`} class="icon-btn edit-btn" title="Edit Supplier">✏️</a>
 									<a href="/supplier" class="icon-btn view-btn" title="View All Suppliers">👁️</a>
 								</div>
 							</div>
@@ -750,14 +762,14 @@
 								<label for="sup-name">Name <span class="required">*</span></label>
 								<input 
 									id="sup-name" 
-									name="name" 
-									bind:value={$supplierForm.name} 
+									name="supplier_name" 
+									bind:value={$supplierForm.supplier_name} 
 									class="form-input"
 									placeholder="Enter supplier name"
 									required 
 								/>
-								{#if $supplierErrors.name}
-									<span class="field-error">{$supplierErrors.name}</span>
+								{#if $supplierErrors.supplier_name}
+									<span class="field-error">{$supplierErrors.supplier_name}</span>
 								{/if}
 							</div>
 							
@@ -765,14 +777,14 @@
 								<label for="sup-description">Description</label>
 								<textarea 
 									id="sup-description" 
-									name="description" 
-									bind:value={$supplierForm.description} 
+									name="supplier_description" 
+									bind:value={$supplierForm.supplier_description} 
 									class="form-textarea"
 									placeholder="Enter supplier description"
 									rows="3"
 								></textarea>
-								{#if $supplierErrors.description}
-									<span class="field-error">{$supplierErrors.description}</span>
+								{#if $supplierErrors.supplier_description}
+									<span class="field-error">{$supplierErrors.supplier_description}</span>
 								{/if}
 							</div>
 							
@@ -843,7 +855,7 @@
 				{#if userCategories.length > 0}
 					<div class="user-items-grid">
 						{#each userCategories as category}
-							<Category {category} currentUserId={user.id} allCategories={allCategories} />
+							<Category {category} currentUserId={user.user_id} allCategories={allCategories} />
 						{/each}
 					</div>
 				{:else}
@@ -854,7 +866,7 @@
 					<button type="button" class="primary-btn" on:click={toggleCategoryForm}>
 						{showCategoryForm ? 'Hide Form' : 'Add New Category'}
 					</button>
-					<a href="/catagory" class="secondary-btn">View All Categories</a>
+					<a href="/category" class="secondary-btn">View All Categories</a>
 				</div>
 				
 				{#if showCategoryForm}
@@ -873,9 +885,9 @@
 									<input type="hidden" name="categoryId" value={currentCategoryId} />
 								{/if}
 								<div class="form-group">
-									<label for="name">Name*</label>
-									<input id="name" name="name" bind:value={$categoryForm.name} required />
-									{#if $categoryErrors.name}<span class="error">{$categoryErrors.name}</span>{/if}
+									<label for="category_name">Name*</label>
+									<input id="category_name" name="category_name" bind:value={$categoryForm.category_name} required />
+									{#if $categoryErrors.category_name}<span class="error">{$categoryErrors.category_name}</span>{/if}
 								</div>
 								
 								<div class="form-group">
@@ -890,9 +902,9 @@
 								</div>
 								
 								<div class="form-group">
-									<label for="description">Description</label>
-									<textarea id="description" name="description" bind:value={$categoryForm.description}></textarea>
-									{#if $categoryErrors.description}<span class="error">{$categoryErrors.description}</span>{/if}
+									<label for="category_description">Description</label>
+									<textarea id="category_description" name="category_description" bind:value={$categoryForm.category_description}></textarea>
+									{#if $categoryErrors.category_description}<span class="error">{$categoryErrors.category_description}</span>{/if}
 								</div>
 								
 								<div class="form-group checkbox-group">
