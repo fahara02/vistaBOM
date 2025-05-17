@@ -7,6 +7,18 @@ import crypto from 'crypto';
 // Import error constants
 import { PART_ERRORS } from './parts/partErrors';
 
+// Import schema-defined types for type safety
+import type {
+  CreatePartVersion,
+  PartVersion as SchemaPartVersion,
+  PartVersionBase,
+  JsonValue,
+  Part as SchemaPart
+} from '$lib/types/schemaTypes';
+
+// Import primitive types
+import type { Dimensions, MaterialComposition } from '$lib/types/primitive';
+
 // JSON field serialization/deserialization helper functions
 /**
  * Type-safe conversion of specialized data structures to PostgreSQL JSON format
@@ -257,14 +269,46 @@ import type { z } from 'zod';
 // Create a combined type that includes all fields from both schemas
 type ExtendedPartFormData = PartFormData;
 
-// Import JsonValue type from primitive types
-import type { JsonValue, Dimensions, MaterialComposition } from '$lib/types/primitive';
+// This section is already imported at the top of the file, removing duplicate imports
 
-// Define a type for complex JSON properties that need type conversion
+// Define proper TypeScript types for JSON properties to ensure type safety
+
+/**
+ * PostgreSQL-compatible JSON value type that can be used with sql.json
+ * This matches what Postgres.js expects for JSON serialization
+ */
+export type PostgresJsonValue = string | number | boolean | null | PostgresJsonObject | PostgresJsonArray;
+export interface PostgresJsonObject { [key: string]: PostgresJsonValue }
+export type PostgresJsonArray = Array<PostgresJsonValue>;
+
+/**
+ * Type for complex JSON properties that provides type safety while ensuring
+ * PostgreSQL compatibility
+ */
 type ComplexJsonProperty<T extends Record<string, unknown>> = T | JsonValue;
 
-// Define a type for JSON data for database compatibility
+/**
+ * Type alias for database-compatible JSON to ensure consistency
+ */
 type DbJson = JsonValue;
+
+/**
+ * Helper function to safely convert any value to PostgreSQL-compatible JSON
+ * Ensures type safety when using with sql.json
+ * @param value The value to convert to PostgreSQL JSON
+ * @returns A value safe to use with sql.json or null
+ */
+function toPostgresJson(value: unknown): PostgresJsonValue | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+    try {
+        // For complex objects, convert through JSON.stringify/parse to ensure compatibility
+        return JSON.parse(JSON.stringify(value)) as PostgresJsonValue;
+    } catch (error) {
+        console.error('[toPostgresJson] Error converting value to JSON:', error);
+        return null;
+    }
+}
 
 // Helper function to process numeric fields that can be string or number
 function processNumericField(value: string | number | undefined | null): number | null {
@@ -2051,51 +2095,93 @@ export async function addCategoryToPartVersion(partVersionId: string, categoryId
 
 /**
  * Extended interface for part version input with categories
+ * Directly inherits from the schema-defined CreatePartVersion type and adds additional
+ * input-specific properties needed for the form submission.
  */
 interface PartVersionInput {
+    // Required core fields matching the schema
     id: string;
     partId: string;
     version: string;
     name: string;
     status: string;
     createdBy: string;
+    part_id: string; // Schema field required for compatibility
+    part_name: string; // Schema field required for compatibility
+    part_version: string; // Schema field required for compatibility
+    created_by: string; // Schema field required for compatibility
+
+    // Date fields with flexible input formats
     releasedAt?: Date | string;
-    shortDescription?: string;
-    longDescription?: string;
-    functionalDescription?: string;
-    revisionNotes?: string;
-    // Physical properties
-    weight?: number | string;
-    weightUnit?: string;
-    dimensions?: any;
-    dimensionsUnit?: string;
-    tolerance?: number | string;
-    toleranceUnit?: string;
+    released_at?: Date; // Schema field
+    
+    // Allow both numeric and string inputs for number fields to accommodate form inputs
+    weight?: number;
+    weight_unit?: string;
+    weightUnit?: string; // Client-side convenience field
+    
+    // Complex objects with flexible input formats
+    dimensions?: Dimensions | null;
+    dimensions_unit?: string;
+    dimensionsUnit?: string; // Client-side convenience field
+    tolerance?: number; // Fixed to match schema type - must be a number when sent to database
+    tolerance_unit?: string;
+    toleranceUnit?: string; // Client-side convenience field
+    
     // Component properties
-    packageType?: string;
-    mountingType?: string;
-    pinCount?: number | string;
-    // Temperature properties
-    operatingTempMin?: number | string;
-    operatingTempMax?: number | string;
-    storageTempMin?: number | string;
-    storageTempMax?: number | string;
-    temperatureUnit?: string;
-    // Electrical properties
-    voltageRatingMin?: number | string;
-    voltageRatingMax?: number | string;
-    currentRatingMin?: number | string;
-    currentRatingMax?: number | string;
-    powerRatingMax?: number | string;
-    // Custom JSON fields
-    technicalSpecifications?: any;
-    properties?: any;
-    electricalProperties?: any;
-    mechanicalProperties?: any;
-    thermalProperties?: any;
-    materialComposition?: any;
-    environmentalData?: any;
-    // Categories
+    package_type?: string;
+    packageType?: string; // Client-side convenience field
+    mounting_type?: string;
+    mountingType?: string; // Client-side convenience field
+    pin_count?: number;
+    pinCount?: number | string; // Client-side convenience field
+    
+    // Temperature properties with flexible input formats
+    operating_temp_min?: number;
+    operatingTempMin?: number | string; // Client-side convenience field
+    operating_temp_max?: number;
+    operatingTempMax?: number | string; // Client-side convenience field
+    storage_temp_min?: number;
+    storageTempMin?: number | string; // Client-side convenience field
+    storage_temp_max?: number;
+    storageTempMax?: number | string; // Client-side convenience field
+    temperature_unit?: string;
+    temperatureUnit?: string; // Client-side convenience field
+    
+    // Electrical properties with flexible input formats
+    voltage_rating_min?: number;
+    voltageRatingMin?: number | string; // Client-side convenience field
+    voltage_rating_max?: number;
+    voltageRatingMax?: number | string; // Client-side convenience field
+    current_rating_min?: number;
+    currentRatingMin?: number | string; // Client-side convenience field
+    current_rating_max?: number;
+    currentRatingMax?: number | string; // Client-side convenience field
+    power_rating_max?: number;
+    powerRatingMax?: number | string; // Client-side convenience field
+    
+    // JSON fields with proper type definitions
+    technical_specifications?: JsonValue;
+    technicalSpecifications?: JsonValue | Record<string, unknown> | string | null; // Client-side convenience field
+    properties?: JsonValue;
+    electrical_properties?: JsonValue;
+    electricalProperties?: ElectricalProperties | DbJson | string | null; // Client-side convenience field
+    mechanical_properties?: JsonValue;
+    mechanicalProperties?: MechanicalProperties | DbJson | string | null; // Client-side convenience field
+    thermal_properties?: JsonValue;
+    thermalProperties?: ThermalProperties | DbJson | string | null; // Client-side convenience field
+    material_composition?: JsonValue;
+    materialComposition?: MaterialComposition | DbJson | string | null; // Client-side convenience field
+    environmental_data?: JsonValue;
+    environmentalData?: EnvironmentalData | DbJson | string | null; // Client-side convenience field
+    
+    // Other required schema fields
+    short_description?: string;
+    long_description?: string;
+    functional_description?: string;
+    revision_notes?: string;
+    
+    // Categories in various formats
     categories?: Array<{id?: string; category_id?: string}> | string;
 }
 
@@ -2105,17 +2191,41 @@ interface PartVersionInput {
  * @param partVersion The part version data with required fields
  * @returns Newly created part version with normalized structure
  */
-export async function createPartVersion(partVersion: PartVersionInput): Promise<PartVersion> {
+export async function createPartVersion(partVersion: PartVersionInput): Promise<SchemaPartVersion> {
     try {
         // Input validation ensuring all required fields are present
-        if (!partVersion.id || !partVersion.partId) {
+        if (!partVersion.id || !partVersion.partId || !partVersion.part_id) {
             console.error('[createPartVersion] Missing required fields');
             throw new Error('Missing required fields in part version data');
         }
 
         // Generate IDs
         const versionId = partVersion.id || crypto.randomUUID();
-        const partId = partVersion.partId;
+        const partId = partVersion.part_id || partVersion.partId; // Prefer snake_case but fall back to camelCase
+        
+        // Helper function to safely convert values for PostgreSQL JSON
+        const toPostgresJson = <T>(value: T | string | null | undefined): JsonValue | null => {
+            if (value === undefined || value === null) return null;
+            // If the value is already a string representation of JSON, parse it first
+            if (typeof value === 'string') {
+                try {
+                    return JSON.parse(value) as JsonValue;
+                } catch (e) {
+                    // If not valid JSON, treat as a simple string value
+                    return value as unknown as JsonValue;
+                }
+            }
+            // Otherwise return the value directly
+            return value as unknown as JsonValue;
+        };
+        
+        // Helper function to safely convert number values
+        const toNumber = (value: string | number | undefined | null): number | null => {
+            if (value === undefined || value === null || value === '') return null;
+            if (typeof value === 'number') return value;
+            const num = Number(value);
+            return isNaN(num) ? null : num;
+        };
         
         // Create the new part version record with properly typed fields
         const result = await sql`
@@ -2163,45 +2273,51 @@ export async function createPartVersion(partVersion: PartVersionInput): Promise<
             ) VALUES (
                 ${versionId},
                 ${partId},
-                ${partVersion.version || '1.0.0'},
-                ${partVersion.name || ''},
-                ${partVersion.shortDescription || null},
-                ${partVersion.longDescription || null},
-                ${partVersion.functionalDescription || null},
-                ${partVersion.technicalSpecifications ? sql.json(partVersion.technicalSpecifications) : null},
-                ${partVersion.properties ? sql.json(partVersion.properties) : null},
-                ${partVersion.electricalProperties ? sql.json(partVersion.electricalProperties) : null},
-                ${partVersion.mechanicalProperties ? sql.json(partVersion.mechanicalProperties) : null},
-                ${partVersion.thermalProperties ? sql.json(partVersion.thermalProperties) : null},
-                ${processNumericField(partVersion.weight)},
-                ${partVersion.weightUnit ? partVersion.weightUnit.toLowerCase() : null}::weight_unit_enum,
-                ${partVersion.dimensions ? sql.json(partVersion.dimensions) : null},
-                ${partVersion.dimensionsUnit ? partVersion.dimensionsUnit.toLowerCase() : null}::dimension_unit_enum,
-                ${partVersion.materialComposition ? sql.json(partVersion.materialComposition) : null},
-                ${partVersion.environmentalData ? sql.json(partVersion.environmentalData) : null},
-                ${processNumericField(partVersion.voltageRatingMin)},
-                ${processNumericField(partVersion.voltageRatingMax)},
-                ${processNumericField(partVersion.currentRatingMin)},
-                ${processNumericField(partVersion.currentRatingMax)},
-                ${processNumericField(partVersion.powerRatingMax)},
-                ${processNumericField(partVersion.tolerance)},
-                ${partVersion.toleranceUnit || null},
-                ${partVersion.packageType ? partVersion.packageType.toUpperCase() : null}::package_type_enum,
-                ${partVersion.mountingType ? partVersion.mountingType.toUpperCase() : null}::mounting_type_enum,
-                ${processNumericField(partVersion.pinCount)},
-                ${processNumericField(partVersion.operatingTempMin)},
-                ${processNumericField(partVersion.operatingTempMax)},
-                ${processNumericField(partVersion.storageTempMin)},
-                ${processNumericField(partVersion.storageTempMax)},
-                ${partVersion.temperatureUnit ? partVersion.temperatureUnit.toUpperCase() : null}::temperature_unit_enum,
-                ${partVersion.revisionNotes || null},
-                ${partVersion.status || LifecycleStatusEnum.DRAFT}::lifecycle_status_enum,
-                ${partVersion.releasedAt ? new Date(partVersion.releasedAt) : null},
-                ${partVersion.createdBy},
-                NOW(),
-                ${partVersion.createdBy},
-                NOW()
-            ) RETURNING *;
+                ${partVersion.part_version || partVersion.version},
+                ${partVersion.part_name || partVersion.name},
+                ${partVersion.short_description || null},
+                ${partVersion.long_description || null},
+                ${partVersion.functional_description || null},
+                ${partVersion.technical_specifications ? sql.json(toPostgresJson(partVersion.technical_specifications)) : 
+                  partVersion.technicalSpecifications ? sql.json(toPostgresJson(partVersion.technicalSpecifications)) : null},
+                ${partVersion.properties ? sql.json(toPostgresJson(partVersion.properties)) : null},
+                ${partVersion.electrical_properties ? sql.json(toPostgresJson(partVersion.electrical_properties)) : 
+                  partVersion.electricalProperties ? sql.json(toPostgresJson(partVersion.electricalProperties)) : null},
+                ${partVersion.mechanical_properties ? sql.json(toPostgresJson(partVersion.mechanical_properties)) : 
+                  partVersion.mechanicalProperties ? sql.json(toPostgresJson(partVersion.mechanicalProperties)) : null},
+                ${partVersion.thermal_properties ? sql.json(toPostgresJson(partVersion.thermal_properties)) : 
+                  partVersion.thermalProperties ? sql.json(toPostgresJson(partVersion.thermalProperties)) : null},
+                ${toNumber(partVersion.weight)},
+                ${partVersion.weight_unit || partVersion.weightUnit || null},
+                ${partVersion.dimensions ? sql.json(toPostgresJson(partVersion.dimensions)) : null},
+                ${partVersion.dimensions_unit || partVersion.dimensionsUnit || null},
+                ${partVersion.material_composition ? sql.json(toPostgresJson(partVersion.material_composition)) : 
+                  partVersion.materialComposition ? sql.json(toPostgresJson(partVersion.materialComposition)) : null},
+                ${partVersion.environmental_data ? sql.json(toPostgresJson(partVersion.environmental_data)) : 
+                  partVersion.environmentalData ? sql.json(toPostgresJson(partVersion.environmentalData)) : null},
+                ${toNumber(partVersion.voltage_rating_min || partVersion.voltageRatingMin)},
+                ${toNumber(partVersion.voltage_rating_max || partVersion.voltageRatingMax)},
+                ${toNumber(partVersion.current_rating_min || partVersion.currentRatingMin)},
+                ${toNumber(partVersion.current_rating_max || partVersion.currentRatingMax)},
+                ${toNumber(partVersion.power_rating_max || partVersion.powerRatingMax)},
+                ${toNumber(partVersion.tolerance)}, 
+                ${partVersion.tolerance_unit || partVersion.toleranceUnit || null},
+                ${partVersion.package_type || partVersion.packageType || null},
+                ${partVersion.mounting_type || partVersion.mountingType || null},
+                ${toNumber(partVersion.pin_count || partVersion.pinCount)},
+                ${toNumber(partVersion.operating_temp_min || partVersion.operatingTempMin)},
+                ${toNumber(partVersion.operating_temp_max || partVersion.operatingTempMax)},
+                ${toNumber(partVersion.storage_temp_min || partVersion.storageTempMin)},
+                ${toNumber(partVersion.storage_temp_max || partVersion.storageTempMax)},
+                ${partVersion.temperature_unit || partVersion.temperatureUnit || null},
+                ${partVersion.revision_notes || null},
+                ${partVersion.status || null},
+                ${partVersion.released_at || partVersion.releasedAt || null},
+                ${partVersion.created_by || partVersion.createdBy},
+                CURRENT_TIMESTAMP,
+                ${partVersion.created_by || partVersion.createdBy},
+                CURRENT_TIMESTAMP
+            ) RETURNING *
         `;
         
         if (!result || result.length === 0) {
@@ -2251,13 +2367,13 @@ export async function createPartVersion(partVersion: PartVersionInput): Promise<
             await sql`
                 UPDATE "PartVersion"
                 SET 
-                    technical_specifications = ${partVersion.technicalSpecifications ? sql.json(partVersion.technicalSpecifications) : null},
-                    properties = ${partVersion.properties ? sql.json(partVersion.properties) : null},
-                    electrical_properties = ${partVersion.electricalProperties ? sql.json(partVersion.electricalProperties) : null},
-                    mechanical_properties = ${partVersion.mechanicalProperties ? sql.json(partVersion.mechanicalProperties) : null},
-                    thermal_properties = ${partVersion.thermalProperties ? sql.json(partVersion.thermalProperties) : null},
-                    material_composition = ${partVersion.materialComposition ? sql.json(partVersion.materialComposition) : null},
-                    environmental_data = ${partVersion.environmentalData ? sql.json(partVersion.environmentalData) : null}
+                    technical_specifications = ${partVersion.technicalSpecifications ? sql.json(toPostgresJson(partVersion.technicalSpecifications)) : null},
+                    properties = ${partVersion.properties ? sql.json(toPostgresJson(partVersion.properties)) : null},
+                    electrical_properties = ${partVersion.electricalProperties ? sql.json(toPostgresJson(partVersion.electricalProperties)) : null},
+                    mechanical_properties = ${partVersion.mechanicalProperties ? sql.json(toPostgresJson(partVersion.mechanicalProperties)) : null},
+                    thermal_properties = ${partVersion.thermalProperties ? sql.json(toPostgresJson(partVersion.thermalProperties)) : null},
+                    material_composition = ${partVersion.materialComposition ? sql.json(toPostgresJson(partVersion.materialComposition)) : null},
+                    environmental_data = ${partVersion.environmentalData ? sql.json(toPostgresJson(partVersion.environmentalData)) : null}
                 WHERE part_version_id = ${versionId};
             `;
         }
