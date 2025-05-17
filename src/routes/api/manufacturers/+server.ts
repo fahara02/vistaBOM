@@ -1,11 +1,11 @@
 // src/routes/api/manufacturers/+server.ts
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import type { Manufacturer } from '@/types/types';
-
+import type { Manufacturer } from '@/types';
+import type { DbRow } from '@/types/db-types';
+import type { RequestHandler } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 // Helper to normalize manufacturer data from postgres result
-function normalizeManufacturer(row: any): any {
+function normalizeManufacturer(row: DbRow): Manufacturer {
     // Parse custom_fields if it's a string
     let customFields = {};
     try {
@@ -20,17 +20,26 @@ function normalizeManufacturer(row: any): any {
     
     // Return in snake_case format to match what ManufacturerSelector expects
     return {
-        id: row.id,
-        name: row.name,
-        description: row.description || '',
+        manufacturer_id: row.id,
+        manufacturer_name: row.name,
+        manufacturer_description: row.description || '',
         website_url: row.website_url || '', // Return as snake_case for frontend
         logo_url: row.logo_url || null,     // Return as snake_case for frontend
-        custom_fields: customFields
+        custom_fields: customFields,
+        created_at:row.created_at,
+        created_by:row.created_by,
+        updated_at:row.updated_at,
+        updated_by:row.updated_by
     };
 }
 
 // GET handler for fetching all manufacturers
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ locals }) => {
+     const { user } = locals;
+  
+  if (!user) {
+    return json({ error: 'Unauthorized' }, { status: 401 });
+  }
     try {
         console.log('API: Fetching manufacturers with proper lowercase table names');
         
@@ -39,10 +48,10 @@ export const GET: RequestHandler = async ({ url }) => {
             SELECT 
                 m.*,
                 COALESCE(
-                    (SELECT json_object_agg(cf.field_name, mcf.value)
-                     FROM manufacturercustomfield mcf
-                     JOIN customfield cf ON mcf.field_id = cf.id
-                     WHERE mcf.manufacturer_id = m.id
+                    (SELECT json_object_agg(cf.field_name, mcf.custom_field_value)
+                     FROM "ManufacturerCustomField" mcf
+                     JOIN "CustomField" cf ON mcf.field_id = cf.custom_field_id
+                     WHERE mcf.manufacturer_id = m.manufacturer_id
                     ), '{}'::json) AS custom_fields
             FROM manufacturer m
             ORDER BY m.name ASC

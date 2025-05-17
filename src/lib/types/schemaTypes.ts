@@ -4,48 +4,48 @@
  */
 import { z } from 'zod';
 import {
+  billOfMaterialsSchema,
+  // Additional schemas
+  bomItemSchema,
+  bomItemSubstituteSchema,
+  categoryClientSchema,
   // Core schemas
   categorySchema,
   createPartSchema,
   createPartVersionSchema,
+  // Custom field schemas
+  customFieldSchema,
   dimensionSchema,
   editDimensionSchema,
   jsonSchema,
+  manufacturerCustomFieldSchema,
+  manufacturerPartSchema,
   manufacturerSchema,
   partAttachmentSchema,
+  partCustomFieldSchema,
+  partFamilyLinkSchema,
+  partFamilySchema,
+  partFormBaseSchema,
+  partGroupLinkSchema,
+  partGroupSchema,
   partRepresentationSchema,
+  partRevisionSchema,
   partSchema,
+  partValidationSchema,
   partVersionEditSchema,
   partVersionSchema,
   partVersionSchemaBase,
+  partVersionTagSchema,
   permissionSchema,
+  projectSchema,
   rolePermissionSchema,
   roleSchema,
   sessionSchema,
-  supplierSchema,
-  userSchema,
-  categoryClientSchema,
-  projectSchema,
-  billOfMaterialsSchema,
-  // Custom field schemas
-  customFieldSchema,
-  manufacturerCustomFieldSchema,
   supplierCustomFieldSchema,
-  partCustomFieldSchema,
-  // Additional schemas
-  bomItemSchema,
-  bomItemSubstituteSchema,
-  partRevisionSchema,
-  partValidationSchema,
-  tagSchema,
-  partVersionTagSchema,
-  partFamilySchema,
-  partGroupSchema,
-  partFamilyLinkSchema,
-  partGroupLinkSchema,
-  manufacturerPartSchema,
   supplierPartSchema,
-  partFormBaseSchema
+  supplierSchema,
+  tagSchema,
+  userSchema
 } from '../schema/schema';
 
 import type { LifecycleStatusEnum } from './enums';
@@ -56,6 +56,7 @@ export type Session = z.infer<typeof sessionSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type Permission = z.infer<typeof permissionSchema>;
 export type RolePermission = z.infer<typeof rolePermissionSchema>;
+
 
 // Category types
 export type Category = z.infer<typeof categorySchema>;

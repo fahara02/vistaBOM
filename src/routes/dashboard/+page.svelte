@@ -1,23 +1,19 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import type { PageData } from './$types';
 	import { PartForm } from '$lib/components';
-	import { LifecycleStatusEnum, PartStatusEnum } from '@/types/types';
-	import type { createPartSchema } from '$lib/server/db/schema';
-	import type { z } from 'zod';
-	import { superForm } from 'sveltekit-superforms/client';
-	import { parseContactInfo } from '$lib/utils/util';
 	import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
 	import Category from '$lib/components/category.svelte';
 	import type { Category as CategoryType } from '@/types/types';
-	import { onMount } from 'svelte';
+	import { LifecycleStatusEnum, PartStatusEnum } from '@/types/types';
+	import { superForm } from 'sveltekit-superforms/client';
+	import type { PageData } from './$types';
 
 	export let data: PageData;
 	const user = data.user!;
 	const projects = data.projects;
 
 	// Ensure fullName is a string for rendering
-	const fullName = user.fullName ?? '';
+	const fullName = user.full_name ?? '';
 	const initial = fullName.charAt(0) || '';
 
 	// Tab management
@@ -263,8 +259,8 @@
 		
 		// Populate form with category data
 		$categoryForm = {
-			name: category.name,
-			description: category.description || '',
+			category_name: category.name,
+			category_description: category.description || '',
 			parent_id: category.parent_id || '',
 			is_public: Boolean(category.is_public)
 		};
@@ -322,8 +318,8 @@
 <div class="dashboard-container">
 	<header class="dashboard-header">
 		<div class="user-info">
-			{#if user.avatarUrl}
-				<img class="avatar" src={user.avatarUrl} alt="Avatar" />
+			{#if user.avatar_url}
+				<img class="avatar" src={user.avatar_url} alt="Avatar" />
 			{:else}
 				<div class="avatar-placeholder">{initial}</div>
 			{/if}
@@ -374,9 +370,9 @@
 				<h2>Your Projects</h2>
 				{#if projects.length > 0}
 					<ul class="projects-grid">
-						{#each projects as project (project.id)}
+						{#each projects as project (project.project_id)}
 							<li class="project-card">
-								<a class="project-link" href={`/dashboard/${project.id}`}>{project.name}</a>
+								<a class="project-link" href={`/dashboard/${project.project_id}`}>{project.project_name}</a>
 							</li>
 						{/each}
 					</ul>

@@ -1,21 +1,19 @@
 //src/routes/dashboard/+page.server.ts
 import sql from '$lib/server/db/index';
-import { LifecycleStatusEnum, PackageTypeEnum, WeightUnitEnum, DimensionUnitEnum, PartStatusEnum, TemperatureUnitEnum } from '$lib/types';
+import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, WeightUnitEnum } from '$lib/types';
+import { createCategory, getAllCategories } from '@/core/category';
+import { createManufacturer } from '@/core/manufacturer';
+import { createPart, getPartWithCurrentVersion } from '@/core/parts';
+import { createSupplier } from '@/core/supplier';
+import { categorySchema, createPartSchema, manufacturerSchema, supplierSchema } from '@/schema/schema';
+import type { Category, Manufacturer, Part, Supplier, User } from '@/types/schemaTypes';
 import type { DbProject } from '@/types/types';
-import type { User, Category, Manufacturer, Supplier, CreatePart } from '@/types/schemaTypes';
 import { fail, redirect } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
-import type { Actions, PageServerLoad } from './$types';
-import { superValidate, message } from 'sveltekit-superforms/server';
 import { zod } from 'sveltekit-superforms/adapters';
-import { createPartSchema, manufacturerSchema, categorySchema, supplierSchema } from '@/schema/schema';
-import { createPart, getPartWithCurrentVersion } from '@/core/parts';
-import { getAllCategories } from '@/core/category';
-import { createManufacturer } from '@/core/manufacturer';
-import { createSupplier } from '@/core/supplier';
-import { createCategory } from '@/core/category';
+import { message, superValidate } from 'sveltekit-superforms/server';
 import { z } from 'zod';
-import { parsePartJsonField } from '$lib/utils/util';
+import type { Actions, PageServerLoad } from './$types';
 
 // Helper function for creating enum schemas that properly handle null/undefined/empty values
 function createNullableEnum<T extends Record<string, string>>(enumType: T) {
@@ -32,48 +30,7 @@ function createNullableEnum<T extends Record<string, string>>(enumType: T) {
 	});
 }
 
-// Extended part schema that includes relationship fields
-const extendedPartSchema = z.object({
-	// Part form fields (from createPartSchema)
-	name: z.string().min(1, 'Name is required'),
-	version: z.string().default('0.1.0'),
-	status: z.nativeEnum(LifecycleStatusEnum).default(LifecycleStatusEnum.DRAFT),
-	part_status: z.nativeEnum(PartStatusEnum).default(PartStatusEnum.ACTIVE),
-	short_description: z.string().optional(),
-	functional_description: z.string().optional(),
-	long_description: z.string().optional(),
-	technical_specifications: z.string().optional(),
-	properties: z.string().optional(),
-	electrical_properties: z.string().optional(),
-	mechanical_properties: z.string().optional(),
-	thermal_properties: z.string().optional(),
-	weight: z.coerce.number().optional().nullable(),
-	weight_unit: createNullableEnum(WeightUnitEnum),
-	dimensions: z.any().optional().nullable(),
-	dimensions_unit: createNullableEnum(DimensionUnitEnum),
-	material_composition: z.string().optional().nullable(),
-	environmental_data: z.string().optional().nullable(),
-	revision_notes: z.string().optional().nullable(),
-	// Make package_type truly optional with nullable - to support non-semiconductor parts like motors
-	package_type: createNullableEnum(PackageTypeEnum),
-	pin_count: z.coerce.number().optional().nullable(),
-	operating_temperature_min: z.coerce.number().optional().nullable(),
-	operating_temperature_max: z.coerce.number().optional().nullable(),
-	storage_temperature_min: z.coerce.number().optional().nullable(),
-	storage_temperature_max: z.coerce.number().optional().nullable(),
-	temperature_unit: createNullableEnum(TemperatureUnitEnum),
-	voltage_rating_min: z.coerce.number().optional().nullable(),
-	voltage_rating_max: z.coerce.number().optional().nullable(),
-	current_rating_min: z.coerce.number().optional().nullable(),
-	current_rating_max: z.coerce.number().optional().nullable(),
-	power_rating_max: z.coerce.number().optional().nullable(),
-	tolerance: z.coerce.number().optional().nullable(),
-	tolerance_unit: z.string().optional().nullable(),
-	
-	// Relationship fields
-	category_ids: z.string().optional().nullable(),
-	manufacturer_parts: z.string().optional().nullable()
-});
+
 
 // Define supplier schema for the form
 const supplierFormSchema = z.object({
@@ -127,14 +84,14 @@ export const load: PageServerLoad = async (event) => {
 	const supplierForm = await superValidate(zod(supplierSchema));
 	
 	// 4 Initialize Part form data with extended schema that includes relationship fields
-	const partForm = await superValidate(zod(extendedPartSchema));
+	const partForm = await superValidate(zod(createPartSchema));
 	// Initialize dimensions to prevent null reference errors
 	if (!partForm.data.dimensions) {
 		partForm.data.dimensions = { length: 0, width: 0, height: 0 };
 	}
 	// Add default status if not set
-	if (!partForm.data.status) {
-		partForm.data.status = LifecycleStatusEnum.DRAFT;
+	if (!partForm.data.version_status) {
+		partForm.data.version_status = LifecycleStatusEnum.DRAFT;
 	}
 	
 	// 5. Initialize Category form data
@@ -150,27 +107,27 @@ export const load: PageServerLoad = async (event) => {
 	const categories = await getAllCategories();
 	
 	// 7. Fetch user-created parts with their current version data
-	let userParts: any[] = [];
+	let userParts: Part[] = [];
 	try {
 		// Following the pattern from other entities, fetch parts created by the user
 		// with their most recent version details
 		userParts = await sql`
 			SELECT 
-				p.id, 
+				p.part_id, 
 				p.creator_id AS "creatorId", 
-				p.status,
+				p.status_in_bom,
 				p.lifecycle_status AS "lifecycleStatus",
 				p.is_public AS "isPublic",
 				p.created_at AS "createdAt",
 				p.updated_at AS "updatedAt",
 				p.current_version_id AS "currentVersionId",
 				-- Include part version details
-				pv.name,
-				pv.version,
+				pv.part_name,
+				pv.part_version,
 				pv.short_description AS "shortDescription"
 			FROM "Part" p
 			-- Left join to get the current version details if available
-			LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.id
+			LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
 			WHERE p.creator_id = ${user.user_id}
 			ORDER BY p.created_at DESC
 		`;
@@ -183,7 +140,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 	
 	// 5. Fetch user-created manufacturers with custom fields
-	let userManufacturers: any[] = [];
+	let userManufacturers: Manufacturer[] = [];
 	try {
 		// Use the same query structure as in getManufacturer to include custom fields
 		userManufacturers = await sql`
@@ -191,8 +148,8 @@ export const load: PageServerLoad = async (event) => {
 				m.*,
 				COALESCE(
 					(SELECT json_object_agg(cf.field_name, mcf.value)
-					 FROM manufacturercustomfield mcf
-					 JOIN customfield cf ON mcf.field_id = cf.id
+					 FROM "ManufacturerCustomField" mcf
+					 JOIN "CustomField" cf ON mcf.field_id = cf.id
 					 WHERE mcf.manufacturer_id = m.id
 					), '{}'::json) AS custom_fields
 			FROM "Manufacturer" m
@@ -205,7 +162,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 	
 	// 6. Fetch user-created suppliers
-	let userSuppliers: any[] = [];
+	let userSuppliers: Supplier[] = [];
 	try {
 		userSuppliers = await sql`
 			SELECT *
@@ -219,7 +176,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 	
 	// 7. Fetch user-created categories with parent names
-	let userCategories: any[] = [];
+	let userCategories: Category[] = [];
 	try {
 		userCategories = await sql`
 			SELECT c.*, p.category_name as parent_name
@@ -234,7 +191,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 	
 	// 8. Fetch all categories for parent selection in category form
-	let allCategories: any[] = [];
+	let allCategories: Category[] = [];
 	try {
 		allCategories = await sql`
 			SELECT c.*, p.category_name as parent_name
@@ -344,7 +301,7 @@ export const actions: Actions = {
 				// Use proper type casting for PostgreSQL
 				const manufacturerId = form.data.id || '';
 				const existingManufacturer = await sql`
-					SELECT id, created_by FROM manufacturer 
+					SELECT id, created_by FROM "Manufacturer"
 					WHERE id = ${manufacturerId}::text
 				`;
 
@@ -367,10 +324,10 @@ export const actions: Actions = {
 				const userId = user.user_id || '';
 				
 				await sql`
-					UPDATE manufacturer 
+					UPDATE "Manufacturer" 
 					SET 
-						name = ${name}::text,
-						description = ${description}::text,
+						manufacturer_name = ${name}::text,
+						manufacturer_description = ${description}::text,
 						website_url = ${website_url}::text,
 						logo_url = ${logo_url}::text,
 						updated_by = ${userId}::text,
@@ -388,7 +345,7 @@ export const actions: Actions = {
 
 				// Delete existing custom fields for this manufacturer
 				const mfrId = form.data.id || '';
-				await sql`DELETE FROM manufacturercustomfield WHERE manufacturer_id = ${mfrId}::text`;
+				await sql`DELETE FROM "ManufacturerCustomField" WHERE manufacturer_id = ${mfrId}::text`;
 			} else {
 				// Create a new manufacturer
 				manufacturer = await createManufacturer({
@@ -440,7 +397,7 @@ export const actions: Actions = {
 					const userId = user.user_id || '';
 					
 					await sql`
-						INSERT INTO manufacturercustomfield (id, manufacturer_id, field_name, field_value, data_type, created_by, created_at)
+						INSERT INTO "ManufacturerCustomField" (id, manufacturer_id, field_name, field_value, data_type, created_by, created_at)
 						VALUES (${newCustomFieldId}, ${manufacturerId}::text, ${fieldNameStr}::text, ${fieldValueStr}::text, ${dataTypeStr}::text, ${userId}::text, NOW())
 					`;
 				}
@@ -472,7 +429,7 @@ export const actions: Actions = {
 
 		try {
 			// Parse contact info if provided
-			let contactInfo: any = null;
+			let contactInfo: string = '';
 			if (form.data.contact_info) {
 				try {
 					// Try to parse as JSON first
@@ -530,7 +487,7 @@ export const actions: Actions = {
 		};
 		
 		// Get form data to check if we're editing or creating
-		let formData = await event.request.formData();
+		const formData = await event.request.formData();
 		const partId = formData.get('partId');
 		const isEditMode = partId && typeof partId === 'string' && partId.trim() !== '';
 		console.log('Edit mode:', isEditMode, 'Part ID:', partId);
@@ -698,7 +655,7 @@ export const actions: Actions = {
 		console.log('Form data before validation:', debugFormData);
 
 		// Use processed form data for validation instead of the original
-		const form = await superValidate(processedFormData, zod(extendedPartSchema));
+		const form = await superValidate(processedFormData, zod(createPartSchema));
 		
 		// CRITICAL FIX: If form validation fails but we have a name, override the error
 		if (!form.valid) {
@@ -706,10 +663,10 @@ export const actions: Actions = {
 			
 			// CRITICAL FIX: If the only error is the name field but we know we have it,
 			// manually set the name field in the form data
-			if (form.errors.name && form.errors.name.includes('Name is required') && nameValue) {
+			if (form.errors.part_name && form.errors.part_name.includes('Name is required') && nameValue) {
 				console.log('Overriding name validation error because name is present:', nameValue);
-				delete form.errors.name;
-				form.data.name = String(nameValue);
+				delete form.errors.part_name;
+				form.data.part_name = String(nameValue);
 				
 				// If this was the only error, mark the form as valid
 				if (Object.keys(form.errors).length === 0) {

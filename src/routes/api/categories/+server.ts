@@ -1,6 +1,6 @@
+import sql from '$lib/server/db';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import sql from '$lib/server/db';
 
 export const GET: RequestHandler = async ({ locals }) => {
   const { user } = locals;
@@ -13,7 +13,7 @@ export const GET: RequestHandler = async ({ locals }) => {
     // Get all categories with optimization for UI performance
     const categories = await sql`
       SELECT id, name, path, parent_id as "parentId", is_public as "isPublic", created_by as "createdBy"
-      FROM category
+      FROM "Category"
       WHERE is_deleted = false
       ORDER BY name ASC
       LIMIT 1000 -- Practical limit for UI performance

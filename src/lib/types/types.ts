@@ -6,36 +6,15 @@
 
 // Primitive type definitions - these are the core fundamental types
 export type {
-  Dimensions,
-  JsonValue,
-  JsonRecord,
-  LongDescription,
+  ContactInfo, Dimensions, JsonRecord, JsonValue, LongDescription,
   MaterialComposition,
-  PriceBreak,
-  ContactInfo
+  PriceBreak
 } from './primitive';
+
 
 // Database-specific type definitions
 export type {
-  PostgresTransaction,
-  DbRow,
-  UpdateValues,
-  JsonFields,
-  JsonFieldProcessor,
-  NumericFieldProcessor,
-  DynamicRecord,
-  ManufacturerPartInput,
-  SupplierPartInput,
-  AttachmentInput,
-  RepresentationInput,
-  ComplianceInput,
-  ValidationInput,
-  DbElectricalProperties,
-  DbMechanicalProperties,
-  DbThermalProperties,
-  DbEnvironmentalData,
-  ProcessableFieldValue,
-  DbUpdateValue
+  AttachmentInput, ComplianceInput, DbElectricalProperties, DbEnvironmentalData, DbMechanicalProperties, DbRow, DbThermalProperties, DbUpdateValue, DynamicRecord, JsonFieldProcessor, JsonFields, ManufacturerPartInput, NumericFieldProcessor, PostgresTransaction, ProcessableFieldValue, RepresentationInput, SupplierPartInput, UpdateValues, ValidationInput
 } from './db-types';
 
 // Enum type definitions
@@ -44,68 +23,50 @@ export * from './enums';
 // Form handling types
 export type {
   BaseFormData,
-  ManufacturerFormData,
-  SupplierFormData,
-  PartFormData,
-  PartVersionFormData
+  ManufacturerFormData, PartFormData,
+  PartVersionFormData, SupplierFormData
 } from './formTypes';
 
 // Import types from schemaTypes.ts
 import type {
-  User,
-  Session,
-  Role,
-  Permission,
-  RolePermission,
   Category,
-  Part,
-  PartVersion,
-  PartVersionBase,
   CreatePart,
   CreatePartVersion,
+  ElectricalProperties,
+  EnvironmentalData,
+  Manufacturer,
+  MechanicalProperties,
+  Part,
   PartAttachment,
   PartRepresentation,
-  Manufacturer,
-  Supplier,
-  PartWithCurrentVersion,
+  PartVersion,
+  PartVersionBase,
   PartVersionWithRelations,
-  ElectricalProperties,
-  MechanicalProperties,
+  PartWithCurrentVersion,
+  Permission,
+  Project,
+  Role,
+  RolePermission,
+  Session,
+  Supplier,
   ThermalProperties,
-  EnvironmentalData
+  User
 } from './schemaTypes';
 
 // Re-export schema-derived types
 export type {
-  User,
-  Session,
-  Role,
-  Permission,
-  RolePermission,
-  Category,
-  Part,
-  PartVersion,
-  PartVersionBase,
-  CreatePart,
-  CreatePartVersion,
-  PartAttachment,
-  PartRepresentation,
-  Manufacturer,
-  Supplier,
-  PartWithCurrentVersion,
-  PartVersionWithRelations,
-  ElectricalProperties,
-  MechanicalProperties,
-  ThermalProperties,
-  EnvironmentalData
+  Category, CreatePart, CreatePartVersion, ElectricalProperties, EnvironmentalData, Manufacturer, MechanicalProperties, Part, PartAttachment,
+  PartRepresentation, PartVersion,
+  PartVersionBase, PartVersionWithRelations, PartWithCurrentVersion, Permission, Project, Role, RolePermission, Session, Supplier, ThermalProperties, User
 };
 
 // Export dimensions type with an alias
-export type { Dimensions as EditableDimensions } from './schemaTypes';
+  export type { Dimensions as EditableDimensions } from './schemaTypes';
 
 // Database entity type aliases (Db prefix)
 // These are type aliases for the schema-derived types
 export type DbUser = User;
+export type DbProject=Project;
 export type DbSession = Session;
 export type DbRole = Role;
 export type DbPermission = Permission;
@@ -119,22 +80,3 @@ export type DbCategory = Category;
 export type DbManufacturer = Manufacturer;
 export type DbSupplier = Supplier;
 
-// Legacy types to maintain compatibility with existing code
-// TODO: These should be defined explicitly or imported from the right places
-export type DbPartStructure = any;
-export type DbPartCompliance = any;
-export type DbPartRevision = any;
-export type DbPartValidation = any;
-export type DbCategoryClosure = any;
-export type DbTag = any;
-export type DbPartVersionTag = any;
-export type DbManufacturerPart = any;
-export type DbSupplierPart = any;
-export type DbProject = any;
-export type DbBillOfMaterials = any;
-export type DbBOMItem = any;
-export type DbBOMItemSubstitute = any;
-export type DbCustomField = any;
-export type DbManufacturerCustomField = any;
-export type DbSupplierCustomField = any;
-export type DbPartCustomField = any;

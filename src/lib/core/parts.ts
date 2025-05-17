@@ -8,11 +8,11 @@ import crypto from 'crypto';
 import { PART_ERRORS } from './parts/partErrors';
 
 // Import schema-defined types for type safety
+import type { PartFormData as ExtendedPartFormData } from '$lib/types/formTypes';
 import type {
     JsonValue,
     PartVersion as SchemaPartVersion
 } from '$lib/types/schemaTypes';
-
 // Import primitive types
 import type { Dimensions, MaterialComposition } from '$lib/types/primitive';
 
@@ -113,69 +113,7 @@ import {
 
 
 
-// JSON field serialization/deserialization helper functions
-/**
- * Type-safe conversion of specialized data structures to PostgreSQL JSON format
- */
-type JsonSerializable = 
-    | ElectricalProperties 
-    | MechanicalProperties 
-    | ThermalProperties 
-    | EnvironmentalData 
-    | Dimensions 
-    | MaterialComposition 
-    | Record<string, string | number | boolean | null | Record<string, JsonValue> | JsonValue[]> 
-    | string 
-    | number 
-    | boolean 
-    | null;
 
-// Since we're using JSON.parse(JSON.stringify()) for JSON field conversions,
-// we don't need a separate JsonValue type here
-// We'll rely on the type system to handle these conversions
-
-/**
- * Converts specialized typed objects to JSON for database storage
- * @param data The typed data object to serialize
- * @param fieldName Optional field name for debugging
- * @returns JSON representation suitable for PostgreSQL storage
- */
-function serializeToJson(data: JsonSerializable | null | undefined, fieldName?: string): JsonValue {
-    if (data === undefined || data === null) {
-        return null;
-    }
-    
-    try {
-        // Handle string input (which might be JSON string)
-        if (typeof data === 'string') {
-            try {
-                if (data.trim().startsWith('{') || data.trim().startsWith('[')) {
-                    // Parse JSON string and then serialize
-                    return JSON.parse(data) as JsonValue;
-                } else {
-                    // Wrap simple string in an object
-                    return { value: data } as JsonValue;
-                }
-            } catch (e) {
-                console.warn(`[serializeToJson] Error parsing JSON string for ${fieldName || 'unknown field'}:`, e);
-                // Fall back to storing as simple value object
-                return { value: data } as JsonValue;
-            }
-        }
-        
-        // For complex objects, convert to JSON compatible structure
-        if (typeof data === 'object' && data !== null) {
-            // Use JSON.stringify/parse to ensure JSON compatibility
-            return JSON.parse(JSON.stringify(data)) as JsonValue;
-        }
-        
-        // For primitive types (number, boolean), they're already JSON-compatible
-        return data as JsonValue;
-    } catch (error) {
-        console.error(`[serializeToJson] Error serializing ${fieldName || 'unknown field'}:`, error);
-        return null;
-    }
-}
 
 /**
  * Safely deserializes ElectricalProperties from database JSON
@@ -304,24 +242,6 @@ function deserializeDimensions(json: JsonValue | string | null | undefined): Dim
 }
 
 /**
- * Helper function to safely convert a Dimensions object to JsonValue
- * Ensures proper type compatibility between schema types and database JSON storage
- * @param dimensions The dimensions object to convert
- * @returns A properly formatted JsonValue representation of the dimensions
- */
-function convertDimensionsToJsonValue(dimensions: Dimensions | null): JsonValue {
-    if (!dimensions) return null;
-    
-    // Create a record that matches the JsonValue structure
-    const jsonDimensions: Record<string, number | null> = {
-        length: dimensions.length,
-        width: dimensions.width,
-        height: dimensions.height
-    };
-    
-    // Use JSON.stringify and parse to ensure JsonValue compatibility
-    return JSON.parse(JSON.stringify(jsonDimensions));
-}
 
 
 
@@ -340,11 +260,6 @@ export type PostgresJsonValue = string | number | boolean | null | PostgresJsonO
 export interface PostgresJsonObject { [key: string]: PostgresJsonValue }
 export type PostgresJsonArray = Array<PostgresJsonValue>;
 
-/**
- * Type for complex JSON properties that provides type safety while ensuring
- * PostgreSQL compatibility
- */
-type ComplexJsonProperty<T extends Record<string, unknown>> = T | JsonValue;
 
 /**
  * Type alias for database-compatible JSON to ensure consistency
@@ -357,28 +272,6 @@ type DbJson = JsonValue;
  * @param value The value to convert to PostgreSQL JSON
  * @returns A value safe to use with sql.json or null
  */
-function toPostgresJson(value: unknown): PostgresJsonValue | null {
-    if (value === undefined || value === null) return null;
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
-    try {
-        // For complex objects, convert through JSON.stringify/parse to ensure compatibility
-        return JSON.parse(JSON.stringify(value)) as PostgresJsonValue;
-    } catch (error) {
-        console.error('[toPostgresJson] Error converting value to JSON:', error);
-        return null;
-    }
-}
-
-// Helper function to process numeric fields that can be string or number
-function processNumericField(value: string | number | undefined | null): number | null {
-    if (value === undefined || value === null || value === '') return null;
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-        const parsed = parseFloat(value);
-        return isNaN(parsed) ? null : parsed;
-    }
-    return null;
-}
 
 // Import transaction types
 
@@ -433,7 +326,7 @@ export function normalizePartVersion(
     // Extract and properly process all JSONB fields with strong typing
     const technicalSpecs = row.technical_specifications;
     const props = row.properties;
-    const longDescriptionJson = row.long_description;
+   
     // Extract string content from long_description - could be a string or JSON
     const longDescription = typeof row.long_description === 'string' 
         ? row.long_description 

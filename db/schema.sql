@@ -376,6 +376,67 @@ CREATE TABLE IF NOT EXISTS "PartVersionTag" (
     assigned_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     PRIMARY KEY (part_version_id, tag_id)
 );
+
+-- PartFamily represents a logical collection of related parts that belong to the same family
+CREATE TABLE IF NOT EXISTS "PartFamily" (
+    part_family_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    family_name TEXT NOT NULL UNIQUE CHECK (family_name <> ''),
+    family_description TEXT,
+    family_code TEXT,
+    family_image_url TEXT CHECK (family_image_url ~* '^https?://'),
+    created_by UUID NOT NULL REFERENCES "User"(user_id),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_by UUID REFERENCES "User"(user_id),
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    is_public BOOLEAN DEFAULT TRUE NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE NOT NULL
+);
+
+-- PartGroup represents a collection of parts that are grouped together for a specific purpose
+CREATE TABLE IF NOT EXISTS "PartGroup" (
+    part_group_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    group_name TEXT NOT NULL UNIQUE CHECK (group_name <> ''),
+    group_description TEXT,
+    group_code TEXT,
+    group_type TEXT, -- e.g., 'project', 'functional', 'logical', etc.
+    group_image_url TEXT CHECK (group_image_url ~* '^https?://'),
+    created_by UUID NOT NULL REFERENCES "User"(user_id),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_by UUID REFERENCES "User"(user_id),
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    is_public BOOLEAN DEFAULT TRUE NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE NOT NULL
+);
+
+-- Linking Parts to Families
+CREATE TABLE IF NOT EXISTS "PartFamilyLink" (
+    part_family_link_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    part_id UUID NOT NULL REFERENCES "Part"(part_id) ON DELETE CASCADE,
+    family_id UUID NOT NULL REFERENCES "PartFamily"(part_family_id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES "User"(user_id),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    notes TEXT,
+    UNIQUE (part_id, family_id)
+);
+
+-- Linking Parts to Groups
+CREATE TABLE IF NOT EXISTS "PartGroupLink" (
+    part_group_link_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    part_id UUID NOT NULL REFERENCES "Part"(part_id) ON DELETE CASCADE,
+    group_id UUID NOT NULL REFERENCES "PartGroup"(part_group_id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES "User"(user_id),
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    position_index INTEGER, -- Used for ordered parts within a group
+    notes TEXT,
+    UNIQUE (part_id, group_id)
+);
+
+
+
+
+
+
+
 -- ###########################
 -- Custom Fields
 -- ###########################
@@ -533,59 +594,6 @@ FOR EACH ROW EXECUTE FUNCTION check_current_version_part_id();
 -- Part Family and Group Tables
 -- ###########################
 
--- PartFamily represents a logical collection of related parts that belong to the same family
-CREATE TABLE IF NOT EXISTS "PartFamily" (
-    part_family_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    family_name TEXT NOT NULL UNIQUE CHECK (family_name <> ''),
-    family_description TEXT,
-    family_code TEXT,
-    family_image_url TEXT CHECK (family_image_url ~* '^https?://'),
-    created_by UUID NOT NULL REFERENCES "User"(user_id),
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_by UUID REFERENCES "User"(user_id),
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    is_public BOOLEAN DEFAULT TRUE NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE NOT NULL
-);
-
--- PartGroup represents a collection of parts that are grouped together for a specific purpose
-CREATE TABLE IF NOT EXISTS "PartGroup" (
-    part_group_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    group_name TEXT NOT NULL UNIQUE CHECK (group_name <> ''),
-    group_description TEXT,
-    group_code TEXT,
-    group_type TEXT, -- e.g., 'project', 'functional', 'logical', etc.
-    group_image_url TEXT CHECK (group_image_url ~* '^https?://'),
-    created_by UUID NOT NULL REFERENCES "User"(user_id),
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_by UUID REFERENCES "User"(user_id),
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    is_public BOOLEAN DEFAULT TRUE NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE NOT NULL
-);
-
--- Linking Parts to Families
-CREATE TABLE IF NOT EXISTS "PartFamilyLink" (
-    part_family_link_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    part_id UUID NOT NULL REFERENCES "Part"(part_id) ON DELETE CASCADE,
-    family_id UUID NOT NULL REFERENCES "PartFamily"(part_family_id) ON DELETE CASCADE,
-    created_by UUID NOT NULL REFERENCES "User"(user_id),
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    notes TEXT,
-    UNIQUE (part_id, family_id)
-);
-
--- Linking Parts to Groups
-CREATE TABLE IF NOT EXISTS "PartGroupLink" (
-    part_group_link_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    part_id UUID NOT NULL REFERENCES "Part"(part_id) ON DELETE CASCADE,
-    group_id UUID NOT NULL REFERENCES "PartGroup"(part_group_id) ON DELETE CASCADE,
-    created_by UUID NOT NULL REFERENCES "User"(user_id),
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    position_index INTEGER, -- Used for ordered parts within a group
-    notes TEXT,
-    UNIQUE (part_id, group_id)
-);
 
 CREATE OR REPLACE FUNCTION update_category_closure_on_insert()
 RETURNS TRIGGER AS $$

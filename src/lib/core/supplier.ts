@@ -4,8 +4,8 @@
 import sql from '$lib/server/db';
 import crypto from 'crypto';
 // Import schema-defined types for type safety
-import type { JsonValue, Supplier } from '$lib/types/schemaTypes';
 import type { SupplierFormData } from '$lib/types/formTypes';
+import type { JsonValue, Supplier } from '$lib/types/schemaTypes';
 
 /**
  * Extended Supplier interface for internal use with both camelCase and snake_case properties
@@ -288,11 +288,11 @@ export async function getSupplier(id: string): Promise<Supplier | null> {
                 COALESCE(
                     (SELECT json_object_agg(cf.field_name, scf.value)
                      FROM "SupplierCustomField" scf
-                     JOIN "CustomField" cf ON scf.field_id = cf.id
-                     WHERE scf.supplier_id = s.id
+                     JOIN "CustomField" cf ON scf.field_id = cf.field_id
+                     WHERE scf.supplier_id = s.supplier_id
                     ), '{}'::json) AS custom_fields
             FROM "Supplier" s
-            WHERE s.id = ${id}
+            WHERE s.supplier_id = ${id}
         `;
         if (result.length > 0) {
             const supplier = normalizeSupplier(result[0]);
@@ -448,10 +448,10 @@ export async function listSuppliers(options?: {
             SELECT 
                 s.*,
                 COALESCE(
-                    (SELECT json_object_agg(cf.field_name, scf.value)
+                    (SELECT json_object_agg(cf.field_name, scf.custom_field_value)
                     FROM "SupplierCustomField" scf
-                    JOIN "CustomField" cf ON scf.field_id = cf.id
-                    WHERE scf.supplier_id = s.id
+                    JOIN "CustomField" cf ON scf.field_id = cf.custom_field_id
+                    WHERE scf.supplier_id = s.supplier_id
                     ), '{}'::json) AS custom_fields
             FROM "Supplier" s
             WHERE 1=1
@@ -459,7 +459,7 @@ export async function listSuppliers(options?: {
         
         // Add conditional filters if provided
         if (options?.nameFilter) {
-            query = sql`${query} AND s.name ILIKE ${`%${options.nameFilter}%`}`;
+            query = sql`${query} AND s.supplier_name ILIKE ${`%${options.nameFilter}%`}`;
         }
         
         if (options?.userId) {
@@ -467,7 +467,7 @@ export async function listSuppliers(options?: {
         }
         
         // Add sorting
-        query = sql`${query} ORDER BY s.name ASC`;
+        query = sql`${query} ORDER BY s.supplier_name ASC`;
         
         // Add pagination if specified
         if (options?.limit) {
@@ -507,9 +507,9 @@ return validSuppliers.map(supplier => toSchemaSupplier(supplier));
 export async function getSupplierCustomFields(supplierId: string): Promise<Record<string, JsonValue>> {
     try {
         const result = await sql`
-            SELECT cf.field_name, scf.value
+            SELECT cf.field_name, scf.custom_field_value
             FROM "SupplierCustomField" scf
-            JOIN "CustomField" cf ON scf.field_id = cf.id
+            JOIN "CustomField" cf ON scf.field_id = cf.custom_field_id
             WHERE scf.supplier_id = ${supplierId}
         `;
         
