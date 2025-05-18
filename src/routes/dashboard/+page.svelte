@@ -18,9 +18,19 @@
 	const fullName = user.full_name ?? '';
 	const initial = fullName.charAt(0) || '';
 
-	// Tab management
+	// Tab management with localStorage persistence
 	type TabType = 'projects' | 'parts' | 'manufacturers' | 'suppliers' | 'categories';
+	
+	// Initialize activeTab from localStorage if available, otherwise default to 'projects'
 	let activeTab: TabType = 'projects';
+	
+	// Only access localStorage in browser environment
+	if (typeof window !== 'undefined') {
+		const storedTab = localStorage.getItem('vistaBOM_activeTab');
+		if (storedTab && ['projects', 'parts', 'manufacturers', 'suppliers', 'categories'].includes(storedTab)) {
+			activeTab = storedTab as TabType;
+		}
+	}
 	
 	// Form visibility toggles
 	let showPartForm = false;
@@ -95,9 +105,13 @@
 		return result;
 	}
 
-	// Function to handle tab changes
+	// Function to handle tab changes with localStorage persistence
 	function setActiveTab(tab: TabType): void {
 		activeTab = tab;
+		// Save tab state to localStorage for persistence across page reloads
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('vistaBOM_activeTab', tab);
+		}
 	}
 	
 	// Reference to the form element for form submission
@@ -271,6 +285,14 @@
 	// Reactive variable to force UI updates
 	let uiRefreshTrigger = false;
 
+	// Default values for category form
+	const categoryFormInitialValues = {
+		category_name: '',
+		category_description: '',
+		parent_id: undefined as string | undefined,
+		is_public: true
+	};
+
 	// Initialize category form with superForm - IMPORTANT: use dataType: 'json' for union types
 	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
 		dataType: 'json', // CRITICAL: Required for union types in schema
@@ -292,14 +314,21 @@
 			console.log('CATEGORY FORM RESULT:', JSON.stringify(result, null, 2));
 			
 			// Check if this was a delete operation - special case, handle differently
-			const isDeleteOperation = $categoryForm.delete === true;
+			// Access form data using type assertion for delete operation
+			const formData = $categoryForm as any;
+			const isDeleteOperation = formData.delete === true;
 			if (isDeleteOperation) {
 				console.log('DETECTED DELETE OPERATION');
 			}
 			
 			if (result.type === 'success') {
 				// Reset form and UI state
-				categoryForm.set({ ...categoryFormInitialValues });
+				categoryForm.set({
+					category_name: '',
+					category_description: '',
+					parent_id: undefined,
+					is_public: true
+				});
 				showCategoryForm = false;
 				editCategoryMode = false;
 				currentCategoryId = null;
@@ -953,7 +982,11 @@
 				{#if userCategories.length > 0}
 					<div class="user-items-grid">
 						{#each userCategories as category}
-							<Category {category} currentUserId={user.user_id} allCategories={allCategories} />
+							<Category 
+								category={category} 
+								allowEdit={user.user_id === category.created_by} 
+								allowDelete={user.user_id === category.created_by}
+							/>
 						{/each}
 					</div>
 				{:else}
