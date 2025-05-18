@@ -2121,4 +2121,20 @@ export const categoryClientSchema = z.object({
     category_path: z.string().optional()
 });
 
+// Form schema for category creation/editing - avoid unions for FormData compatibility
+// These fields must match exactly what's in the form
+export const categoryFormSchema = z.object({
+    category_name: z.string().min(1, "Category name is required"),
+    parent_id: z.string().optional()
+        .transform(val => {
+            // Transform empty string to undefined
+            if (val === '' || val === undefined) {
+                return undefined;
+            }
+            return val;
+        }),
+    category_description: z.string().optional().nullable(),
+    is_public: z.boolean().default(true)
+});
+
 

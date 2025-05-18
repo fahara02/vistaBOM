@@ -4,7 +4,8 @@
   import type { Category } from '@/types/types';
   import { categoriesToTreeNodes, selectAndExpandToNode } from '$lib/utils/categoryTreeUtils';
   import CategoryTreeNode from './CategoryTreeNode.svelte';
-  
+  import { onMount } from 'svelte';
+
   // Props
   export let categories: Category[] = [];
   export let selectedCategoryId: string | null = null;
@@ -16,8 +17,35 @@
     select: { categoryId: string, category: Category };
   }>();
 
-  // Convert categories to tree nodes
-  $: treeNodes = categoriesToTreeNodes(categories);
+  // First, filter out any deleted categories to ensure consistency
+  $: activeCategories = categories.filter(cat => 
+    cat && cat.is_deleted === false && cat.deleted_at === null
+  );
+
+  // Then convert active categories to tree nodes
+  $: treeNodes = categoriesToTreeNodes(activeCategories);
+  
+  // Listen for category updates from other components
+  onMount(() => {
+    if (typeof window !== 'undefined') {
+      const handleCategoryUpdate = (event: CustomEvent) => {
+        console.log('CategoryTree: Received categoriesUpdated event');
+        if (event.detail && Array.isArray(event.detail.categories)) {
+          // Update with the new filtered categories
+          categories = event.detail.categories;
+          console.log(`CategoryTree: Updated with ${categories.length} categories`);
+        }
+      };
+      
+      // Add listener for category updates
+      window.addEventListener('categoriesUpdated', handleCategoryUpdate as EventListener);
+      
+      // Clean up on component destroy
+      return () => {
+        window.removeEventListener('categoriesUpdated', handleCategoryUpdate as EventListener);
+      };
+    }
+  });
   
   // Auto-expand to selected node
   $: if (expandSelected && selectedCategoryId) {

@@ -25,7 +25,7 @@
 <div class="edit-container">
   <header>
     <h1>Edit Category</h1>
-    <a href="/catagory" class="back-link">← Back to Categories</a>
+    <a href="/category" class="back-link">← Back to Categories</a>
   </header>
 
   <div class="card">

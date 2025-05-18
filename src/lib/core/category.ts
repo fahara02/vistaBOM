@@ -107,7 +107,7 @@ interface CategoryWithId extends Omit<Category, 'custom_fields'> {
  * @param name The category name to sanitize.
  * @returns A sanitized string suitable for ltree paths.
  */
-function sanitizeLtreeLabel(name: string): string {
+export function sanitizeLtreeLabel(name: string): string {
     return name
         .replace(/[^a-zA-Z0-9_]/g, '_') // Replace invalid chars with underscore
         .replace(/_+/g, '_')            // Collapse multiple underscores
@@ -135,6 +135,15 @@ export async function createCategory(params: {
     isPublic?: boolean;
     customFields?: Record<string, JsonValue> | null;
 }): Promise<CategoryWithId> {
+    // Log incoming parameters for debugging
+    console.log('createCategory called with params:', {
+        name: params.name,
+        parentId: params.parentId,
+        parentIdType: typeof params.parentId,
+        description: params.description,
+        isPublic: params.isPublic,
+        createdBy: params.createdBy
+    });
     const { 
         name, 
         createdBy, 
@@ -251,8 +260,8 @@ function normalizeCategory(category: any): CategoryWithId {
                     updated_by,
                     updated_at,
                     is_public,
-                    is_deleted,
-                    custom_fields
+                    is_deleted
+                    -- custom_fields column doesn't exist in the actual database schema
                 ) VALUES (
                     ${id},
                     ${name},
@@ -264,43 +273,54 @@ function normalizeCategory(category: any): CategoryWithId {
                     ${createdBy},
                     NOW(),
                     ${isPublic},
-                    false,
-                    ${customFields ? JSON.stringify(customFields) : null}::jsonb
+                    false
+                    -- Removed custom_fields value to match actual database schema
                 )
                 RETURNING *
             `;
 
             const category = categoryResult[0];
             
-            // Add custom fields if provided
+            // Handle custom fields if provided - store in separate table only
+            // Note: There is no custom_fields column in the Category table itself
             if (customFields && Object.keys(customFields).length > 0) {
-                for (const [fieldName, fieldValue] of Object.entries(customFields)) {
-                    // Determine data type
-                    let dataType = 'text';
-                    if (typeof fieldValue === 'number') dataType = 'number';
-                    else if (typeof fieldValue === 'boolean') dataType = 'boolean';
-                    else if (fieldValue instanceof Date) dataType = 'date';
-                    
-                    await sql`
-                        INSERT INTO "CategoryCustomField" (
-                            category_id,
-                            field_name,
-                            field_value,
-                            data_type,
-                            created_by
-                        )
-                        VALUES (
-                            ${category.category_id},
-                            ${fieldName},
-                            ${JSON.stringify(fieldValue)},
-                            ${dataType},
-                            ${createdBy}
-                        )
-                    `;
+                try {
+                    for (const [fieldName, fieldValue] of Object.entries(customFields)) {
+                        // Determine data type
+                        let dataType = 'text';
+                        if (typeof fieldValue === 'number') dataType = 'number';
+                        else if (typeof fieldValue === 'boolean') dataType = 'boolean';
+                        else if (fieldValue instanceof Date) dataType = 'date';
+                        
+                        await sql`
+                            INSERT INTO "CategoryCustomField" (
+                                category_id,
+                                field_name,
+                                field_value,
+                                data_type,
+                                created_by
+                            )
+                            VALUES (
+                                ${category.category_id},
+                                ${fieldName},
+                                ${JSON.stringify(fieldValue)},
+                                ${dataType},
+                                ${createdBy}
+                            )
+                        `;
+                    }
+                } catch (err) {
+                    console.error('Error storing custom fields:', err);
+                    // Continue even if custom fields fail - the category was created successfully
                 }
             }
             
-            return category;
+            // Custom fields are not part of the Category object in database
+            // Add them to the return object for API consistency
+            return {
+                ...category,
+                customFields: customFields || null
+            };
         });
 
         return normalizeCategory(result);
@@ -638,18 +658,23 @@ export async function getAllCategories(options?: {
     try {
         const { isPublic, excludeDeleted = true, createdBy, parentId } = options || {};
         
-        let query = sql`SELECT * FROM "Category"`;
+        // Use table aliases throughout the query for clarity and to avoid ambiguity
+        let query = sql`
+            SELECT c.*, p.category_name as parent_name
+            FROM "Category" c
+            LEFT JOIN "Category" p ON c.parent_id = p.category_id
+        `;
         
-        // Build WHERE clauses based on options
+        // Build WHERE clauses based on options, with table aliases to avoid ambiguity
         const whereClauses = [];
-        if (excludeDeleted) whereClauses.push(sql`is_deleted = false`);
-        if (isPublic !== undefined) whereClauses.push(sql`is_public = ${isPublic}`);
-        if (createdBy) whereClauses.push(sql`created_by = ${createdBy}`);
+        if (excludeDeleted) whereClauses.push(sql`c.is_deleted = false`);
+        if (isPublic !== undefined) whereClauses.push(sql`c.is_public = ${isPublic}`);
+        if (createdBy) whereClauses.push(sql`c.created_by = ${createdBy}`);
         if (parentId !== undefined) {
             if (parentId === null) {
-                whereClauses.push(sql`parent_id IS NULL`);
+                whereClauses.push(sql`c.parent_id IS NULL`);
             } else {
-                whereClauses.push(sql`parent_id = ${parentId}`);
+                whereClauses.push(sql`c.parent_id = ${parentId}`);
             }
         }
         

@@ -1,13 +1,92 @@
-<!-- src/routes/catagory/+page.svelte -->
+<!-- src/routes/category/+page.svelte -->
 <script lang="ts">
+  // Import from sveltekit-superforms/client for proper client-side handling
   import { superForm } from 'sveltekit-superforms/client';
-  import type { PageData } from './$types';
+  import type { SuperValidated } from 'sveltekit-superforms/client';
+  import { z } from 'zod';
+  import type { Category } from '@/types/types';
+  
+  // Import components - SvelteKit will resolve these correctly 
+  // even if TypeScript complains
   import CategoryItem from '$lib/components/CategoryItem.svelte';
   import CategoryTree from '$lib/components/CategoryTree.svelte';
   import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
+  
+  // Define the category schema for validation
+  const categorySchema = z.object({
+    category_name: z.string().min(1),
+    parent_id: z.string().uuid().optional().nullable(),
+    category_description: z.string().optional().nullable(),
+    is_public: z.boolean().default(true)
+  });
+  
+  // Category schema from server - matches our database fields exactly
+  type CategoryData = {
+    category_id: string;
+    category_name: string;
+    category_path: string;
+    parent_id: string | null;
+    parent_name: string | null;
+    is_public: boolean;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+    is_deleted: boolean;
+    custom_fields: Record<string, unknown> | null;
+    deleted_at?: string | null;
+  };
+  
+  // Category adapter to match the required type for CategoryTree
+  function adaptCategoryForTree(dbCategory: CategoryData): Category {
+    return {
+      id: dbCategory.category_id,
+      name: dbCategory.category_name,
+      category_id: dbCategory.category_id, // Keep original field for compatibility
+      category_name: dbCategory.category_name, // Keep original field for compatibility
+      category_path: dbCategory.category_path,
+      path: dbCategory.category_path,
+      parent_id: dbCategory.parent_id,
+      parentId: dbCategory.parent_id,
+      description: null,
+      is_public: dbCategory.is_public,
+      isPublic: dbCategory.is_public,
+      created_by: dbCategory.created_by,
+      createdBy: dbCategory.created_by,
+      created_at: new Date(dbCategory.created_at),
+      createdAt: new Date(dbCategory.created_at),
+      updated_at: new Date(dbCategory.updated_at),
+      updatedAt: new Date(dbCategory.updated_at),
+      is_deleted: dbCategory.is_deleted,
+      isDeleted: dbCategory.is_deleted,
+      deleted_at: dbCategory.deleted_at ? new Date(dbCategory.deleted_at) : null,
+      deletedAt: dbCategory.deleted_at ? new Date(dbCategory.deleted_at) : null,
+      parent_name: dbCategory.parent_name,
+      parentName: dbCategory.parent_name,
+      custom_fields: dbCategory.custom_fields,
+      customFields: dbCategory.custom_fields
+    } as Category;
+  }
+  
+
+  
+  // Form data structure to properly type all form fields
+  // Use type instead of interface and extend Record<string, unknown> to satisfy superForm constraints
+  type CategoryFormData = Record<string, unknown> & {
+    category_name: string;
+    parent_id: string | null;
+    category_description: string | null;
+    is_public: boolean;
+  }
+  
+  // Page data sent from the server
+  interface PageData {
+    user: { user_id: string; role: string };
+    categories: CategoryData[];
+    form: SuperValidated<CategoryFormData>;
+  }
 
   export let data: PageData;
-  const { form, errors, enhance } = superForm(data.form, {
+  const { form, errors, enhance } = superForm<CategoryFormData>(data.form as SuperValidated<CategoryFormData>, {
     onResult: ({ result }) => {
       // Close form after successful submission
       if (result.type === 'success') {
@@ -16,14 +95,39 @@
     }
   });
   
-  const { categories, user } = data;
+  // Make categories a let variable so it can be updated when items are deleted
+  let { categories: dbCategories } = data;
+  const { user } = data;
+  
+  // Convert DB categories to the format needed by components
+  $: categories = dbCategories.map(adaptCategoryForTree);
+  
   let showForm = false;
   let viewMode: 'tree' | 'list' = 'tree';
   let selectedCategoryId: string | null = null;
   
+  // Helper functions with proper type definitions
+  // Simple function declarations with explicit return types and no defaults
+  function toggleCategoryInfo(categoryId: string, shouldExpand: boolean): void {
+    console.log(`Toggling category ${categoryId}, expand: ${shouldExpand}`);
+  }
+
+  function enableTreeFeature(enabled: boolean): void {
+    console.log(`Tree feature ${enabled ? 'enabled' : 'disabled'}`);
+  }
+  
+  function handleExport(format: string): void {
+    console.log(`Exporting in ${format} format`);
+  }
+
   // Handle category selection from the tree view
-  function handleCategorySelect(event: CustomEvent<{categoryId: string}>) {
+  // Event handlers with proper typing
+  function handleCategorySelect(event: CustomEvent<{categoryId: string}>): void {
     selectedCategoryId = event.detail.categoryId;
+  }
+
+  function handleCategoryFilter(event: CustomEvent<{filter: string}>): void {
+    console.log('Filter event:', event.detail.filter);
   }
 </script>
 
@@ -90,7 +194,7 @@
     <div class="tree-view-container">
       <CategoryTree 
         {categories} 
-        bind:selectedCategoryId={selectedCategoryId} 
+        bind:selectedCategoryId 
         expandSelected={true} 
         on:select={handleCategorySelect} 
       />
@@ -98,7 +202,17 @@
   {:else}
     <div class="list-view-container">
       {#each categories as category}
-        <CategoryItem {category} currentUserId={user?.id} />
+        <CategoryItem 
+          {category} 
+          currentUserId={user?.user_id} 
+          on:deleted={(e) => {
+            // Remove the deleted category from the array
+            const categoryId = e.detail.categoryId;
+            // Filter both the original and adapted category arrays
+            dbCategories = dbCategories.filter(c => c.category_id !== categoryId);
+            // Categories will be automatically updated via the reactive statement
+          }}
+        />
       {/each}
     </div>
   {/if}

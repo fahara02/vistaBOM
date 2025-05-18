@@ -1,18 +1,41 @@
 <!-- src/lib/components/category.svelte -->
 <script lang="ts">
-    import type { Category } from '@/types/types';
-    import { onDestroy } from 'svelte';
+    import type { Category } from '$lib/types/schemaTypes';
+    import { createEventDispatcher, onDestroy } from 'svelte';
+    import { enhance } from '$app/forms';
+    import type { SubmitFunction } from '@sveltejs/kit';
+    import * as Dialog from '$lib/components/ui/dialog';
     import CategoryComboBox from './CategoryComboBox.svelte';
 
-    export let category: any;
-    export const currentUserId: string = ''; // Changed to const as it's not being used directly in the template
-    export let allCategories: Category[] = [];
+    const dispatch = createEventDispatcher<{
+        deleted: { categoryId: string };
+    }>();
+
+    export let category: Category & { parent_name?: string }; // Add parent_name as an optional property
+    export let allowEdit = true;
+    export let allowDelete = true;
+    export let showConfirmation = true;
 
     let editMode = false;
-    let edits: any = {};
+    let edits: {
+        category_name: string;
+        category_description: string;
+        parent_id: string;
+        is_public: boolean;
+    } = {
+        category_name: '',
+        category_description: '',
+        parent_id: '',
+        is_public: false
+    };
+    let showDeleteConfirm = false;
+    let isDeleting = false;
+    let formErrors: { message?: string } = {};
+    let isSaving = false;
     let error: string | null = null;
     let success: string | null = null;
     let abortController = new AbortController();
+    let allCategories: (Category & { parent_name?: string })[] = [];
     
     // Format field names from camelCase to Title Case with spaces
     function formatFieldName(fieldName: string): string {
@@ -35,7 +58,7 @@
             const response = await fetch('/api/categories');
             if (response.ok) {
                 const data = await response.json();
-                allCategories = data.filter((cat: Category) => cat.category_id !== category.id);
+                allCategories = data.filter((cat: Category) => cat.category_id !== category.category_id);
             }
         } catch (e) {
             console.error('Failed to load categories:', e);
@@ -44,8 +67,8 @@
 
     const startEdit = async () => {
         edits = { 
-            name: category.name,
-            description: category.description || '',
+            category_name: category.category_name,
+            category_description: category.category_description || '',
             parent_id: category.parent_id || '',
             is_public: Boolean(category.is_public)
         };
@@ -55,41 +78,76 @@
 
     const cancelEdit = () => {
         editMode = false;
-        edits = {};
+        edits = {
+            category_name: '',
+            category_description: '',
+            parent_id: '',
+            is_public: false
+        };
         error = null;
     };
 
     const saveCategory = async () => {
         error = null;
         success = null;
+        isSaving = true;
         abortController = new AbortController();
         
         try {
+            // Use FormData for submission (SvelteKit form actions require FormData)
             const formData = new FormData();
-            formData.append('name', edits.name);
-            formData.append('description', edits.description || '');
+            formData.append('category_name', edits.category_name);
+            formData.append('category_description', edits.category_description || '');
             formData.append('parent_id', edits.parent_id || '');
+            formData.append('categoryId', category.category_id); // Add ID for edit mode
             
             // Handle checkbox field
             if (edits.is_public) {
-                formData.append('is_public', 'on');
+                formData.append('is_public', 'true');
+            } else {
+                formData.append('is_public', 'false');
             }
 
-            const response = await fetch(`/catagory/${category.id}/edit`, {
+            // Post to the dashboard named action instead of direct URL
+            const response = await fetch(`/dashboard?/category`, {
                 method: 'POST',
                 body: formData,
                 signal: abortController.signal
             });
 
             if (!response.ok) {
-                throw new Error('Failed to update category');
+                // Try to parse error response
+                let errorData: { message?: string } = { message: '' };
+                try {
+                    const jsonData = await response.json();
+                    errorData = jsonData as { message?: string };
+                } catch (parseError) {
+                    console.error('Failed to parse error response:', parseError);
+                }
+                
+                throw new Error(errorData.message || `Failed to update category (status: ${response.status})`);
             }
             
-            // Update the local category data with the edits
-            category.name = edits.name;
-            category.description = edits.description;
-            category.parent_id = edits.parent_id;
-            category.is_public = edits.is_public;
+            // Get the updated category data from the response if available
+            try {
+                const updatedData = await response.json();
+                if (updatedData?.category) {
+                    // Use the returned data to update the local object
+                    Object.assign(category, updatedData.category);
+                } else {
+                    // Fallback to manual update if the response doesn't include category data
+                    category.category_name = edits.category_name;
+                    category.category_description = edits.category_description;
+                    category.parent_id = edits.parent_id;
+                    category.is_public = edits.is_public;
+                }
+            } catch (parseError) {
+                // If response parsing fails, fall back to manual update
+                category.category_name = edits.category_name;
+                category.category_description = edits.category_description;
+                category.parent_id = edits.parent_id;
+                category.is_public = edits.is_public;
+            }
             
             success = 'Category updated successfully';
             setTimeout(() => success = null, 3000);
@@ -97,34 +155,128 @@
         } catch (e) {
             if (e instanceof Error && e.name !== 'AbortError') {
                 error = e.message;
+                console.error('Update category error:', e);
             }
+        } finally {
+            isSaving = false;
         }
     };
 
+
+
     const removeCategory = async () => {
-        if (!confirm('Are you sure you want to delete this category?')) return;
+        // First step is just to show the confirmation dialog
+        if (showConfirmation && !showDeleteConfirm) {
+            console.log('Opening delete confirmation dialog for category:', category.category_id);
+            showDeleteConfirm = true;
+            return;
+        }
+        
+        // This is the actual delete action after confirmation
+        console.log('Delete confirmed for category:', category.category_id);
+        showDeleteConfirm = false;
+        
+        // Reset status variables
+        error = null;
+        success = null;
+        isDeleting = true;
         
         try {
-            const response = await fetch(`/catagory/${category.id}/delete`, {
+            console.log('Preparing delete request for category ID:', category.category_id);
+            
+            // Use FormData for deletion (SvelteKit form actions require FormData)
+            const formData = new FormData();
+            formData.append('categoryId', category.category_id);
+            formData.append('delete', 'true');
+            
+            console.log('Sending delete request to /dashboard?/category');
+            
+            // Add credentials to ensure cookies are sent
+            const response = await fetch(`/dashboard?/category`, {
                 method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
                 signal: abortController.signal
             });
             
+            console.log('Delete response status:', response.status);
+            
             if (!response.ok) {
-                throw new Error('Failed to delete category');
+                // Try to parse error response
+                try {
+                    const responseText = await response.text();
+                    console.log('Error response text:', responseText);
+                    
+                    let errorMessage;
+                    try {
+                        const errorData = JSON.parse(responseText) as { message?: string };
+                        errorMessage = errorData?.message;
+                    } catch (jsonError) {
+                        console.error('Failed to parse error as JSON:', jsonError);
+                        errorMessage = responseText;
+                    }
+                    
+                    throw new Error(errorMessage || `Failed to delete category (status: ${response.status})`);
+                } catch (parseError) {
+                    console.error('Failed to parse error response:', parseError);
+                    throw new Error(`Failed to delete category (status: ${response.status})`);
+                }
             }
 
-            const event = new CustomEvent('deleted', { detail: category.id });
-            dispatchEvent(event);
+            console.log('Category deleted successfully:', category.category_id);
+            
+            // Dispatch event for parent component to handle
+            dispatch('deleted', { categoryId: category.category_id });
+            
+            success = 'Category deleted successfully';
+            
+            // Force reload to update UI
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
         } catch (e) {
             if (e instanceof Error && e.name !== 'AbortError') {
                 error = e.message;
+                console.error('Delete category error:', e);
             }
+        } finally {
+            isDeleting = false;
         }
     };
 </script>
 
-<div class="category-card">
+<div class="category-card {isDeleting ? 'deleting' : ''} {isSaving ? 'saving' : ''}">
+    <Dialog.Root bind:open={showDeleteConfirm}>
+        <Dialog.Portal>
+            <Dialog.Overlay />
+            <Dialog.Content>
+                <Dialog.Header>
+                    <Dialog.Title>Confirm Deletion</Dialog.Title>
+                    <Dialog.Description>
+                        Are you sure you want to delete the category '{category.category_name}'?
+                        This action cannot be undone.
+                    </Dialog.Description>
+                </Dialog.Header>
+                <div class="flex justify-end gap-2 p-4">
+                    <button 
+                        type="button" 
+                        class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-100" 
+                        on:click={() => showDeleteConfirm = false}
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        type="button" 
+                        class="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600" 
+                        on:click={removeCategory}
+                    >
+                        Delete
+                    </button>
+                </div>
+            </Dialog.Content>
+        </Dialog.Portal>
+    </Dialog.Root>
+
     {#if error}
         <div class="alert error">{error}</div>
     {/if}
@@ -135,16 +287,16 @@
     
     {#if !editMode}
         <div class="view-mode">
-            <h2>{category.name}</h2>
+            <h2>{category.category_name}</h2>
             
             <div class="details">
-                {#if category.description}
-                    <p class="description">{category.description}</p>
+                {#if category.category_description}
+                    <p class="description">{category.category_description}</p>
                 {/if}
                 
                 <div class="category-meta">
                     {#if category.parent_id}
-                        <p class="parent">Parent Category: {category.parent_name || category.parent_id}</p>
+                        <p class="parent">Parent Category: {category?.parent_name || category.parent_id}</p>
                     {/if}
                     <p class="public-status">Public: {category.is_public ? 'Yes' : 'No'}</p>
                 </div>
@@ -158,39 +310,77 @@
             </div>
             
             <div class="actions">
-                <button on:click={startEdit}>Edit</button>
-                <button on:click={removeCategory} class="danger">Delete</button>
+                {#if allowEdit}
+                    <button on:click={startEdit} disabled={isDeleting || isSaving}>
+                        {#if isSaving}
+                            <span class="loading-spinner"></span>
+                        {:else}
+                            Edit
+                        {/if}
+                    </button>
+                {/if}
+                {#if allowDelete}
+                    <button on:click={removeCategory} class="danger" disabled={isDeleting || isSaving}>
+                        {#if isDeleting}
+                            <span class="loading-spinner"></span>
+                        {:else}
+                            Delete
+                        {/if}
+                    </button>
+                {/if}
             </div>
         </div>
     {:else}
         <div class="edit-mode">
-            <h2>Edit Category</h2>
-            
-            <form on:submit|preventDefault={saveCategory}>
+            <!-- Use standard form with submit handler since the API expects FormData -->
+            <form 
+                action="?/category" 
+                method="POST" 
+                use:enhance={(() => {
+                    isSaving = true;
+                    return ({ update, result }) => {
+                        if (result.type === 'error') {
+                            error = result.error?.message || 'Failed to save category';
+                        } else if (result.type === 'success') {
+                            success = 'Category updated successfully';
+                            editMode = false;
+                            setTimeout(() => success = null, 3000);
+                        }
+                        isSaving = false;
+                    };
+                }) as SubmitFunction}
+            >
+                <input type="hidden" name="categoryId" value={category?.category_id ?? ''} />
+                
                 <div class="form-group">
-                    <label for="name">Category Name*</label>
-                    <input 
-                        type="text" 
-                        id="name" 
-                        bind:value={edits.name} 
-                        required 
+                    <label for="category_name">Category Name*</label>
+                    <input
+                        id="category_name"
+                        name="category_name"
+                        type="text"
+                        bind:value={edits.category_name}
+                        required
                     />
                 </div>
                 
                 <div class="form-group">
-                    <label for="description">Description</label>
+                    <label for="category_description">Description</label>
                     <textarea 
-                        id="description" 
-                        bind:value={edits.description}
+                        id="category_description" 
+                        name="category_description"
+                        bind:value={edits.category_description}
                         rows="4"
                     ></textarea>
                 </div>
                 
+                <!-- Only one parent category selector -->
                 <div class="form-group">
                     <label for="parent_id">Parent Category</label>
                     <CategoryComboBox
                         categories={allCategories}
                         bind:value={edits.parent_id}
+                        initialValue={category?.parent_id ?? ''}
+                        initialLabel={category?.parent_name ?? ''}
                         name="parent_id"
                         placeholder="Search or select parent category..."
                         width="w-full"
@@ -203,6 +393,7 @@
                         <input 
                             type="checkbox" 
                             id="is_public" 
+                            name="is_public"
                             bind:checked={edits.is_public} 
                         />
                         <span>Make category public</span>
@@ -231,11 +422,44 @@
     }
 
     .alert {
-        padding: 0.75rem;
-        margin-bottom: 1rem;
-        border-radius: 4px;
-        font-size: 0.9em;
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+        margin-bottom: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+    }
+
+    .category-card.deleting,
+    .category-card.saving {
+        opacity: 0.7;
+        position: relative;
+    }
+
+    .category-card.deleting::before,
+    .category-card.saving::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: hsl(var(--background) / 0.25);
+        z-index: 1;
+        border-radius: 8px;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid hsl(var(--muted-foreground) / 0.3);
+        border-top-color: hsl(var(--primary));
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        position: relative;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
     }
 
     .error {

@@ -10,22 +10,18 @@
   import { tick } from "svelte";
   
   // Props
-  export let categories: Category[] = [];
+  export let categories: any[] = [];
   export let value: string | null | undefined = ""; // Selected category ID
   export let placeholder: string = "Select parent category...";
   export let name: string = "parent_id"; // Form field name
   export let required: boolean = false;
   export let disabled: boolean = false;
   export let width: string = "w-full"; // Control the width of the component
+  // Props for edit mode
+  export let initialValue: string | undefined = undefined;
+  export let initialLabel: string | undefined = undefined;
   
   let open = false;
-  
-  // Function to get parent name for a category
-  function getParentName(category: Category): string {
-    if (!category.parent_id) return '';
-    const parent = categories.find(c => c.parent_id === category.parent_id);
-    return parent ? parent.category_name : '';
-  }
 
   // Create formatted options for the combobox with a "None" option
   $: options = [
@@ -34,9 +30,41 @@
       value: category.category_id,
       label: category.category_name,
       parent_id: category.parent_id,
-      parentName: getParentName(category)
+      // Use the parent_name directly from the API response
+      parentName: category.parent_name || ''
     }))
   ];
+
+  // Initialize the value if we have initialValue provided (for edit mode)
+  $: if (initialValue && value === "" && options.length > 0) {
+    // Find the option with matching value to set it
+    const foundOption = options.find(opt => opt.value === initialValue);
+    if (foundOption) {
+      console.log('Setting initial parent category:', foundOption.label);
+      value = initialValue;
+    } else if (initialValue && initialLabel) {
+      // If we can't find the option but have both values, add a temporary option
+      console.log('Adding initial parent option:', initialLabel);
+      options = [
+        { value: "", label: "None (Top-level)" },
+        { value: initialValue, label: initialLabel },
+        ...categories.map(cat => ({
+          value: cat.category_id,
+          label: cat.category_name,
+          parent_id: cat.parent_id,
+          parentName: cat.parent_name || ''
+        }))
+      ];
+      value = initialValue;
+    }
+  };
+  
+  // Add console debug to understand what's coming from the API
+  $: {
+    if (categories.length > 0) {
+      console.log('CategoryComboBox categories:', categories);
+    }
+  }
   
   // Display the selected category name or placeholder
   $: selectedLabel = options.find((opt) => opt.value === value)?.label ?? placeholder;

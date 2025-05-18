@@ -3,8 +3,10 @@
 	import { PartForm } from '$lib/components';
 	import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
 	import Category from '$lib/components/category.svelte';
-	import type { Category as CategoryType } from '@/types/types';
-	import { LifecycleStatusEnum, PartStatusEnum } from '@/types/types';
+	import type { Category as CategoryType } from '$lib/types/schemaTypes';
+	import { LifecycleStatusEnum, PartStatusEnum } from '$lib/types/enums';
+	import { categoryFormSchema } from '$lib/schema/schema';
+	import { z } from 'zod';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageData } from './$types';
 
@@ -143,8 +145,11 @@
 		$partForm = { ...$partForm, ...formData };
 	}
 	
-	// All categories data for ComboBox in both create and edit forms
+	// Categories data management
+	// We need to make this a 'let' variable so we can update it reactively after operations
 	let allCategories: CategoryType[] = [];
+	// Create a reactive reference to the exported data.categories list to use in refresh operations
+	let categories: CategoryType[] = (data.categories || []) as CategoryType[];
 
 	// Initialize part form with superForm with improved error handling
 	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.partForm, {
@@ -212,17 +217,106 @@
 		}
 	});
 
-	// Initialize category form with superForm
-	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
-		dataType: 'json',
-		onResult: ({ result }) => {
-			// Handle successful submission
-			if (result.type === 'success') {
-				showCategoryForm = false;
-				// Reload the page to get updated categories list
-				window.location.reload();
+	// Define the inferred type for the form - must exactly match schema
+	type CategoryFormType = z.infer<typeof categoryFormSchema>;
+
+	// Function to refresh categories data directly from API without full page reload
+	async function refreshCategoriesData() {
+		console.log('Refreshing categories data from API...');
+		try {
+			const response = await fetch('/api/categories');
+			if (!response.ok) throw new Error('Failed to fetch categories');
+			
+			// Update our local categories data
+			const freshCategories = await response.json();
+			console.log(`Fetched ${freshCategories.length} categories from API`);
+			
+			// Filter out deleted categories using ONLY actual schema properties
+			const filteredCategories = freshCategories.filter((cat: CategoryType) => {
+				// Skip null/undefined categories
+				if (!cat) return false;
+				
+				// Only check properties that actually exist in the schema
+				return cat.is_deleted === false && cat.deleted_at === null;
+			});
+			
+			// Update both category collections used in different parts of the UI
+			categories = filteredCategories;
+			allCategories = filteredCategories;
+			
+			console.log(`Updated categories array with ${categories.length} non-deleted categories`);
+			console.log('Sample category after refresh:', categories.length > 0 ? categories[0] : 'No categories');
+			
+			// Force a UI refresh by toggling a reactive variable
+			uiRefreshTrigger = !uiRefreshTrigger;
+			
+			// Force the tree to rebuild with fresh data
+			if (typeof window !== 'undefined') {
+				// Dispatch a custom event to notify any components listening for category updates
+				window.dispatchEvent(new CustomEvent('categoriesUpdated', { 
+					detail: { categories: filteredCategories } 
+				}));
+				
+				// Trigger page rendering with fresh data
+				setTimeout(() => {
+					// Add logging to verify data state
+					console.log('Category data refresh complete. Tree should display correctly now.');
+				}, 100);
 			}
-			// Don't reset the form on error to preserve user input
+		} catch (error) {
+			console.error('Error refreshing categories:', error);
+		}
+	}
+
+	// Reactive variable to force UI updates
+	let uiRefreshTrigger = false;
+
+	// Initialize category form with superForm - IMPORTANT: use dataType: 'json' for union types
+	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
+		dataType: 'json', // CRITICAL: Required for union types in schema
+		// Explicitly handle form submission
+		onSubmit: ({ formData, cancel }) => {
+			// Log form data for debugging
+			console.log('Submitting category form:', Object.fromEntries(formData));
+			
+			// Check if this is a delete operation
+			const isDelete = formData.get('delete') === 'true';
+			if (isDelete) {
+				console.log('This is a DELETE operation');
+			}
+			// Continue with submission
+		},
+		// Handle form submission
+		onResult: ({ result }) => {
+			// DEBUG: Log ALL form result details
+			console.log('CATEGORY FORM RESULT:', JSON.stringify(result, null, 2));
+			
+			// Check if this was a delete operation - special case, handle differently
+			const isDeleteOperation = $categoryForm.delete === true;
+			if (isDeleteOperation) {
+				console.log('DETECTED DELETE OPERATION');
+			}
+			
+			if (result.type === 'success') {
+				// Reset form and UI state
+				categoryForm.set({ ...categoryFormInitialValues });
+				showCategoryForm = false;
+				editCategoryMode = false;
+				currentCategoryId = null;
+				
+				// SUCCESS MESSAGE
+				console.log('SUCCESS: Form submitted successfully');
+				
+				// BRUTE FORCE APPROACH: Always force a full reload after category operations
+				console.log('FORCING COMPLETE PAGE RELOAD');
+				window.location.reload();
+			} else if (result.type === 'error') {
+				console.error('Category form error:', result.error);
+			}
+		},
+		// Handle errors without trying to interpret them
+		onError: (error) => {
+			console.error('Category form error:', error);
 		}
 	});
 
@@ -258,28 +352,32 @@
 	const userManufacturers = data.userManufacturers || [];
 	const userSuppliers = data.userSuppliers || [];
 	const userCategories = data.userCategories || [];
-	const categories = data.categories || [];
 
-	// Edit mode tracking
 	let editCategoryMode = false;
 	let currentCategoryId: string | null = null;
 	
-	// Function to handle edit button click
-	function editCategory(category: any) {
-		// Set category ID being edited
+	// Edit category function - shows form pre-filled with category data
+	function editCategory(category: CategoryType) {
+		// Clear form and set edit mode
+		editCategoryMode = true;
 		currentCategoryId = category.category_id;
 		
-		// Populate form with category data
+		console.log('Edit category data:', category);
+		
+		// Populate form with category data - must match schema exactly
 		$categoryForm = {
 			category_name: category.category_name,
 			category_description: category.category_description || '',
 			parent_id: category.parent_id || '',
 			is_public: Boolean(category.is_public)
-		};
+		} as CategoryFormType; // Type assertion to match schema
 		
-		// Find and display the parent category by name in the allCategories list
-		// This ensures the CategoryComboBox displays parent names correctly
-		// Already handled by the CategoryComboBox component with the parent_name field
+		console.log('Form data after setting:', $categoryForm);
+		
+		// Log parent categories for debugging
+		if (data.allCategories) {
+			console.log('Available parent categories:', data.allCategories);
+		}
 		
 		// Show form and set edit mode
 		showCategoryForm = true;
@@ -293,13 +391,13 @@
 		currentCategoryId = null;
 		showCategoryForm = false;
 		
-		// Reset form to initial state
+		// Reset form to initial state with type assertion
 		$categoryForm = {
 			category_name: '',
 			category_description: '',
 			parent_id: '',
 			is_public: false
-		};
+		} as CategoryFormType;
 	}
 	
 	// Function to toggle category form visibility
@@ -312,13 +410,13 @@
 			if (!showCategoryForm) {
 				editCategoryMode = false;
 				currentCategoryId = null;
-				// Reset form
+				// Reset form with type assertion
 				$categoryForm = {
 					category_name: '',
 					category_description: '',
 					parent_id: '',
 					is_public: false
-				};
+				} as CategoryFormType;
 			}
 			
 			// Toggle form visibility

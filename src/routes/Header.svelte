@@ -55,8 +55,8 @@
 						<span class="nav-text">Dashboard</span>
 					</a>
 				</li>
-				<li class="nav-item view-only" aria-current={$page.url.pathname.startsWith('/catagory') ? 'page' : undefined}>
-					<a href="/catagory">
+				<li class="nav-item view-only" aria-current={$page.url.pathname.startsWith('/category') ? 'page' : undefined}>
+					<a href="/category">
 						<span class="nav-icon">
 							<Tags size={18} strokeWidth={2} />
 						</span>

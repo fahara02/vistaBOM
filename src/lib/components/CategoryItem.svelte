@@ -1,23 +1,38 @@
  <!-- src/lib/components/CategoryItem.svelte -->
 <script lang="ts">
-  import type { Category } from '@/types/types';
-  import { onDestroy } from 'svelte';
-  export let category: Category;
+  import { onDestroy, createEventDispatcher } from 'svelte';
+
+  // Create a proper Svelte event dispatcher
+  const dispatch = createEventDispatcher<{
+    deleted: { categoryId: string }
+  }>();
+
+  // Use database fields directly
+  export let category: {
+    category_id: string;
+    category_name: string;
+    parent_id?: string | null;
+    category_description?: string | null;
+    parent_name?: string | null;
+    is_public?: boolean;
+    // Other fields may be present but not required
+  };
   /** current user ID executing actions */
   export let currentUserId: string | undefined;
 
   let editMode = false;
-  let name = category.category_name;
+  let editName = category.category_name;
   let error: string | null = null;
   let success: string | null = null;
   let abortController = new AbortController();
+  let isDeleting = false;
 
   onDestroy(() => {
     abortController.abort();
   });
 
   const startEdit = () => {
-    name = category.category_name;
+    editName = category.category_name;
     editMode = true;
     error = success = null;
   };
@@ -35,14 +50,17 @@
     error = success = null;
     abortController = new AbortController();
     try {
-      const response = await fetch(`/catagory/${category.category_id}`, {
+      // Use category_id from database fields
+      const response = await fetch(`/category/${category.category_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ name, userId: currentUserId }),
+        body: JSON.stringify({
+          name: editName.trim(),
+          userId: currentUserId
+        }),
         signal: abortController.signal
       });
       console.log('PUT response status:', response.status);
@@ -70,32 +88,64 @@
   const removeCategory = async () => {
     if (!currentUserId) return;
     if (!confirm('Delete this category?')) return;
+    
+    error = null;
+    isDeleting = true;
+    
     try {
-      const response = await fetch(`/catagory/${category.category_id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
+      console.log('Attempting to delete category:', category.category_id);
+      
+      // Use dashboard endpoint which has proper transaction handling
+      const formData = new FormData();
+      formData.append('categoryId', category.category_id);
+      formData.append('delete', 'true');
+      
+      const response = await fetch('/dashboard?/category', {
+        method: 'POST',
+        body: formData,
         credentials: 'same-origin',
-        body: JSON.stringify({ userId: currentUserId }),
         signal: abortController.signal
       });
-      console.log('DELETE response status:', response.status);
+      
+      // Log response for debugging
+      console.log('Delete response status:', response.status);
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Delete failed');
+        // Try to parse error response
+        let errorData: { message?: string } = {};
+        try {
+          const responseText = await response.text();
+          console.log('Error response text:', responseText);
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (parseError) {
+            console.error('Failed to parse error as JSON:', parseError);
+          }
+        } catch (textError) {
+          console.error('Failed to get response text:', textError);
+        }
+        
+        // Extract error message or use default
+        throw new Error(errorData?.message || `Delete failed with status ${response.status}`);
       }
-      dispatchEvent(new CustomEvent('deleted', { detail: category.category_id }));
+      
+      // Use proper Svelte event dispatching
+      dispatch('deleted', { categoryId: category.category_id });
+      
+      success = 'Category deleted successfully';
+      console.log('Category deleted successfully:', category.category_id);
     } catch (e: unknown) {
-      if ((e as any).name !== 'AbortError') {
-        error = e instanceof Error ? e.message : 'Unknown error';
+      if ((e instanceof Error) && e.name !== 'AbortError') {
+        error = e.message;
+        console.error('Delete category error:', e);
       }
+    } finally {
+      isDeleting = false;
     }
   };
 </script>
 
-<div class="category-card">
+<div class="category-card {isDeleting ? 'deleting' : ''}">
   {#if error}
     <div class="alert error">{error}</div>
   {/if}
@@ -120,19 +170,29 @@
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button type="button" class="icon delete" on:click={removeCategory} aria-label="Delete category">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            <line x1="10" y1="11" x2="10" y2="17"></line>
-            <line x1="14" y1="11" x2="14" y2="17"></line>
-          </svg>
+        <button 
+          type="button" 
+          class="icon delete" 
+          on:click={removeCategory} 
+          aria-label="Delete category"
+          disabled={isDeleting}
+        >
+          {#if isDeleting}
+            <span class="loading-spinner"></span>
+          {:else}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          {/if}
         </button>
       </div>
     </div>
   {:else}
     <div class="edit-mode">
-      <input type="text" bind:value={name} required />
+      <input type="text" bind:value={editName} required />
       <button on:click={saveCategory}>Save</button>
       <button on:click={cancelEdit}>Cancel</button>
     </div>
@@ -279,12 +339,10 @@
     margin-left: 0.5rem;
   }
   .alert {
-    padding: 0.625rem 0.875rem;
+    padding: 0.5rem;
     border-radius: 0.375rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
     font-size: 0.875rem;
-    width: 100%;
-    transition: background-color 0.3s, border-color 0.3s, color 0.3s;
   }
   .alert.error {
     background-color: hsl(var(--destructive) / 0.1);

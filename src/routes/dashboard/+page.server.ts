@@ -1,17 +1,18 @@
 //src/routes/dashboard/+page.server.ts
 import sql from '$lib/server/db/index';
 import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, WeightUnitEnum } from '$lib/types';
-import { createCategory, getAllCategories } from '$lib/core/category';
+// Import sanitizeLtreeLabel function along with other category functions
+import { createCategory, getAllCategories, sanitizeLtreeLabel } from '$lib/core/category';
 import { createManufacturer } from '$lib/core/manufacturer';
 import { createPart, getPartWithCurrentVersion } from '$lib/core/parts';
 import { createSupplier } from '$lib/core/supplier';
-import { categorySchema, createPartSchema, manufacturerSchema, supplierSchema } from '$lib/schema/schema';
+import { categorySchema, categoryFormSchema, createPartSchema, manufacturerSchema, supplierSchema } from '$lib/schema/schema';
 import type { Category, Manufacturer, Part, Supplier, User } from '$lib/types/schemaTypes';
 import type { DbProject } from '$lib/types/types';
 import { fail, redirect } from '@sveltejs/kit';
 import { randomUUID } from 'crypto';
 import { zod } from 'sveltekit-superforms/adapters';
-import { message, superValidate } from 'sveltekit-superforms/server';
+import { superValidate, message } from 'sveltekit-superforms/server';
 import { z } from 'zod';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -94,14 +95,8 @@ export const load: PageServerLoad = async (event) => {
 		partForm.data.version_status = LifecycleStatusEnum.DRAFT;
 	}
 	
-	// 5. Initialize Category form data
-	const createCategorySchema = categorySchema.pick({
-		category_name: true,
-		parent_id: true,
-		category_description: true,
-		is_public: true
-	});
-	const categoryForm = await superValidate(zod(createCategorySchema));
+	// 5. Initialize Category form data using the imported schema from types
+	const categoryForm = await superValidate(zod(categoryFormSchema));
 	
 	// 6. Get category tree for parent selection
 	const categories = await getAllCategories();
@@ -175,30 +170,35 @@ export const load: PageServerLoad = async (event) => {
 		// userSuppliers is already initialized to an empty array
 	}
 	
-	// 7. Fetch user-created categories with parent names
+	// 7. Fetch user-created categories with parent names (excluding deleted categories)
 	let userCategories: Category[] = [];
 	try {
 		userCategories = await sql`
 			SELECT c.*, p.category_name as parent_name
 			FROM "Category" c
 			LEFT JOIN "Category" p ON c.parent_id = p.category_id
-			WHERE c.created_by = ${user.user_id}
+			WHERE c.created_by = ${user.user_id} AND c.is_deleted = false
 			ORDER BY c.category_name ASC
 		`;
+		
+		console.log(`Found ${userCategories.length} active categories created by user`);
 	} catch (error) {
 		console.error('Error fetching categories:', error);
 		// userCategories is already initialized to an empty array
 	}
 	
-	// 8. Fetch all categories for parent selection in category form
+	// 8. Fetch all categories for parent selection in category form (excluding deleted categories)
 	let allCategories: Category[] = [];
 	try {
 		allCategories = await sql`
 			SELECT c.*, p.category_name as parent_name
 			FROM "Category" c
 			LEFT JOIN "Category" p ON c.parent_id = p.category_id
+			WHERE c.is_deleted = false
 			ORDER BY c.category_name ASC
 		`;
+		
+		console.log(`Found ${allCategories.length} total active categories`);
 	} catch (error) {
 		console.error('Error fetching all categories:', error);
 		// allCategories is already initialized to an empty array
@@ -282,8 +282,16 @@ export const actions: Actions = {
 			let customFields = {};
 			if (form.data.custom_fields_json && form.data.custom_fields_json.trim() !== '') {
 				try {
-					customFields = JSON.parse(form.data.custom_fields_json);
-					console.log('Parsed custom fields:', customFields);
+					// If it starts with '{', it's likely a JSON string
+					if (form.data.custom_fields_json.trim().startsWith('{')) {
+						const parsed = JSON.parse(form.data.custom_fields_json);
+						if (typeof parsed === 'object' && parsed !== null) {
+							customFields = parsed;
+						} else {
+							// If it's not an object, create a structured object
+							customFields = { value: parsed };
+						}
+					}
 				} catch (jsonError) {
 					console.error('Failed to parse custom fields JSON:', jsonError);
 					return message(form, 'Invalid JSON format for custom fields', { status: 400 });
@@ -936,20 +944,133 @@ export const actions: Actions = {
 		// Get form data to check if we're editing or creating
 		const formData = await event.request.formData();
 		const categoryId = formData.get('categoryId');
+		const isDeleteMode = formData.get('delete') === 'true';
 		const isEditMode = categoryId && typeof categoryId === 'string' && categoryId.trim() !== '';
 		
-		// Create a category form schema based on the category schema
-		const categoryFormSchema = categorySchema.pick({
-			category_name: true,
-			parent_id: true,
-			category_description: true,
-			is_public: true
+		// Handle deletion first if delete flag is set
+		if (isEditMode && isDeleteMode) {
+			try {
+				// First, check if the category has any children
+				const childrenCheck = await sql`
+					SELECT COUNT(*) AS child_count FROM "Category" 
+					WHERE parent_id = ${categoryId} AND is_deleted = false
+				`;
+				
+				// Prevent deletion if category has children
+				if (childrenCheck[0]?.child_count > 0) {
+					console.log(`Cannot delete category ${categoryId}: has ${childrenCheck[0].child_count} children`);
+					return fail(400, { message: 'Cannot delete a category that has children. Please delete child categories first or move them to another parent.' });
+				}
+				
+				// Check if the category exists and belongs to the user
+				const categoryCheck = await sql`
+					SELECT * FROM "Category" WHERE category_id = ${categoryId} AND created_by = ${user.user_id}
+				`;
+				
+				if (categoryCheck.length === 0) {
+					return fail(403, { message: 'Category not found or you do not have permission to delete it.' });
+				}
+				
+				// Soft delete the category with transaction
+				try {
+					// Begin a transaction for atomic operations
+					await sql.begin(async sql => {
+						// First, make sure the category exists and isn't already deleted
+						const existingCheck = await sql`
+							SELECT category_id 
+							FROM "Category" 
+							WHERE category_id = ${categoryId} 
+							AND is_deleted = false
+							FOR UPDATE
+						`;
+						
+						// If category not found or already deleted, throw error
+						if (existingCheck.length === 0) {
+							throw new Error('Category not found or already deleted');
+						}
+						
+						// Check for child categories within the transaction
+						const childrenCount = await sql`
+							SELECT COUNT(*) AS child_count 
+							FROM "Category" 
+							WHERE parent_id = ${categoryId} 
+							AND is_deleted = false
+						`;
+						
+						if (childrenCount[0]?.child_count > 0) {
+							throw new Error(`Cannot delete category - it has ${childrenCount[0].child_count} child categories.`);
+						}
+						
+						// Check if category is used in any parts
+						const partsCheck = await sql`
+							SELECT COUNT(*) AS parts_count 
+							FROM "PartVersionCategory" 
+							WHERE category_id = ${categoryId}
+						`;
+						
+						if (partsCheck[0]?.parts_count > 0) {
+							// This is a soft warning - we will proceed with deletion but log a warning
+							console.warn(`Category ${categoryId} is used by ${partsCheck[0].parts_count} parts.`);
+						}
+						
+						// Mark as deleted and record who deleted it and when
+						await sql`
+							UPDATE "Category" 
+							SET 
+								is_deleted = true, 
+								updated_at = NOW(), 
+								updated_by = ${user.user_id},
+								deleted_at = NOW(),
+								deleted_by = ${user.user_id}
+							WHERE category_id = ${categoryId}
+						`;
+						
+						// NOTE: Custom fields are stored in the Category table's custom_fields JSONB column
+						// No need to update a separate table
+					});
+					
+					// Transaction completed successfully
+					console.log(`Category ${categoryId} successfully soft-deleted with all related data`);
+					
+					// Return success message that will be shown to the user
+					return { success: true, message: 'Category successfully deleted' };
+				} catch (dbError) {
+					console.error('Database error deleting category:', dbError);
+					
+					// Provide more specific error message based on error type
+					let errorMessage = 'Failed to delete category';
+					if (dbError instanceof Error) {
+						if (dbError.message.includes('child categories')) {
+							return fail(400, { message: dbError.message });
+						} else if (dbError.message.includes('not found')) {
+							return fail(404, { message: 'Category not found or already deleted' });
+						}
+						errorMessage += ': ' + dbError.message;
+					}
+					
+					return fail(500, { message: errorMessage });
+				}
+			} catch (error) {
+				// Log the actual error
+				console.error('Error deleting category:', error);
+				
+				// Return a user-friendly error message
+				return fail(500, { success: false, message: 'Failed to delete category' });
+			}
+		}
+
+		// SuperValidate the form data with the category schema
+		// Need to transform parent_id for union type handling
+		const form = await superValidate(formData, zod(categoryFormSchema));
+
+		console.log('Category form validation result:', {
+			valid: form.valid,
+			data: form.data,
+			errors: form.errors
 		});
 		
-		// Validate the form
-		const form = await superValidate(formData, zod(categoryFormSchema));
-		
 		if (!form.valid) {
+			console.error('Category validation errors:', form.errors);
 			return message(form, 'Invalid form data. Please check the fields.');
 		}
 		
@@ -964,36 +1085,161 @@ export const actions: Actions = {
 					return message(form, 'Category not found or you do not have permission to edit it.', { status: 403 });
 				}
 				
-				// Convert empty string to null for parent_id
-				const parentId = form.data.parent_id === '' ? null : form.data.parent_id || null;
+				// Validate and process parent_id from form data
+				let parentId;
 				
-				// Update the category
-				await sql`
-					UPDATE "Category" 
-					SET 
-						category_name = ${form.data.category_name},
-						category_description = ${form.data.category_description || null},
-						parent_id = ${parentId},
-						is_public = ${Boolean(form.data.is_public)},
-						updated_at = NOW(),
-						updated_by = ${user.user_id}
-					WHERE category_id = ${categoryId}
-				`;
+				// SuperForm may return parent_id as string, null, or undefined
+				if (form.data.parent_id && form.data.parent_id !== '') {
+					// Check if it's a valid UUID
+					const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+					if (uuidRegex.test(String(form.data.parent_id))) {
+						parentId = String(form.data.parent_id);
+						
+						// Check that the parent isn't the category itself (circular reference)
+						if (parentId === categoryId) {
+							return message(form, 'Category cannot be its own parent', { status: 400 });
+						}
+						
+						console.log(`Using parent ID: ${parentId}`);
+					} else {
+						return message(form, 'Invalid parent category ID format', { status: 400 });
+					}
+				} else {
+					// No parent selected, this will be a root category
+					parentId = null;
+					console.log('No parent selected, will create/update as root category');
+				}
+				
+				const categoryName = form.data.category_name;
+				
+				// Use the sanitizeLtreeLabel function from core/category.ts for consistent formatting
+				// This ensures the label is properly formatted for PostgreSQL ltree paths
+				const sanitizedLabel = sanitizeLtreeLabel(categoryName);
+				console.log(`Original name: "${categoryName}" -> Sanitized ltree label: "${sanitizedLabel}"`);
+				
+				// Update category path based on parent
+				let path;
+				
+				if (parentId) {
+					// Get parent path for constructing the category path
+					const parentResult = await sql`
+						SELECT category_path FROM "Category" WHERE category_id = ${parentId} AND is_deleted = false
+					`;
+					
+					if (parentResult.length === 0) {
+						return message(form, 'Invalid parent category', { status: 400 });
+					}
+					
+					const parentPath = parentResult[0].category_path;
+					path = `${parentPath}.${sanitizedLabel}`;
+				} else {
+					// For root categories, use just the sanitized label
+					path = sanitizedLabel;
+				}
+
+				// Begin a transaction to update the category and all child paths
+				await sql.begin(async sql => {
+					// First get the old category path before updating
+					const oldPathResult = await sql`
+						SELECT category_path FROM "Category" WHERE category_id = ${categoryId}
+					`;
+					const oldPath = oldPathResult[0]?.category_path;
+					console.log('Old path:', oldPath, 'New path:', path);
+
+					// Update the current category with the new path
+					await sql`
+						UPDATE "Category" 
+						SET 
+							category_name = ${form.data.category_name},
+							category_description = ${form.data.category_description || null},
+							parent_id = ${parentId},
+							category_path = ${path},
+							is_public = ${Boolean(form.data.is_public)},
+							updated_at = NOW(),
+							updated_by = ${user.user_id}
+						WHERE category_id = ${categoryId}
+					`;
+
+					// If path has changed, update all child category paths
+					if (oldPath && oldPath !== path) {
+						// Find all child categories using PostgreSQL ltree pattern matching
+						// We use the ltree pattern matching with ~ to find all descendants
+						const childQuery = `${oldPath}.*`;
+						console.log(`Looking for child categories with pattern: ${childQuery}`);
+						
+						const childCategories = await sql`
+							SELECT category_id, category_path 
+							FROM "Category" 
+							WHERE category_path ~ ${childQuery}::lquery
+							AND category_path != ${oldPath}
+							AND is_deleted = false
+						`;
+
+						console.log(`Found ${childCategories.length} child categories to update`); 
+
+						// Update each child path by replacing the prefix
+						for (const child of childCategories) {
+							const newChildPath = child.category_path.replace(oldPath, path);
+							await sql`
+								UPDATE "Category"
+								SET category_path = ${newChildPath},
+								    updated_at = NOW(),
+								    updated_by = ${user.user_id}
+								WHERE category_id = ${child.category_id}
+							`;
+							console.log(`Updated child path from ${child.category_path} to ${newChildPath}`);
+						}
+					}
+				});
 				
 				// Return success message
 				return message(form, 'Category updated successfully');
 			} else {
 				// CREATE MODE: Create new category
-				// Convert empty string to undefined for parent_id
-				const parentId = form.data.parent_id === '' ? undefined : form.data.parent_id || undefined;
-				
-				await createCategory({
-					name: form.data.category_name,
-					parentId,
-					description: form.data.category_description ?? undefined,
-					isPublic: form.data.is_public,
-					createdBy: user.user_id
-				});
+				try {
+					// Use validated form data from SuperForm rather than raw form data
+					const categoryName = form.data.category_name;
+					
+					// Process parent_id from validated form data
+					let parentId = form.data.parent_id || null;
+					
+					// Validate parent ID if provided
+					if (parentId) {
+						// Check if it's a valid UUID
+						const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+						if (!uuidRegex.test(String(parentId))) {
+							return message(form, 'Invalid parent category ID format', { status: 400 });
+						}
+						
+						// Verify parent category exists
+						const parentCheck = await sql`
+							SELECT category_id, category_path FROM "Category" 
+							WHERE category_id = ${parentId} AND is_deleted = false
+						`;
+						
+						if (parentCheck.length === 0) {
+							return message(form, 'Parent category not found', { status: 400 });
+						}
+					}
+					
+					// Use the sanitizeLtreeLabel function for consistent path formatting
+					const sanitizedLabel = sanitizeLtreeLabel(categoryName);
+					console.log(`Creating category: "${categoryName}" (sanitized as "${sanitizedLabel}") with parentId:`, parentId || 'none');
+					
+					// Call createCategory with all properly validated parameters
+					await createCategory({
+						name: categoryName,
+						parentId: parentId || undefined, // Ensure null becomes undefined
+						description: form.data.category_description || undefined,
+						isPublic: Boolean(form.data.is_public), // Use the actual value from form
+						createdBy: user.user_id
+					});
+					
+					console.log('Category created successfully with path updates');
+				} catch (err) {
+					console.error('Error creating category:', err);
+					return message(form, `Category creation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, { status: 500 });
+				}
 				
 				// Return success message
 				return message(form, 'Category created successfully');
