@@ -160,7 +160,7 @@ export async function createCategory(params: {
         // Check parent category exists if specified
         if (parentId) {
             const parentExists = await sql`
-                SELECT EXISTS(SELECT 1 FROM "Category" WHERE category_id = ${parentId} AND is_deleted = false) as exists
+                SELECT EXISTS(SELECT 1 FROM "Category" WHERE category_id = ${parentId}) as exists
             `;
             
             if (!parentExists[0].exists) {
@@ -601,7 +601,7 @@ export async function deleteCategory(
         const children = await sql`
             SELECT COUNT(*) as count 
             FROM "Category" 
-            WHERE parent_id = ${id} AND is_deleted = FALSE
+            WHERE parent_id = ${id}
         `;
         
         if (children[0].count > 0) {
@@ -619,11 +619,10 @@ export async function deleteCategory(
             throw new Error(CATEGORY_ERRORS.REFERENCED_BY_PARTS);
         }
 
-        // Perform soft delete
+        // Perform hard delete - completely remove from database
         const result = await sql`
-            UPDATE "Category"
-            SET is_deleted = TRUE, deleted_at = NOW(), deleted_by = ${userId}
-            WHERE category_id = ${id} AND is_deleted = FALSE
+            DELETE FROM "Category"
+            WHERE category_id = ${id}
             RETURNING category_id
         `;
         
@@ -656,7 +655,9 @@ export async function getAllCategories(options?: {
     parentId?: string | null;
 }): Promise<CategoryWithId[]> {
     try {
-        const { isPublic, excludeDeleted = true, createdBy, parentId } = options || {};
+        const { isPublic, excludeDeleted = false, createdBy, parentId } = options || {};
+        
+        // NOTE: With hard delete, excludeDeleted is no longer needed but kept for backward compatibility
         
         // Use table aliases throughout the query for clarity and to avoid ambiguity
         let query = sql`
@@ -667,7 +668,7 @@ export async function getAllCategories(options?: {
         
         // Build WHERE clauses based on options, with table aliases to avoid ambiguity
         const whereClauses = [];
-        if (excludeDeleted) whereClauses.push(sql`c.is_deleted = false`);
+        // Hard delete: no need to check for is_deleted as deleted records are fully removed
         if (isPublic !== undefined) whereClauses.push(sql`c.is_public = ${isPublic}`);
         if (createdBy) whereClauses.push(sql`c.created_by = ${createdBy}`);
         if (parentId !== undefined) {

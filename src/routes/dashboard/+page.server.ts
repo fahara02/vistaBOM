@@ -970,31 +970,27 @@ export const actions: Actions = {
 				if (categoryCheck.length === 0) {
 					return fail(403, { message: 'Category not found or you do not have permission to delete it.' });
 				}
-				
-				// Soft delete the category with transaction
 				try {
 					// Begin a transaction for atomic operations
 					await sql.begin(async sql => {
-						// First, make sure the category exists and isn't already deleted
+						// First, make sure the category exists 
 						const existingCheck = await sql`
 							SELECT category_id 
 							FROM "Category" 
 							WHERE category_id = ${categoryId} 
-							AND is_deleted = false
 							FOR UPDATE
 						`;
 						
-						// If category not found or already deleted, throw error
+						// If category not found, throw error
 						if (existingCheck.length === 0) {
-							throw new Error('Category not found or already deleted');
+							throw new Error('Category not found');
 						}
 						
-						// Check for child categories within the transaction
+						// Check for child categories within the transaction - don't filter on is_deleted since we're doing hard delete
 						const childrenCount = await sql`
 							SELECT COUNT(*) AS child_count 
 							FROM "Category" 
-							WHERE parent_id = ${categoryId} 
-							AND is_deleted = false
+							WHERE parent_id = ${categoryId}
 						`;
 						
 						if (childrenCount[0]?.child_count > 0) {
@@ -1013,24 +1009,18 @@ export const actions: Actions = {
 							console.warn(`Category ${categoryId} is used by ${partsCheck[0].parts_count} parts.`);
 						}
 						
-						// Mark as deleted and record who deleted it and when
+						// HARD DELETE - permanently remove the category from database
 						await sql`
-							UPDATE "Category" 
-							SET 
-								is_deleted = true, 
-								updated_at = NOW(), 
-								updated_by = ${user.user_id},
-								deleted_at = NOW(),
-								deleted_by = ${user.user_id}
+							DELETE FROM "Category"
 							WHERE category_id = ${categoryId}
 						`;
 						
-						// NOTE: Custom fields are stored in the Category table's custom_fields JSONB column
-						// No need to update a separate table
+						// With hard delete, the custom_fields column in the Category table is automatically deleted
+						// No additional steps needed
 					});
 					
 					// Transaction completed successfully
-					console.log(`Category ${categoryId} successfully soft-deleted with all related data`);
+					console.log(`Category ${categoryId} successfully HARD DELETED - completely removed from database`);
 					
 					// Return success message that will be shown to the user
 					return { success: true, message: 'Category successfully deleted' };

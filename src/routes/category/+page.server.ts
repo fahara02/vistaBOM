@@ -18,14 +18,13 @@ const createCategorySchema = z.object({
 
 export const load: PageServerLoad = async (event) => {
   const user = event.locals.user;
-  // Use getAllCategories with explicit filtering to ensure consistency with dashboard
-  // This ensures deleted categories are properly filtered out
+  // Since we're using hard delete, we don't need to filter by is_deleted
+  // because deleted categories are completely removed from the database
   const getAllCategoriesOptions = {
-    excludeDeleted: true,  // This is critical - ensures we don't show deleted categories
     // We don't filter by isPublic here to allow admins to see all categories
   };
   
-  console.log('Loading categories with options:', getAllCategoriesOptions);
+  console.log('Loading all categories - no is_deleted filter needed (using hard delete)');
   const categories = await getAllCategories(getAllCategoriesOptions);
   console.log(`Loaded ${categories.length} categories`);
   
