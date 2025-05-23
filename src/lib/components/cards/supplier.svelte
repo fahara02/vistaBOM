@@ -20,25 +20,12 @@
         History,
         FileEdit
     } from 'lucide-svelte';
+	import type { Supplier } from '@/types';
     
     // Create event dispatcher for communicating with parent components
     const dispatch = createEventDispatcher();
     
-    // Define the interface consistent with the dashboard's supplier data structure
-    interface Supplier {
-        supplier_id: string;
-        supplier_name: string;
-        supplier_description?: string | null;
-        website_url?: string | null;
-        contact_info?: string | null;
-        logo_url?: string | null;
-        custom_fields?: Record<string, unknown> | null;
-        created_at: Date;
-        updated_at: Date;
-        created_by: string;
-        updated_by?: string | null;
-    }
-
+  
     export let supplier: Supplier;
     export let currentUserId: string;
     export let allowEdit: boolean = true;

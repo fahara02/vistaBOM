@@ -119,18 +119,21 @@ export interface ManufacturerPartFormData {
   is_recommended?: boolean;
 }
 
+
+
 export interface DashboardManufacturer {
   manufacturer_id: string;
   manufacturer_name: string;
-  manufacturer_description?: string | null;
-  website_url?: string | null;
-  contact_info?: string | null;
-  logo_url?: string | null;
-  custom_fields?: Record<string, unknown> | null;
+  manufacturer_description?: string | undefined;
+  website_url?: string | undefined;
+  logo_url?: string | undefined;
+  logoUrl?: string | undefined;
+  contact_info?: JsonValue | undefined;
+  custom_fields?: JsonValue | undefined;
   created_at: Date;
-  updated_at: Date; // Required Date type (not nullable)
+  updated_at: Date;
   created_by: string;
-  updated_by?: string | null;
+  updated_by?: string | undefined;
 }
 
 // Supplier part form data
@@ -158,15 +161,15 @@ export interface SupplierPartFormData {
 export interface DashboardSupplier {
   supplier_id: string;
   supplier_name: string;
-  supplier_description?: string | null;
-  website_url?: string | null;
-  contact_info?: string | null;
-  logo_url?: string | null;
-  custom_fields?: Record<string, unknown> | null;
+  supplier_description?: string | undefined;
+  website_url?: string | undefined;
+  logo_url?: string | undefined;
+  contact_info?: JsonValue | undefined;
+  custom_fields?: JsonValue | undefined;
   created_at: Date;
-  updated_at: Date; // Required Date type (not nullable)
+  updated_at: Date;
   created_by: string;
-  updated_by?: string | null;
+  updated_by?: string | undefined;
 }
 
 // Validation record form data
@@ -186,6 +189,7 @@ export interface ManufacturerFormData extends BaseFormData {
   website_url?: string | null;
   logo_url?: string | null;
   contact_info?: string | null; // Stringified JSON
+  custom_fields?: string | null; // Stringified JSON
   custom_fields_json?: string | null; // Additional field for form UI, not in DB schema
 }
 

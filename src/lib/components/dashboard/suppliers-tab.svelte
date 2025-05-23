@@ -4,21 +4,15 @@
     import { slide } from 'svelte/transition';
     import SupplierCard from '$lib/components/cards/supplier.svelte';
     import { SupplierForm } from '$lib/components/forms';
+    import GridView from '$lib/components/grid/GridView.svelte';
     
-    // Define an interface that matches the card component's requirements
-    interface SupplierData {
-        supplier_id: string;
-        supplier_name: string;
-        supplier_description?: string | null | undefined;
-        website_url?: string | null | undefined;
-        contact_info?: string | null | undefined;
-        logo_url?: string | null | undefined;
-        custom_fields?: Record<string, unknown> | null | undefined;
-        created_at: Date;
-        updated_at: Date;
-        created_by: string;
-        updated_by?: string | null | undefined;
-    }
+    // Import types from types and formTypes
+    import type { Supplier } from '$lib/types/types';
+    import type { DashboardSupplier } from '$lib/types/formTypes';
+    import type { GridEntity } from '$lib/types/grid';
+    
+    // Accept both Supplier and DashboardSupplier types
+    type SupplierData = Supplier | DashboardSupplier;
     
     // Event dispatcher
     const dispatch = createEventDispatcher();
@@ -35,6 +29,7 @@
     
     // Local state
     let selectedSupplier: SupplierData | null = null;
+    let viewMode: 'grid' | 'list' = 'grid'; // Default to grid view
    
     // Methods
     function toggleForm(): void {
@@ -78,25 +73,77 @@
         // Forward the edit event to the parent component with properly formatted data
         dispatch('editSupplier', { supplier: formattedSupplier });
     }
+    
+    // Handle edit event from GridView component
+    function handleGridSupplierEdit(event: CustomEvent<{ item: GridEntity }>) {
+        selectedSupplier = event.detail.item as Supplier;
+        editMode = true;
+        showForm = true;
+    }
 </script>
 
 <div class="tab-container">
     <h2>Your Suppliers</h2>
     
+    <!-- View mode toggle -->
+    <div class="view-mode-toggle">
+            <button 
+                class="view-toggle-btn" 
+                class:active={viewMode === 'grid'} 
+                on:click={() => viewMode = 'grid'}
+                aria-label="Grid view"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+            </button>
+            
+            <button 
+                class="view-toggle-btn"
+                class:active={viewMode === 'list'}
+                on:click={() => viewMode = 'list'}
+                aria-label="List view"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+            </button>
+    </div>
+    
     <!-- List of suppliers -->
     {#if suppliers && suppliers.length > 0}
-        <div class="user-items-grid">
-            {#each suppliers as supplier (supplier.supplier_id)}
-                <SupplierCard 
-                    {supplier} 
-                    {currentUserId}
-                    allowEdit={currentUserId === supplier.created_by} 
-                    allowDelete={currentUserId === supplier.created_by}
-                    on:edit={handleSupplierEdit}
-                    on:deleted={handleSupplierDeleted}
-                />
-            {/each}
-        </div>
+        {#if viewMode === 'grid'}
+            <!-- Compact grid view with inline expansion -->
+            <GridView 
+                items={suppliers}
+                entityType="supplier"
+                {currentUserId}
+                on:edit={handleGridSupplierEdit}
+                on:refresh={handleSupplierDeleted}
+            />
+        {:else}
+            <!-- Traditional card view -->
+            <div class="user-items-grid">
+                {#each suppliers as supplier (supplier.supplier_id)}
+                    <SupplierCard 
+                        {supplier} 
+                        {currentUserId}
+                        allowEdit={currentUserId === supplier.created_by} 
+                        allowDelete={currentUserId === supplier.created_by}
+                        on:edit={handleSupplierEdit}
+                        on:deleted={handleSupplierDeleted}
+                    />
+                {/each}
+            </div>
+        {/if}
     {:else}
         <p class="no-items">You haven't created any suppliers yet.</p>
     {/if}
@@ -140,6 +187,39 @@
         color: hsl(var(--foreground));
     }
     
+
+    
+    .view-mode-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+    
+    .view-toggle-btn {
+        background: transparent;
+        border: 1px solid hsl(var(--border));
+        border-radius: 4px;
+        padding: 0.5rem;
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .view-toggle-btn:hover {
+        border-color: hsl(var(--primary));
+        color: hsl(var(--primary));
+    }
+    
+    .view-toggle-btn.active {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+    }
+    
     .user-items-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -177,15 +257,15 @@
     }
     
     .secondary-btn {
-        background: hsl(var(--background));
+        background: transparent;
         color: hsl(var(--primary));
         border: 1px solid hsl(var(--primary));
         padding: 0.75rem 1.5rem;
         border-radius: 6px;
+        font-weight: 500;
         cursor: pointer;
-        transition: all 0.2s ease;
-        font-weight: 600;
         text-decoration: none;
+        transition: all 0.3s;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -193,7 +273,6 @@
     
     .secondary-btn:hover {
         background: hsl(var(--primary) / 0.1);
-        transform: translateY(-1px);
     }
     
     .form-container {

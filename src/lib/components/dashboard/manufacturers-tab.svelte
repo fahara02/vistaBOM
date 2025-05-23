@@ -1,24 +1,40 @@
 <!-- src/lib/components/dashboard/manufacturers-tab.svelte -->
 <script lang="ts">
     import { createEventDispatcher, onMount } from 'svelte';
-import { slide } from 'svelte/transition';
+    import { slide } from 'svelte/transition';
     import ManufacturerCard from '$lib/components/cards/manufacturer.svelte';
-    import { ManufacturerForm } from '$lib/components/forms';
+    import ManufacturerForm from '$lib/components/forms/ManufacturerForm.svelte';
+    import GridView from '$lib/components/grid/GridView.svelte';
+    import { superForm } from 'sveltekit-superforms/client';
+    import type { SuperForm, SuperValidated } from 'sveltekit-superforms';
+    import { z } from 'zod';
     
-    // Define an interface that matches the card component's requirements
-    interface ManufacturerData {
-        manufacturer_id: string;
-        manufacturer_name: string;
-        manufacturer_description?: string | null | undefined;
-        website_url?: string | null | undefined;
-        contact_info?: string | null | undefined;
-        logo_url?: string | null | undefined;
-        custom_fields?: Record<string, unknown> | null | undefined;
-        created_at: Date;
-        updated_at: Date;
-        created_by: string;
-        updated_by?: string | null | undefined;
-    }
+    // Import types from types and formTypes
+    import type { Manufacturer, JsonValue } from '$lib/types/types';
+    import type { DashboardManufacturer, ManufacturerFormData } from '$lib/types/formTypes';
+    import type { GridEntity } from '$lib/types/grid';
+    
+    // Define a type-safe schema for the manufacturer form
+    const manufacturerFormSchema = z.object({
+        manufacturer_id: z.string().optional().default(''),
+        manufacturer_name: z.string().min(1, { message: 'Manufacturer name is required' }),
+        manufacturer_description: z.string().nullable().optional(),
+        website_url: z.string().nullable().optional(),
+        logo_url: z.string().nullable().optional(),
+        contact_info: z.string().nullable().optional(),
+        custom_fields: z.string().nullable().optional(),
+        custom_fields_json: z.string().nullable().optional(),
+        created_by: z.string().optional(),
+        updated_by: z.string().optional(),
+        created_at: z.date().optional(),
+        updated_at: z.date().optional()
+    });
+    
+    // Create type from schema
+    type ManufacturerFormSchema = z.infer<typeof manufacturerFormSchema>;
+    
+    // Accept both Manufacturer and DashboardManufacturer types
+    type ManufacturerData = Manufacturer | DashboardManufacturer;
     
     // Event dispatcher
     const dispatch = createEventDispatcher();
@@ -29,18 +45,123 @@ import { slide } from 'svelte/transition';
     export let showForm: boolean = false;
     export let editMode: boolean = false;
     
-    // Form props - passed to ManufacturerForm component
-    export let manufacturerForm: any = {};
-    export let manufacturerErrors: Record<string, string | string[]> = {};
-    // These props are passed from the parent and used in the component's logic
-    // even if not directly referenced in the template
+    // Track manufacturers array changes for reactivity
+    let currentManufacturers: ManufacturerData[] = [];
+    $: if (manufacturers !== currentManufacturers) {
+        // Only update if the reference changed (reactivity trigger)
+        console.log('Manufacturers list reference changed, updating local state');
+        currentManufacturers = manufacturers;
+    }
 
+    // Form props - passed to ManufacturerForm component
+    export let manufacturerForm: Partial<ManufacturerFormSchema> = {
+        manufacturer_id: '',
+        manufacturer_name: '',
+        manufacturer_description: '',
+        website_url: '',
+        logo_url: '',
+        contact_info: '{}',
+        custom_fields: '{}',
+        custom_fields_json: '{}',
+        created_by: currentUserId,
+        updated_by: currentUserId
+    };
+    export let manufacturerErrors: Record<string, string | string[]> = {};
+
+    // Additional props for SuperForm integration
+    export let formId: string = 'manufacturer-form';
+    export let formAction: string = '?/manufacturer';
+    export let superFormData: SuperValidated<ManufacturerFormSchema> | undefined = undefined;
+    export let useInternalForm: boolean = false;
     
     // Local state
     let selectedManufacturer: ManufacturerData | null = null;
+    let viewMode: 'grid' | 'list' = 'grid'; // Default to grid view
+    let hiddenFormElement: HTMLFormElement;
+    
+    // Create a proper SuperForm instance only when conditions are met
+    let superFormInstance: ReturnType<typeof superForm<ManufacturerFormSchema>> | undefined;
+    
+    // Default values for internal form to avoid undefined errors
+    const defaultFormValues: ManufacturerFormSchema = {
+        manufacturer_id: '',
+        manufacturer_name: '',
+        manufacturer_description: '',
+        website_url: '',
+        logo_url: '',
+        contact_info: '{}',
+        custom_fields: '{}',
+        custom_fields_json: '{}',
+        created_by: '',  // Will be set correctly when currentUserId is available
+        updated_by: ''   // Will be set correctly when currentUserId is available
+    };
+    
+    // Prepare for SuperForm state tracking
+    let internalForm: ManufacturerFormSchema = defaultFormValues;
+    let internalErrors: Record<string, string[]> = {};
+    
+    // Local form data that will be used in the ManufacturerForm component
+    $: localFormData = editMode && manufacturerForm ? manufacturerForm : defaultFormValues;
+    
+    // Initialize the form
+    function initializeSuperForm() {
+        if (!useInternalForm) return;
+        
+        // Create a new blank form if no data is provided
+        const initialData = {
+            ...defaultFormValues,
+            created_by: currentUserId,
+            updated_by: currentUserId
+        };
+        
+        superFormInstance = superForm<ManufacturerFormSchema>(superFormData || initialData, {
+            id: formId,
+            dataType: 'json',
+            resetForm: true,
+            validationMethod: 'submit-only',
+            taintedMessage: null,
+            // We'll use the default form validation
+            // No custom validators needed
+            onResult: ({ result }) => {
+                console.log('Manufacturer form submission result:', result);
+                if (result.type === 'success') {
+                    // Reset form state
+                    showForm = false;
+                    editMode = false;
+                    selectedManufacturer = null;
+                    
+                    // Refresh data
+                    dispatch('refreshData');
+                }
+            }
+        });
+        
+        // Subscribe to the form values
+        const unsubscribeForm = superFormInstance.form.subscribe(value => {
+            internalForm = value;
+        });
+        
+        // Subscribe to the form errors
+        const unsubscribeErrors = superFormInstance.errors.subscribe(value => {
+            internalErrors = value;
+        });
+        
+        // Clean up subscriptions when component is destroyed
+        onMount(() => {
+            return () => {
+                unsubscribeForm && unsubscribeForm();
+                unsubscribeErrors && unsubscribeErrors();
+            };
+        });
+    }
    
     // Methods
     function toggleForm(): void {
+        showForm = !showForm;
+        if (!showForm) {
+            editMode = false;
+            selectedManufacturer = null;
+        }
         dispatch('toggleForm');
     }
     
@@ -49,6 +170,33 @@ import { slide } from 'svelte/transition';
         dispatch('refreshData');
     }
     
+    // Initialize on component mount - only one onMount call needed
+    onMount(() => {
+        if (useInternalForm) {
+            initializeSuperForm();
+        }
+    });
+    
+    // Re-initialize when dependencies change
+    $: if (useInternalForm && (superFormData || currentUserId)) {
+        initializeSuperForm();
+    }
+    
+    // Derived values from internal or external form
+    $: currentFormData = useInternalForm && superFormInstance 
+        ? internalForm 
+        : manufacturerForm;
+        
+    $: formErrors = useInternalForm && superFormInstance 
+        ? internalErrors 
+        : manufacturerErrors;
+
+    // Track when component is initialized
+    let formInitialized = false;
+    onMount(() => {
+        formInitialized = true;
+    });
+    
     // Handle edit event from manufacturer card
     function handleManufacturerEdit(event: CustomEvent<{ manufacturer: ManufacturerData }>): void {
         console.log('Received edit event in manufacturers-tab:', event);
@@ -56,52 +204,294 @@ import { slide } from 'svelte/transition';
         // Extract manufacturer data from the event
         const manufacturerData = event.detail.manufacturer;
         
-        // Format the manufacturer data for the form
-        const formattedManufacturer = {
-            ...manufacturerData,
-            // Ensure contact_info is a string for the form
-            contact_info: typeof manufacturerData.contact_info === 'object' 
-                ? JSON.stringify(manufacturerData.contact_info) 
-                : manufacturerData.contact_info || '{}',
-            // Ensure custom_fields is a string for the form
-            custom_fields: typeof manufacturerData.custom_fields === 'object'
-                ? JSON.stringify(manufacturerData.custom_fields)
-                : manufacturerData.custom_fields || '{}'
-        };
+        // Forward the edit event to the parent component with raw manufacturer data
+        dispatch('editManufacturer', { manufacturer: manufacturerData });
         
-        // Forward the edit event to the parent component with properly formatted data
-        dispatch('editManufacturer', { manufacturer: formattedManufacturer });
+        // Update UI state
+        editMode = true;
+        showForm = true;
     }
+
+    // Handle edit event from GridView component
+    function handleGridManufacturerEdit(event: CustomEvent<{ item: GridEntity }>) {
+        const manufacturer = event.detail.item as Manufacturer;
+        selectedManufacturer = manufacturer;
+        
+        // Forward to the parent component using the same format as card edit
+        // This ensures proper data flow within the dashboard
+        dispatch('editManufacturer', { manufacturer });
+        
+        // Simply update UI state to show edit form within dashboard
+        editMode = true;
+        showForm = true;
+    }
+    
+    // Handle manufacturer deleted from grid view - type-safe implementation
+    async function handleManufacturerDelete(event: CustomEvent<{ itemId: string }>) {
+        console.log('Delete request received for:', event.detail.itemId);
+        const manufacturerId = event.detail.itemId;
+        
+        try {
+            // Make a direct POST request to the delete endpoint
+            const response = await fetch(`/manufacturer/${manufacturerId}/edit?/delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                    'confirm': 'true'
+                }).toString()
+            });
+            
+            console.log('Delete response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Server error:', errorText);
+                throw new Error(`Server returned ${response.status}: ${errorText}`);
+            }
+            
+            // Successfully deleted - update the manufacturers list
+            manufacturers = manufacturers.filter(m => m.manufacturer_id !== manufacturerId);
+            
+            // Close any open forms if we deleted the current manufacturer
+            if (selectedManufacturer && selectedManufacturer.manufacturer_id === manufacturerId) {
+                showForm = false;
+                editMode = false;
+                selectedManufacturer = null;
+            }
+            
+            // Notify parent components
+            dispatch('manufacturerDeleted', { manufacturerId });
+        } catch (error) {
+            console.error('Error deleting manufacturer:', error);
+        }
+    }
+    
+    // Store form values from ManufacturerForm component
+    let capturedFormValues: Partial<ManufacturerFormSchema> = {};
+
+    // Handle form submission from ManufacturerForm
+    function handleFormSubmit(event: CustomEvent<{ success: boolean; formData: any }>) {
+        console.log('Form submitted:', event.detail);
+        
+        if (event.detail.success) {
+            const newManufacturer = event.detail.formData;
+            
+            // If we're in edit mode, update the existing manufacturer in the list
+            if (editMode && selectedManufacturer) {
+                // Store a non-null reference to the manufacturer to satisfy TypeScript
+                const currentManufacturer = selectedManufacturer;
+                
+                const index = manufacturers.findIndex(m => 
+                    m.manufacturer_id === currentManufacturer.manufacturer_id
+                );
+                
+                if (index !== -1) {
+                    // Update existing manufacturer
+                    manufacturers[index] = { ...manufacturers[index], ...newManufacturer };
+                    // Force reactivity with array reassignment
+                    manufacturers = [...manufacturers];
+                    console.log('Updated manufacturer in list:', manufacturers[index]);
+                }
+            } else {
+                // This is a new manufacturer - add to the beginning of the list
+                // Generate an ID if one doesn't exist (should be generated server-side)
+                if (!newManufacturer.manufacturer_id) {
+                    newManufacturer.manufacturer_id = crypto.randomUUID();
+                }
+                
+                // Add to the beginning of the list to show it first
+                manufacturers = [newManufacturer, ...manufacturers];
+                console.log('Added new manufacturer to list:', newManufacturer);
+            }
+            
+            // Reset form state after successful submission
+            showForm = false;
+            editMode = false;
+            selectedManufacturer = null;
+            capturedFormValues = {};
+            
+            // Notify parent
+            dispatch('refresh');
+        }
+    }
+
+    // Function to submit the form programmatically
+    function submitForm(): void {
+        // Validate data before submission
+        if (!capturedFormValues.manufacturer_name || capturedFormValues.manufacturer_name.trim() === '') {
+            console.error('Manufacturer name is required');
+            if (useInternalForm && superFormInstance && superFormInstance.errors) {
+                superFormInstance.errors.update(errors => {
+                    return { ...errors, manufacturer_name: ['Manufacturer name is required'] };
+                });
+            }
+            return; // Don't proceed if name is empty
+        }
+
+        if (useInternalForm && superFormInstance && hiddenFormElement) {
+            // Using internal SuperForm - update the form data with captured values
+            superFormInstance.form.update(currentForm => {
+                // Create a complete form object with all required fields
+                return {
+                    // Required fields
+                    manufacturer_id: capturedFormValues.manufacturer_id || '',
+                    manufacturer_name: capturedFormValues.manufacturer_name || '', 
+                    // Optional fields with proper null handling
+                    manufacturer_description: capturedFormValues.manufacturer_description || null,
+                    website_url: capturedFormValues.website_url || null,
+                    logo_url: capturedFormValues.logo_url || null,
+                    // Complex fields as JSON strings
+                    contact_info: typeof capturedFormValues.contact_info === 'object'
+                        ? JSON.stringify(capturedFormValues.contact_info || {})
+                        : capturedFormValues.contact_info || '{}',
+                    custom_fields: typeof capturedFormValues.custom_fields === 'object'
+                        ? JSON.stringify(capturedFormValues.custom_fields || {})
+                        : capturedFormValues.custom_fields || '{}',
+                    // Include any custom_fields_json if available (for backward compatibility)
+                    custom_fields_json: capturedFormValues.custom_fields_json || '{}',
+                    // User tracking fields
+                    created_by: capturedFormValues.created_by || currentUserId,
+                    updated_by: currentUserId
+                };
+            });
+            
+            // Log the data being submitted
+            console.log('Submitting form data through internal SuperForm instance');
+            
+            // Submit the form using SuperForm's enhance functionality
+            const submitButton = hiddenFormElement.querySelector('#manufacturer-submit') as HTMLButtonElement;
+            if (submitButton) {
+                submitButton.click();
+            } else if (hiddenFormElement.requestSubmit) {
+                hiddenFormElement.requestSubmit();
+            } else {
+                // Fallback for older browsers
+                const anySubmitButton = hiddenFormElement.querySelector('button[type="submit"]');
+                if (anySubmitButton) {
+                    (anySubmitButton as HTMLButtonElement).click();
+                }
+            }
+        } else {
+            // Using parent form - dispatch event to parent component
+            console.log('Dispatching submit event to parent with data:', capturedFormValues);
+            dispatch('submit', { formData: capturedFormValues });
+        }
+    }
+
+// Function to cancel form editing
+function cancelForm(): void {
+    showForm = false;
+    editMode = false;
+    selectedManufacturer = null;
+    dispatch('cancelEdit');
+}
+    
+
 </script>
 
 <div class="tab-container">
     <h2>Your Manufacturers</h2>
     
+    <!-- View mode toggle -->
+    <div class="view-mode-toggle">
+        <button 
+            class="view-toggle-btn" 
+            class:active={viewMode === 'grid'} 
+            on:click={() => viewMode = 'grid'}
+            aria-label="Grid view"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+        </button>
+        
+        <button 
+            class="view-toggle-btn"
+            class:active={viewMode === 'list'}
+            on:click={() => viewMode = 'list'}
+            aria-label="List view"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+        </button>
+    </div>
+
     <!-- List of manufacturers -->
     {#if manufacturers && manufacturers.length > 0}
-        <div class="user-items-grid">
-            {#each manufacturers as manufacturer (manufacturer.manufacturer_id)}
-                <ManufacturerCard 
-                    {manufacturer} 
-                    {currentUserId}
-                    allowEdit={currentUserId === manufacturer.created_by} 
-                    allowDelete={currentUserId === manufacturer.created_by}
-                    on:edit={handleManufacturerEdit}
-                    on:deleted={handleManufacturerDeleted}
-                />
-            {/each}
-        </div>
+        {#if viewMode === 'grid'}
+            <!-- Compact grid view with inline expansion -->
+            <GridView 
+                entityType="manufacturer" 
+                items={currentManufacturers}
+                currentUserId={currentUserId}
+                on:edit={handleGridManufacturerEdit}
+                on:delete={handleManufacturerDelete}
+                on:refresh={handleManufacturerDeleted}
+            />
+        {:else}
+            <!-- Traditional card view -->
+            <div class="user-items-grid">
+                {#each currentManufacturers as manufacturer (manufacturer.manufacturer_id)}
+                    <ManufacturerCard 
+                        {manufacturer} 
+                        {currentUserId}
+                        allowEdit={currentUserId === manufacturer.created_by} 
+                        allowDelete={currentUserId === manufacturer.created_by}
+                        on:edit={handleManufacturerEdit} 
+                        on:deleted={handleManufacturerDeleted}
+                    />
+                {/each}
+            </div>
+        {/if}
     {:else}
         <p class="no-items">You haven't created any manufacturers yet.</p>
     {/if}
     
-    <!-- Toggle form button -->
-    <div class="action-buttons">
-        <button type="button" class="primary-btn" on:click={toggleForm}>
-            {showForm ? 'Cancel' : 'Add New Manufacturer'}
-        </button>
-        <a href="/manufacturer" class="secondary-btn">View All Manufacturers</a>
-    </div>
+    <!-- Toggle form button - only show when form is not visible -->
+    {#if !showForm}
+        <div class="action-buttons">
+            <button type="button" class="primary-btn" on:click={() => {
+                // Reset form state completely when adding new manufacturer
+                editMode = false;
+                selectedManufacturer = null;
+                
+                // Force reset form data to empty values by setting manufacturerForm to default values
+                const emptyForm = {
+                    manufacturer_id: '',
+                    manufacturer_name: '',
+                    manufacturer_description: '',
+                    website_url: '',
+                    logo_url: '',
+                    contact_info: '{}',
+                    custom_fields: '{}',
+                    custom_fields_json: '{}',
+                    created_by: currentUserId,
+                    updated_by: currentUserId
+                };
+                // Update the exported prop directly
+                manufacturerForm = emptyForm;
+                // Clear any captured form values
+                capturedFormValues = {};
+                
+                // Show the form
+                showForm = true;
+            }}>
+                Add New Manufacturer
+            </button>
+            <a href="/manufacturer" class="secondary-btn">View All Manufacturers</a>
+        </div>
+    {/if}
     
     <!-- Manufacturer form -->
     {#if showForm}
@@ -109,19 +499,82 @@ import { slide } from 'svelte/transition';
             <h2 class="form-title">{editMode ? 'Edit Manufacturer' : 'Create New Manufacturer'}</h2>
             
             <ManufacturerForm 
-                data={manufacturerForm}
-                errors={manufacturerErrors}
+                data={currentFormData}
+                errors={formErrors}
                 submitText={editMode ? 'Save Changes' : 'Create Manufacturer'}
                 isEditMode={editMode}
-                hideButtons={false}
+                hideButtons={useInternalForm}
                 currentUserId={currentUserId}
-                on:submit={(event: CustomEvent) => dispatch('submit', event.detail)}
-                on:cancel={() => dispatch('cancelEdit')}
-                on:formUpdate={(event: CustomEvent) => dispatch('formUpdate', event.detail)}
+                on:submit={handleFormSubmit}
+                on:cancel={cancelForm}
+                on:formUpdate={(event: CustomEvent) => {
+                    // Capture the form data from the ManufacturerForm component
+                    if (event.detail && event.detail.data) {
+                        // Store the captured form values
+                        capturedFormValues = {
+                            ...capturedFormValues,
+                            ...event.detail.data
+                        };
+                        
+                        console.log('Captured form values:', capturedFormValues);
+                        
+                        // Also update the SuperForm if it exists
+                        if (useInternalForm && superFormInstance) {
+                            superFormInstance.form.update(($form) => {
+                                return {...$form, ...event.detail.data};
+                            });
+                        }
+                    }
+                    
+                    // Also dispatch to parent
+                    dispatch('formUpdate', event.detail);
+                }}
             />
+            
+            <!-- Add custom form buttons when using internal form -->
+            {#if useInternalForm}
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" on:click={cancelForm}>
+                        Cancel
+                    </button>
+                    
+                    <button type="button" class="btn-primary" on:click={submitForm}>
+                        {editMode ? 'Save Changes' : 'Create Manufacturer'}
+                    </button>
+                </div>
+            {/if}
         </div>
     {/if}
 </div>
+
+<!-- Hidden form for SuperForm submissions with proper validation -->
+{#if useInternalForm && superFormInstance}
+    <div class="hidden-form-container" style="display: none;" aria-hidden="true">
+        <form method="POST" action={formAction} use:superFormInstance.enhance bind:this={hiddenFormElement} id={formId}>
+            <!-- Always include required fields to ensure they're present -->
+            <input type="hidden" name="manufacturer_id" value={capturedFormValues.manufacturer_id || ''} />
+            <input type="hidden" name="manufacturer_name" value={capturedFormValues.manufacturer_name || ''} />
+            <input type="hidden" name="manufacturer_description" value={capturedFormValues.manufacturer_description || ''} />
+            <input type="hidden" name="website_url" value={capturedFormValues.website_url || ''} />
+            <input type="hidden" name="logo_url" value={capturedFormValues.logo_url || ''} />
+            
+            <!-- Complex fields with special handling -->
+            <input type="hidden" name="contact_info" value={typeof capturedFormValues.contact_info === 'object' 
+                ? JSON.stringify(capturedFormValues.contact_info || {}) 
+                : capturedFormValues.contact_info || '{}'} />
+            <input type="hidden" name="custom_fields" value={typeof capturedFormValues.custom_fields === 'object' 
+                ? JSON.stringify(capturedFormValues.custom_fields || {}) 
+                : capturedFormValues.custom_fields || '{}'} />
+            
+            <!-- User tracking fields always include these -->
+            <input type="hidden" name="created_by" value={currentUserId} />
+            <input type="hidden" name="updated_by" value={currentUserId} />
+            
+            <!-- Hidden submit button for form submission -->
+            <button type="submit" id="manufacturer-hidden-submit" style="display: none;">Submit</button>
+        </form>
+    </div>
+{/if}
 
 <style>
     .tab-container {
@@ -170,12 +623,82 @@ import { slide } from 'svelte/transition';
         background: hsl(var(--primary-dark));
     }
     
+    .view-mode-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        margin-bottom: 1rem;
+        gap: 0.5rem;
+    }
+    
+    .view-toggle-btn {
+        background: transparent;
+        border: 1px solid hsl(var(--border));
+        border-radius: 4px;
+        padding: 0.5rem;
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .view-toggle-btn:hover {
+        border-color: hsl(var(--primary));
+        color: hsl(var(--primary));
+    }
+    
+    .view-toggle-btn.active {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+    }
+    
     .secondary-btn {
         background: hsl(var(--background));
         color: hsl(var(--primary));
         border: 1px solid hsl(var(--primary));
         padding: 0.75rem 1.5rem;
         border-radius: 6px;
+    }
+    
+    /* Form action buttons styling */
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px; /* Following the 4px/8px grid rule */
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid hsl(var(--border));
+    }
+    
+    .btn-primary {
+        padding: 8px 16px;
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    
+    .btn-secondary {
+        padding: 8px 16px;
+        background: transparent;
+        color: hsl(var(--primary));
+        border: 1px solid hsl(var(--primary));
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    
+    .btn-primary:hover {
+        background: hsl(var(--primary-dark, var(--primary) / 0.8));
+    }
+    
+    .btn-secondary:hover {
+        background: hsl(var(--primary) / 0.1);
         cursor: pointer;
         transition: all 0.2s ease;
         font-weight: 600;

@@ -230,10 +230,10 @@
         
         if (field === 'custom_fields') {
             customFieldsString = value;
-            // Don't validate immediately on each keystroke
+            formData.custom_fields = value; // Update formData directly to capture changes
         } else if (field === 'contact_info') {
             contactInfoString = value;
-            // Don't validate immediately on each keystroke
+            formData.contact_info = value; // Update formData directly to capture changes
         }
         
         // Notify parent of form changes

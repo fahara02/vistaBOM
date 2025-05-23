@@ -86,11 +86,58 @@
     --nav-hover: 214 32% 80%;
     --nav-hover-foreground: 215 25% 10%;
     
-    /* Entity-specific Colors */
-    --parts-color: 224 76% 48%;      /* Blue */
-    --manufacturer-color: 152 76% 40%; /* Green */
-    --supplier-color: 192 79% 31%;     /* Teal */
-    --category-color: 265 83% 45%;     /* Purple */
+    /* Entity-specific Colors - With multiple levels for Light Mode */
+    /* Parts - Blue */
+    --parts-color: 224 76% 48%;
+    --parts-color-50: 224 76% 95%;
+    --parts-color-100: 224 76% 90%;
+    --parts-color-200: 224 76% 80%;
+    --parts-color-300: 224 76% 70%;
+    --parts-color-400: 224 76% 60%;
+    --parts-color-500: 224 76% 48%;  /* Base */
+    --parts-color-600: 224 76% 40%;
+    --parts-color-700: 224 76% 30%;
+    --parts-color-800: 224 76% 20%;
+    --parts-color-900: 224 76% 15%;
+    
+    /* Manufacturer - Green */
+    --manufacturer-color: 152 76% 40%;
+    --manufacturer-color-50: 152 76% 95%;
+    --manufacturer-color-100: 152 76% 90%;
+    --manufacturer-color-200: 152 76% 80%;
+    --manufacturer-color-300: 152 76% 70%;
+    --manufacturer-color-400: 152 76% 60%;
+    --manufacturer-color-500: 152 76% 40%;  /* Base */
+    --manufacturer-color-600: 152 76% 35%;
+    --manufacturer-color-700: 152 76% 30%;
+    --manufacturer-color-800: 152 76% 20%;
+    --manufacturer-color-900: 152 76% 15%;
+    
+    /* Supplier - Teal */
+    --supplier-color: 192 79% 31%;
+    --supplier-color-50: 192 79% 95%;
+    --supplier-color-100: 192 79% 90%;
+    --supplier-color-200: 192 79% 80%;
+    --supplier-color-300: 192 79% 70%;
+    --supplier-color-400: 192 79% 60%;
+    --supplier-color-500: 192 79% 31%;  /* Base */
+    --supplier-color-600: 192 79% 25%;
+    --supplier-color-700: 192 79% 20%;
+    --supplier-color-800: 192 79% 15%;
+    --supplier-color-900: 192 79% 10%;
+    
+    /* Category - Purple */
+    --category-color: 265 83% 45%;
+    --category-color-50: 265 83% 95%;
+    --category-color-100: 265 83% 90%;
+    --category-color-200: 265 83% 80%;
+    --category-color-300: 265 83% 70%;
+    --category-color-400: 265 83% 60%;
+    --category-color-500: 265 83% 45%;  /* Base */
+    --category-color-600: 265 83% 40%;
+    --category-color-700: 265 83% 30%;
+    --category-color-800: 265 83% 20%;
+    --category-color-900: 265 83% 15%;
   }
  
   .dark {
@@ -172,11 +219,58 @@
     --nav-hover: 217 33% 25%;
     --nav-hover-foreground: 210 40% 98%;
     
-    /* Entity-specific Colors */
-    --parts-color: 224 76% 65%;      /* Blue */
-    --manufacturer-color: 152 76% 55%; /* Green */
-    --supplier-color: 192 79% 50%;     /* Teal */
-    --category-color: 265 83% 65%;     /* Purple */
+    /* Entity-specific Colors - With multiple levels for Dark Mode */
+    /* Parts - Blue */
+    --parts-color: 224 76% 65%;
+    --parts-color-50: 224 76% 20%;
+    --parts-color-100: 224 76% 25%;
+    --parts-color-200: 224 76% 30%;
+    --parts-color-300: 224 76% 40%;
+    --parts-color-400: 224 76% 50%;
+    --parts-color-500: 224 76% 65%;  /* Base */
+    --parts-color-600: 224 76% 70%;
+    --parts-color-700: 224 76% 80%;
+    --parts-color-800: 224 76% 90%;
+    --parts-color-900: 224 76% 95%;
+    
+    /* Manufacturer - Green */
+    --manufacturer-color: 152 76% 60%;
+    --manufacturer-color-50: 152 76% 20%;
+    --manufacturer-color-100: 152 76% 25%;
+    --manufacturer-color-200: 152 76% 30%;
+    --manufacturer-color-300: 152 76% 40%;
+    --manufacturer-color-400: 152 76% 50%;
+    --manufacturer-color-500: 152 76% 60%;  /* Base */
+    --manufacturer-color-600: 152 76% 70%;
+    --manufacturer-color-700: 152 76% 80%;
+    --manufacturer-color-800: 152 76% 90%;
+    --manufacturer-color-900: 152 76% 95%;
+    
+    /* Supplier - Teal */
+    --supplier-color: 192 79% 60%;
+    --supplier-color-50: 192 79% 20%;
+    --supplier-color-100: 192 79% 25%;
+    --supplier-color-200: 192 79% 30%;
+    --supplier-color-300: 192 79% 40%;
+    --supplier-color-400: 192 79% 50%;
+    --supplier-color-500: 192 79% 60%;  /* Base */
+    --supplier-color-600: 192 79% 70%;
+    --supplier-color-700: 192 79% 80%;
+    --supplier-color-800: 192 79% 90%;
+    --supplier-color-900: 192 79% 95%;
+    
+    /* Category - Purple */
+    --category-color: 265 83% 65%;
+    --category-color-50: 265 83% 20%;
+    --category-color-100: 265 83% 25%;
+    --category-color-200: 265 83% 30%;
+    --category-color-300: 265 83% 40%;
+    --category-color-400: 265 83% 50%;
+    --category-color-500: 265 83% 65%;  /* Base */
+    --category-color-600: 265 83% 70%;
+    --category-color-700: 265 83% 80%;
+    --category-color-800: 265 83% 90%;
+    --category-color-900: 265 83% 95%;
   }
 }
  
@@ -184,9 +278,56 @@
   * {
     border-color: hsl(var(--border));
   }
+  /* Typography */
+  :root {
+    /* Font family definitions */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Courier New', monospace;
+    --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    
+    /* Font size scale */
+    --text-xs: 0.75rem;    /* 12px */
+    --text-sm: 0.875rem;   /* 14px */
+    --text-base: 1rem;     /* 16px */
+    --text-lg: 1.125rem;   /* 18px */
+    --text-xl: 1.25rem;    /* 20px */
+    --text-2xl: 1.5rem;    /* 24px */
+    --text-3xl: 1.875rem;  /* 30px */
+    
+    /* Font weights */
+    --font-light: 300;
+    --font-normal: 400;
+    --font-medium: 500;
+    --font-semibold: 600;
+    --font-bold: 700;
+    
+    /* Line heights */
+    --leading-tight: 1.25;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.75;
+    
+    /* Letter spacing */
+    --tracking-tight: -0.025em;
+    --tracking-normal: 0em;
+    --tracking-wide: 0.025em;
+  }
+  
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: var(--font-semibold);
+    line-height: var(--leading-tight);
+  }
+  
+  code, pre {
+    font-family: var(--font-mono);
   }
   
   /* Fix for command/popover components */

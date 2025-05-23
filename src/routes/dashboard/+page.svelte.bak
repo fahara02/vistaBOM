@@ -418,31 +418,24 @@
 			// Store current tab
 			const currentTab = activeTab;
 			
-			// Log initial counts for debugging
-			console.log('Before refresh - Manufacturers:', data.userManufacturers?.length || 0);
+			// Use SvelteKit's invalidate to refresh the data rather than direct fetch
+			// This ensures the data is loaded through the proper +page.server.ts load function
 			
-			// Force a more aggressive cache invalidation
+			// Add a small delay to prevent UI jank during invalidation
 			await Promise.all([
 				invalidate('data:dashboard'),
-				invalidateAll(), // More aggressive invalidation to ensure all data is refreshed
-				new Promise(resolve => setTimeout(resolve, 300)) // Slightly longer delay
+				new Promise(resolve => setTimeout(resolve, 200))
 			]);
 			
-			// Log data state after invalidation
-			console.log('After invalidation - Manufacturers:', data.userManufacturers?.length || 0);
-			
-			// Force a complete refresh by creating entirely new arrays
-			categories = [...(data.categories || [])];
-			allCategories = [...(data.categories || [])];
+			// The data is now updated automatically by SvelteKit's reactivity
+			// Update local variables from the refreshed data object
+			categories = data.categories || [];
+			allCategories = data.categories || []; // Keep the alias updated
 			transformedCategories = transformCategoryData(data.userCategories || []);
-			userParts = [...(data.userParts || [])];
-			
-			// Create a completely new array for manufacturers to ensure reactivity
-			const freshManufacturers = transformManufacturerData(data.userManufacturers || []);
-			userManufacturers = [...freshManufacturers]; // Explicit new array reference
+			userParts = data.userParts || [];
+			// Apply transformation to manufacturer data to maintain type consistency
+			userManufacturers = transformManufacturerData(data.userManufacturers || []);
 			userSuppliers = transformSupplierData(data.userSuppliers || []);
-			
-			console.log('Updated manufacturers count:', userManufacturers.length);
 			
 			// Restore tab state from localStorage or use current tab as fallback
 			if (typeof window !== 'undefined') {
@@ -563,31 +556,36 @@
 	}
 
 	// Function to handle manufacturer edit
-	function editManufacturer(event: CustomEvent<any>) {
-		// Get manufacturer data from event - handle different event formats
-		const manufacturer = event.detail.manufacturer || event.detail.item || event.detail;
-		console.log('Editing manufacturer - raw data:', manufacturer);
+	function editManufacturer(manufacturer: DashboardManufacturer) {
+		console.log('Editing manufacturer:', manufacturer);
 		
-		// Store the original contact_info and custom_fields as they are
-		// This prevents double stringification which causes issues with input
-		const contact_info = manufacturer.contact_info || '{}';
-		const custom_fields = manufacturer.custom_fields || '{}';
+		// Set edit mode
+		editManufacturerMode = true;
+		currentManufacturerId = manufacturer.manufacturer_id;
+		showManufacturerForm = true;
 		
+		// Make sure we have all required fields, starting with current form structure
+		const currentForm = { ...$manufacturerForm };
+		
+		// Create a properly formatted form data object with all required fields
+		// Map from dashboard data format to form format
 		$manufacturerForm = {
-			manufacturer_id: manufacturer.manufacturer_id || '',
-			manufacturer_name: manufacturer.manufacturer_name || '',
-			manufacturer_description: manufacturer.manufacturer_description || null,
-			website_url: manufacturer.website_url || null,
-			logo_url: manufacturer.logo_url || null,
-			
-			// Only stringify if not already a string, avoid double-stringification
-			contact_info: typeof contact_info === 'string' ? contact_info : JSON.stringify(contact_info),
-			custom_fields: typeof custom_fields === 'string' ? custom_fields : JSON.stringify(custom_fields),
-			
-			created_by: manufacturer.created_by || user.user_id,
-			updated_by: user.user_id,
-			created_at: manufacturer.created_at ? new Date(manufacturer.created_at) : new Date(),
-			updated_at: new Date()
+			...currentForm,
+			manufacturer_id: manufacturer.manufacturer_id,
+			manufacturer_name: manufacturer.manufacturer_name,
+			manufacturer_description: manufacturer.manufacturer_description || '',
+			website_url: manufacturer.website_url || '',
+			// Correctly handle contact_info based on its type
+			contact_info: typeof manufacturer.contact_info === 'string'
+				? manufacturer.contact_info
+				: manufacturer.contact_info
+					? JSON.stringify(manufacturer.contact_info)
+					: '',
+			logo_url: manufacturer.logo_url || '',
+			// Ensure custom_fields is properly formatted
+			custom_fields: typeof manufacturer.custom_fields === 'string'
+				? JSON.parse(manufacturer.custom_fields || '{}')
+				: manufacturer.custom_fields || {}
 		};
 		
 		console.log('Form data set to:', $manufacturerForm);
@@ -871,13 +869,6 @@
 				<!-- Hidden manufacturer form with SuperForm's enhance function -->
 				<div class="hidden-form-container" style="display: none;" aria-hidden="true">
 					<form method="POST" action="?/manufacturer" use:manufacturerEnhance id="manufacturer-hidden-form">
-						<!-- Log form submission for debugging -->
-						{#if $manufacturerForm}
-							{@const formDebug = JSON.stringify($manufacturerForm)}
-							<!-- This will be logged in the DOM for debugging but not displayed -->
-							<div style="display: none;">{formDebug}</div>
-						{/if}
-						
 						<!-- Standard fields -->
 						<input type="hidden" name="manufacturer_id" value={$manufacturerForm.manufacturer_id || ''} />
 						<input type="hidden" name="manufacturer_name" value={$manufacturerForm.manufacturer_name || ''} />
@@ -896,91 +887,251 @@
 						<!-- User tracking fields -->
 						<input type="hidden" name="created_by" value={$manufacturerForm.created_by || user.user_id} />
 						<input type="hidden" name="updated_by" value={user.user_id} />
-						<button type="submit" id="manufacturer-submit-button" style="display: none;">Submit</button>
+						<button type="submit" id="manufacturer-submit-button">Submit</button>
 					</form>
 				</div>
 				
-				<!-- Use the original manufacturers-tab component implementation -->
-				<ManufacturersTab
-					manufacturers={[...userManufacturers]} 
+				<!-- Use the new internal form handling for manufacturers -->
+				<ManufacturersTab 
+					manufacturers={userManufacturers} 
 					currentUserId={user.user_id}
+					manufacturerForm={{
+                        ...$manufacturerForm,
+                        // Ensure contact_info is properly formatted for the component
+                        contact_info: typeof $manufacturerForm.contact_info === 'string' 
+                            ? $manufacturerForm.contact_info 
+                            : JSON.stringify($manufacturerForm.contact_info || {}),
+                        // Ensure custom_fields is properly formatted for the component
+                        custom_fields: typeof $manufacturerForm.custom_fields === 'string' 
+                            ? $manufacturerForm.custom_fields 
+                            : JSON.stringify($manufacturerForm.custom_fields || {})
+                    }}
+					manufacturerErrors={$manufacturerErrors || {}}
 					showForm={showManufacturerForm}
 					editMode={editManufacturerMode}
-					manufacturerForm={{
-						// Required fields with default empty values
-						manufacturer_id: $manufacturerForm.manufacturer_id || '',
-						manufacturer_name: $manufacturerForm.manufacturer_name || '',
+					formId="manufacturer-hidden-form"
+					formAction="?/manufacturer"
+					superFormData={undefined}
+					useInternalForm={true}
+					on:submit={(event) => {
+						console.log('Manufacturer form submitted:', event.detail);
 						
-						// Optional fields with null fallbacks
-						manufacturer_description: $manufacturerForm.manufacturer_description || null,
-						website_url: $manufacturerForm.website_url || null,
-						logo_url: $manufacturerForm.logo_url || null,
+						// Update the form data with the submitted values
+						const formData = event.detail.formData;
+						console.log('Received form data from component:', formData);
 						
-						// JSON fields - ensure they're strings per ManufacturerFormData interface
-						contact_info: typeof $manufacturerForm.contact_info === 'string' 
-							? $manufacturerForm.contact_info 
-							: JSON.stringify($manufacturerForm.contact_info || {}),
-						custom_fields: typeof $manufacturerForm.custom_fields === 'string' 
-							? $manufacturerForm.custom_fields 
-							: JSON.stringify($manufacturerForm.custom_fields || {}),
-						custom_fields_json: typeof $manufacturerForm.custom_fields === 'string'
-							? $manufacturerForm.custom_fields
-							: JSON.stringify($manufacturerForm.custom_fields || {}),
-						
-						// Include user and timestamp fields
-						created_by: $manufacturerForm.created_by || user.user_id,
-						updated_by: user.user_id
-						// Note: created_at and updated_at are optional in the interface
-						// so we don't need to pass them here
-					} as const}
-					on:refreshData={refreshData}
-					on:toggleForm={() => {
-						showManufacturerForm = !showManufacturerForm;
-						if (!showManufacturerForm) {
-							editManufacturerMode = false;
-							cancelManufacturerEdit();
+						// Ensure manufacturer_id is set correctly
+						if (!editManufacturerMode || !formData.manufacturer_id) {
+							// For new manufacturers, ensure ID is empty to generate a new one on the server
+							formData.manufacturer_id = '';
 						}
-					}}
-					on:edit={(event) => {
-						console.log('Edit manufacturer event received:', event.detail);
-						// Set edit mode and show form
-						editManufacturerMode = true;
-						showManufacturerForm = true;
 						
-						// Use the existing editManufacturer function
-						editManufacturer(event);
-					}}
-					on:editManufacturer={(event) => {
-						console.log('Edit manufacturer event received (editManufacturer):', event.detail);
-						// Set edit mode and show form
-						editManufacturerMode = true;
-						showManufacturerForm = true;
-						
-						// Use the existing editManufacturer function
-						editManufacturer(event);
-					}}
-					on:formUpdate={(event) => {
-						// Update the store with the form data from the component
-						console.log('Form update from ManufacturersTab:', event.detail.data);
+						// Update the form with the submitted values
 						$manufacturerForm = {
-							...$manufacturerForm,
-							...event.detail.data
+							...formData,
+							// Ensure required fields are set
+							manufacturer_name: formData.manufacturer_name || '',
+							// Handle custom_fields properly based on its type
+							custom_fields: typeof formData.custom_fields === 'string' 
+								? formData.custom_fields 
+								: (formData.custom_fields ? JSON.stringify(formData.custom_fields) : '{}'),
+							// Ensure user tracking fields are set
+							created_by: editManufacturerMode ? $manufacturerForm.created_by : user.user_id,
+							updated_by: user.user_id
 						};
-					}}
-					on:submit={() => {
-						// Submit the form using the hidden form
-						console.log('Submitting manufacturer form with data:', $manufacturerForm);
-						const submitButton = document.getElementById('manufacturer-submit-button') as HTMLButtonElement;
-						if (submitButton) {
-							submitButton.click();
+						
+						// Validate that manufacturer_name is not empty
+						if (!$manufacturerForm.manufacturer_name || $manufacturerForm.manufacturer_name.trim() === '') {
+							console.error('Manufacturer name is required');
+							return; // Don't proceed with submission if name is empty
 						}
-					}}
-					on:delete={(event) => {
-						// Handle manufacturer deletion
-						console.log('Manufacturer deleted:', event.detail);
-						refreshData();
-					}}
-				/>
+						
+						// Use the hidden form with SuperForm's enhance function
+						const hiddenForm = document.getElementById('manufacturer-hidden-form') as HTMLFormElement;
+						if (hiddenForm) {
+							// Update hidden form fields with current values
+							Object.entries($manufacturerForm).forEach(([key, value]) => {
+								const input = hiddenForm.querySelector(`[name="${key}"]`) as HTMLInputElement;
+								if (input) {
+									// Special handling for custom_fields and contact_info to ensure they remain as JSON strings
+									if (key === 'custom_fields' || key === 'contact_info') {
+										// If already a string, validate it's proper JSON
+										if (typeof value === 'string') {
+											try {
+												// Validate it's proper JSON
+												JSON.parse(value);
+												input.value = value;
+											} catch (e) {
+												// If not valid JSON, use empty object
+												console.error(`Invalid ${key} JSON:`, e);
+												input.value = '{}';
+											}
+										} else if (typeof value === 'object' && value !== null) {
+											// If it's an object, stringify it
+											input.value = JSON.stringify(value);
+										} else {
+											// Default to empty object if null/undefined
+											input.value = '{}';
+										}
+									} else if (typeof value === 'object' && value !== null) {
+										// For other objects, stringify them
+										input.value = JSON.stringify(value);
+									} else {
+										// For primitive values, convert to string
+										input.value = value === null ? '' : String(value);
+									}
+									console.log(`Updated hidden form field: ${key} = ${input.value}`);
+								}
+							});
+							
+							// Find and click the submit button
+							const submitButton = hiddenForm.querySelector('#manufacturer-submit-button') as HTMLButtonElement;
+							if (submitButton) {
+								console.log('Submitting hidden form with SuperForm enhance');
+								submitButton.click();
+							} else {
+								console.error('Submit button not found in hidden form');
+							}
+						} else {
+							console.error('Hidden manufacturer form not found');
+						}
+						
+						// Reset UI state after submission
+						showManufacturerForm = false;
+						editManufacturerMode = false;
+						currentManufacturerId = null;
+						
+						// Refresh data after a short delay
+						setTimeout(() => refreshData(), 500);
+						}}
+						on:formUpdate={(event) => {
+							console.log('Form update event received:', event.detail);
+							
+							// Update the form data when the form is changed
+							if (event.detail && event.detail.data) {
+								// Get the updated data from the event
+								const formUpdateData = event.detail.data;
+								
+								// Create a new form object with the updated data
+								const updatedForm = {
+									...$manufacturerForm,
+									...formUpdateData
+								};
+								
+								console.log('Updated form data:', updatedForm);
+								
+								// Update the store with the new data
+								$manufacturerForm = updatedForm;
+							}
+						}}
+						on:cancelEdit={() => {
+							console.log('Cancel edit event received');
+							// Reset form and hide it
+							showManufacturerForm = false;
+							editManufacturerMode = false;
+							currentManufacturerId = null;
+							// Reset the form data
+							$manufacturerForm = {
+								manufacturer_id: '',
+								manufacturer_name: '',
+								manufacturer_description: '',
+								website_url: '',
+								logo_url: '',
+								contact_info: '{}',
+								custom_fields: '{}',
+								created_by: user.user_id,
+								updated_by: user.user_id,
+								// Add these fields to satisfy TypeScript
+								created_at: new Date(),
+								updated_at: new Date()
+							};
+						}}
+						on:refreshData={refreshData}
+						on:toggleForm={() => {
+							console.log('Toggle form event received, current state:', showManufacturerForm);
+							// Toggle form visibility
+							showManufacturerForm = !showManufacturerForm;
+							// If closing the form, also reset edit mode
+							if (!showManufacturerForm) {
+								editManufacturerMode = false;
+								currentManufacturerId = null;
+								// Reset the form data
+								$manufacturerForm = {
+									manufacturer_id: '',
+									manufacturer_name: '',
+									manufacturer_description: '',
+									website_url: '',
+									logo_url: '',
+									contact_info: '{}',
+									custom_fields: '{}',
+									created_by: user.user_id,
+									updated_by: user.user_id,
+									// Add these fields to satisfy TypeScript
+									created_at: new Date(),
+									updated_at: new Date()
+								};
+							} else {
+								// If opening the form for a new manufacturer, ensure form is reset
+								if (!editManufacturerMode) {
+									$manufacturerForm = {
+										manufacturer_id: '',
+										manufacturer_name: '',
+										manufacturer_description: '',
+										website_url: '',
+										logo_url: '',
+										contact_info: '{}',
+										custom_fields: '{}',
+										created_by: user.user_id,
+										updated_by: user.user_id,
+										// Add these fields to satisfy TypeScript
+										created_at: new Date(),
+										updated_at: new Date()
+									};
+								}
+							}
+						}}
+						on:editManufacturer={(event) => {
+							console.log('Edit manufacturer event received:', event.detail);
+							
+							// Make sure we have manufacturer data
+							const manufacturerToEdit = event.detail.manufacturer;
+							if (!manufacturerToEdit) {
+								console.error('No manufacturer data received in edit event');
+								return;
+							}
+							
+							// First, make the form visible
+							showManufacturerForm = true;
+							
+							// Set up edit mode
+							editManufacturerMode = true;
+							currentManufacturerId = manufacturerToEdit.manufacturer_id;
+							
+							// Use the correct schema field names from manufacturerActionSchema
+							console.log('Raw manufacturer data from server:', manufacturerToEdit);
+							
+							// Set the form data using the correct field names
+							$manufacturerForm = {
+								manufacturer_id: manufacturerToEdit.manufacturer_id,
+								manufacturer_name: manufacturerToEdit.manufacturer_name,
+								manufacturer_description: manufacturerToEdit.manufacturer_description || '',
+								website_url: manufacturerToEdit.website_url || '',
+								logo_url: manufacturerToEdit.logo_url || '',
+								contact_info: typeof manufacturerToEdit.contact_info === 'object' 
+									? JSON.stringify(manufacturerToEdit.contact_info)
+									: manufacturerToEdit.contact_info || '{}',
+								custom_fields: typeof manufacturerToEdit.custom_fields === 'object'
+									? JSON.stringify(manufacturerToEdit.custom_fields)
+									: manufacturerToEdit.custom_fields || '{}',
+								created_by: manufacturerToEdit.created_by || user.user_id,
+								updated_by: user.user_id,
+								created_at: manufacturerToEdit.created_at || new Date(),
+								updated_at: new Date()
+							};
+							
+							console.log('Manufacturer form updated for editing, form state:', $manufacturerForm);
+						}}
+					/>
 			</div>
 		{/if}
 

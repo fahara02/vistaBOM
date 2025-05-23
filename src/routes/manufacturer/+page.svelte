@@ -2,39 +2,86 @@
 <script lang="ts">
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
-  import Manufacturer from '$lib/components/cards/manufacturer.svelte';
+  import GridView from '$lib/components/grid/GridView.svelte';
+  import { enhance } from '$app/forms';
+  import type { Manufacturer } from '$lib/types/types';
   
   export let data: PageData;
-  const { form, errors } = superForm(data.form);
+  const { form, errors, enhance: formEnhance } = superForm(data.form, {
+    onResult: ({ result }) => {
+      if (result.type === 'success') {
+        showForm = false;
+        refreshData = true;
+      }
+    }
+  });
+  
   const { manufacturers, user } = data;
   let showForm = false;
+  let editingManufacturer: Manufacturer | null = null;
+  let refreshData = false;
+  
+  // Function to handle edit request from grid
+  function handleEdit(event: CustomEvent) {
+    const manufacturer = event.detail.item as Manufacturer;
+    editingManufacturer = manufacturer;
+    // Populate form with manufacturer data
+    $form.manufacturer_name = manufacturer.manufacturer_name;
+    $form.manufacturer_description = manufacturer.manufacturer_description || '';
+    $form.website_url = manufacturer.website_url || '';
+    $form.logo_url = manufacturer.logo_url || '';
+    // Show the form
+    showForm = true;
+  }
+  
+  // Function to handle refresh request from grid
+  function handleRefresh() {
+    refreshData = true;
+  }
+  
+  // Reset form when canceling
+  function resetForm() {
+    editingManufacturer = null;
+    $form.manufacturer_name = '';
+    $form.manufacturer_description = '';
+    $form.website_url = '';
+    $form.logo_url = '';
+    showForm = false;
+  }
 </script>
 
 <h1>Manufacturers</h1>
 
 <!-- Only show Add button if user is logged in -->
 {#if user}
-  <button type="button" on:click={() => showForm = !showForm} class="toggle-btn">
+  <button type="button" on:click={() => showForm ? resetForm() : showForm = true} class="toggle-btn">
     {showForm ? 'Cancel' : 'Add Manufacturer'}
   </button>
   
   {#if showForm}
-    <form method="POST" class="create-form">
-      <h2>Add New Manufacturer</h2>
+    <form method="POST" action="{editingManufacturer ? '?/editManufacturer' : '?/default'}" class="create-form" use:formEnhance>
+      <h2>{editingManufacturer ? 'Edit' : 'Add New'} Manufacturer</h2>
+      
+      {#if editingManufacturer}
+        <input type="hidden" name="manufacturer_id" value={editingManufacturer.manufacturer_id} />
+      {/if}
+      
       <div class="field">
-        <label for="name">Name</label>
+        <label for="manufacturer_name">Name</label>
         <input id="manufacturer_name" name="manufacturer_name" bind:value={$form.manufacturer_name} required />
         {#if $errors.manufacturer_name}
           <span class="error">{$errors.manufacturer_name}</span>
         {/if}
       </div>
+      
       <div class="field">
-        <label for="description">Description</label>
+        <label for="manufacturer_description">Description</label>
         <textarea id="manufacturer_description" name="manufacturer_description" bind:value={$form.manufacturer_description}></textarea>
         {#if $errors.manufacturer_description}
           <span class="error">{$errors.manufacturer_description}</span>
         {/if}
       </div>
+      
       <div class="field">
         <label for="website_url">Website URL</label>
         <input id="website_url" name="website_url" type="url" bind:value={$form.website_url} />
@@ -42,6 +89,7 @@
           <span class="error">{$errors.website_url}</span>
         {/if}
       </div>
+      
       <div class="field">
         <label for="logo_url">Logo URL</label>
         <input id="logo_url" name="logo_url" type="url" bind:value={$form.logo_url} />
@@ -49,16 +97,34 @@
           <span class="error">{$errors.logo_url}</span>
         {/if}
       </div>
+      
       <div class="actions">
-        <button type="submit">Create</button>
+        <button type="button" class="cancel-btn" on:click={resetForm}>Cancel</button>
+        <button type="submit">{editingManufacturer ? 'Update' : 'Create'}</button>
       </div>
     </form>
   {/if}
 {/if}
 
-{#each manufacturers as manufacturer}
-  <Manufacturer {manufacturer} currentUserId={user?.id} />
-{/each}
+<!-- Use the new GridView component -->
+<div class="grid-container">
+  <GridView 
+    items={manufacturers} 
+    entityType="manufacturer" 
+    currentUserId={user?.id || ''}
+    on:edit={handleEdit}
+    on:refresh={handleRefresh}
+  />
+</div>
+
+{#if refreshData}
+  <form method="GET" id="refresh-form">
+    <input type="hidden" name="_={new Date().getTime()}" />
+  </form>
+  <script>
+    document.getElementById('refresh-form').submit();
+  </script>
+{/if}
 <style>
   h1 {
     font-size: 2.5rem;
@@ -125,15 +191,12 @@
     border: 1px solid #fecaca;
   }
 
-  .error + input,
-  .error + textarea {
-    border-color: #dc2626;
-  }
-
-  .error + input:focus,
-  .error + textarea:focus {
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+  /* Error styling is handled by the error class directly */
+  input:focus,
+  textarea:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
   }
 
   .actions {

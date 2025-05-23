@@ -20,24 +20,12 @@
         History,
         FileEdit
     } from 'lucide-svelte';
+	import type { Manufacturer } from '@/types';
     
     // Create event dispatcher for communicating with parent components
     const dispatch = createEventDispatcher();
     
-    // Define the interface consistent with the dashboard's manufacturer data structure
-    interface Manufacturer {
-        manufacturer_id: string;
-        manufacturer_name: string;
-        manufacturer_description?: string | null;
-        website_url?: string | null;
-        contact_info?: string | null;
-        logo_url?: string | null;
-        custom_fields?: Record<string, unknown> | null;
-        created_at: Date;
-        updated_at: Date;
-        created_by: string;
-        updated_by?: string | null;
-    }
+
 
     export let manufacturer: Manufacturer;
     export let currentUserId: string;
@@ -493,12 +481,12 @@
                 <div class="meta">
                     <div>
                         <span class="meta-icon"><History size={14} /></span>
-                        Created: {manufacturer.created_at.toLocaleDateString()}
+                        Created: {manufacturer.created_at instanceof Date ? manufacturer.created_at.toLocaleDateString() : 'Unknown date'}
                     </div>
                     {#if manufacturer.updated_at}
                         <div>
                             <span class="meta-icon"><FileEdit size={14} /></span>
-                            Updated: {manufacturer.updated_at.toLocaleDateString()}
+                            Updated: {manufacturer.updated_at instanceof Date ? manufacturer.updated_at.toLocaleDateString() : 'Unknown date'}
                         </div>
                     {/if}
                 </div>
