@@ -99,25 +99,44 @@
                 console.log('Type of custom_fields:', typeof data.custom_fields);
                 
                 if (typeof data.custom_fields === 'string') {
-                    // If it's already a string, try to validate and format it
+                    // Try to parse it as JSON first
                     try {
-                        // Try to parse it to validate it's proper JSON
                         const parsed = JSON.parse(data.custom_fields);
-                        // Format it nicely for editing
-                        customFieldsString = JSON.stringify(parsed, null, 2);
-                        console.log('Formatted custom fields string:', customFieldsString);
+                        console.log('Parsed custom fields from string:', parsed);
+                        
+                        // Process PostgreSQL JSONB format if needed
+                        const processedFields: Record<string, any> = {};
+                        for (const [key, value] of Object.entries(parsed)) {
+                            // Check if the value is a JSONB object with a 'value' property
+                            if (value !== null && typeof value === 'object' && 'value' in value) {
+                                processedFields[key] = (value as any).value;
+                            } else {
+                                processedFields[key] = value;
+                            }
+                        }
+                        
+                        customFieldsString = JSON.stringify(processedFields, null, 2);
+                        console.log('Processed custom fields string:', customFieldsString);
                     } catch (parseError) {
                         console.error('Error parsing custom fields JSON:', parseError);
-                        // If it's not valid JSON, use empty object to prevent form errors
-                        customFieldsString = '{}';
+                        // If it's not valid JSON, use as is
+                        customFieldsString = data.custom_fields;
                     }
-                } else if (data.custom_fields && typeof data.custom_fields === 'object') {
-                    // If it's an object, stringify it for the form
-                    customFieldsString = JSON.stringify(data.custom_fields, null, 2);
-                    console.log('Converted object custom fields to string:', customFieldsString);
                 } else {
-                    // Default to empty object
-                    customFieldsString = '{}';
+                    // Handle case where it might be an object
+                    // Process PostgreSQL JSONB format if needed
+                    const processedFields: Record<string, any> = {};
+                    for (const [key, value] of Object.entries(data.custom_fields as Record<string, any>)) {
+                        // Check if the value is a JSONB object with a 'value' property
+                        if (value !== null && typeof value === 'object' && 'value' in value) {
+                            processedFields[key] = (value as any).value;
+                        } else {
+                            processedFields[key] = value;
+                        }
+                    }
+                    
+                    customFieldsString = JSON.stringify(processedFields, null, 2);
+                    console.log('Processed custom fields from object:', customFieldsString);
                 }
                 customFieldsError = '';
             } catch (e) {
@@ -280,13 +299,13 @@
                 // Log the parsed custom fields for debugging
                 console.log('Parsed custom fields:', parsed);
                 
-                // Store the properly formatted JSON string - important for consistency
-                formData.custom_fields = JSON.stringify(parsed);
+                // Store the JSON string directly since the type expects a string
+                formData.custom_fields = customFieldsString;
                 customFieldsError = '';
                 return true;
             } else {
-                // If empty, set to empty object JSON string
-                formData.custom_fields = '{}';
+                // If empty, set to empty string since we expect a string type
+                formData.custom_fields = '';
                 customFieldsError = '';
                 return true;
             }
@@ -335,10 +354,8 @@
                 ? formData.contact_info 
                 : JSON.stringify(formData.contact_info || {}),
                 
-            // Ensure custom_fields is a properly formatted JSON string
-            custom_fields: typeof formData.custom_fields === 'string' 
-                ? formData.custom_fields
-                : JSON.stringify(formData.custom_fields || {})
+            // Keep custom_fields as string to match the interface
+            custom_fields: formData.custom_fields
         };
 
         console.log('Submitting manufacturer form with data:', submissionData);

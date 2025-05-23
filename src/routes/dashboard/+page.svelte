@@ -397,7 +397,7 @@ function transformManufacturerData(manufacturers: any[]): DashboardManufacturer[
             website_url: manufacturer.website === null ? undefined : (manufacturer.website || manufacturer.website_url),
             logo_url: manufacturer.logoUrl === null ? undefined : (manufacturer.logoUrl || manufacturer.logo_url),
             contact_info: manufacturer.contact_info === null ? undefined : manufacturer.contact_info,
-            custom_fields: manufacturer.custom_fields || {},
+            custom_fields: manufacturer.custom_fields,
             created_at: new Date(manufacturer.createdAt || manufacturer.created_at || Date.now()),
             updated_at: manufacturer.updatedAt ? new Date(manufacturer.updatedAt) 
                      : (manufacturer.updated_at ? new Date(manufacturer.updated_at) : new Date()), // Ensure it's always a Date
@@ -835,6 +835,10 @@ function transformManufacturerData(manufacturers: any[]): DashboardManufacturer[
 							...formData,
 							// Ensure required fields are set
 							manufacturer_name: formData.manufacturer_name || '',
+							// Handle custom_fields properly based on its type
+							custom_fields: typeof formData.custom_fields === 'string' 
+								? formData.custom_fields 
+								: (formData.custom_fields ? JSON.stringify(formData.custom_fields) : '{}'),
 							// Ensure user tracking fields are set
 							created_by: editManufacturerMode ? $manufacturerForm.created_by : user.user_id,
 							updated_by: user.user_id
@@ -853,68 +857,56 @@ function transformManufacturerData(manufacturers: any[]): DashboardManufacturer[
 							Object.entries($manufacturerForm).forEach(([key, value]) => {
 								const input = hiddenForm.querySelector(`[name="${key}"]`) as HTMLInputElement;
 								if (input) {
-									if (typeof value === 'object' && value !== null) {
-										input.value = JSON.stringify(value);
-									} else {
-										input.value = value === null ? '' : String(value);
-							
-							// Ensure manufacturer_id is set correctly
-							if (!editManufacturerMode || !formData.manufacturer_id) {
-								// For new manufacturers, ensure ID is empty to generate a new one on the server
-								formData.manufacturer_id = '';
-							}
-							
-							// Update the form with the submitted values
-							$manufacturerForm = {
-								...formData,
-								// Ensure required fields are set
-								manufacturer_name: formData.manufacturer_name || '',
-								// Ensure user tracking fields are set
-								created_by: editManufacturerMode ? $manufacturerForm.created_by : user.user_id,
-								updated_by: user.user_id
-							};
-							
-							// Validate that manufacturer_name is not empty
-							if (!$manufacturerForm.manufacturer_name || $manufacturerForm.manufacturer_name.trim() === '') {
-								console.error('Manufacturer name is required');
-								return; // Don't proceed with submission if name is empty
-							}
-							
-							// Use the hidden form with SuperForm's enhance function
-							const hiddenForm = document.getElementById('manufacturer-hidden-form') as HTMLFormElement;
-							if (hiddenForm) {
-								// Update hidden form fields with current values
-								Object.entries($manufacturerForm).forEach(([key, value]) => {
-									const input = hiddenForm.querySelector(`[name="${key}"]`) as HTMLInputElement;
-									if (input) {
-										if (typeof value === 'object' && value !== null) {
+									// Special handling for custom_fields and contact_info to ensure they remain as JSON strings
+									if (key === 'custom_fields' || key === 'contact_info') {
+										// If already a string, validate it's proper JSON
+										if (typeof value === 'string') {
+											try {
+												// Validate it's proper JSON
+												JSON.parse(value);
+												input.value = value;
+											} catch (e) {
+												// If not valid JSON, use empty object
+												console.error(`Invalid ${key} JSON:`, e);
+												input.value = '{}';
+											}
+										} else if (typeof value === 'object' && value !== null) {
+											// If it's an object, stringify it
 											input.value = JSON.stringify(value);
 										} else {
-											input.value = value === null ? '' : String(value);
+											// Default to empty object if null/undefined
+											input.value = '{}';
 										}
-										console.log(`Updated hidden form field: ${key} = ${input.value}`);
+									} else if (typeof value === 'object' && value !== null) {
+										// For other objects, stringify them
+										input.value = JSON.stringify(value);
+									} else {
+										// For primitive values, convert to string
+										input.value = value === null ? '' : String(value);
 									}
-								});
-								
-								// Submit the hidden form which has the enhance function attached
-								const submitButton = hiddenForm.querySelector('#manufacturer-submit-button') as HTMLButtonElement;
-								if (submitButton) {
-									console.log('Submitting hidden form with SuperForm enhance');
-									submitButton.click();
-								} else {
-									console.error('Submit button not found in hidden form');
+									console.log(`Updated hidden form field: ${key} = ${input.value}`);
 								}
+							});
+							
+							// Find and click the submit button
+							const submitButton = hiddenForm.querySelector('#manufacturer-submit-button') as HTMLButtonElement;
+							if (submitButton) {
+								console.log('Submitting hidden form with SuperForm enhance');
+								submitButton.click();
 							} else {
-								console.error('Hidden manufacturer form not found');
+								console.error('Submit button not found in hidden form');
 							}
-							
-							// Reset UI state after submission
-							showManufacturerForm = false;
-							editManufacturerMode = false;
-							currentManufacturerId = null;
-							
-							// Refresh data after a short delay
-							setTimeout(() => refreshData(), 500);
+						} else {
+							console.error('Hidden manufacturer form not found');
+						}
+						
+						// Reset UI state after submission
+						showManufacturerForm = false;
+						editManufacturerMode = false;
+						currentManufacturerId = null;
+						
+						// Refresh data after a short delay
+						setTimeout(() => refreshData(), 500);
 						}}
 						on:formUpdate={(event) => {
 							console.log('Form update event received:', event.detail);
@@ -1026,9 +1018,9 @@ function transformManufacturerData(manufacturers: any[]): DashboardManufacturer[
 							$manufacturerForm = {
 								manufacturer_id: manufacturerToEdit.manufacturer_id,
 								manufacturer_name: manufacturerToEdit.manufacturer_name,
-								manufacturer_description: manufacturerToEdit.manufacturer_description || null,
-								website_url: manufacturerToEdit.website_url || null,
-								logo_url: manufacturerToEdit.logo_url || null,
+								manufacturer_description: manufacturerToEdit.manufacturer_description || '',
+								website_url: manufacturerToEdit.website_url || '',
+								logo_url: manufacturerToEdit.logo_url || '',
 								contact_info: typeof manufacturerToEdit.contact_info === 'object' 
 									? JSON.stringify(manufacturerToEdit.contact_info)
 									: manufacturerToEdit.contact_info || '{}',

@@ -38,7 +38,9 @@
                 if (typeof manufacturer.custom_fields === 'string') {
                     // If it's a string, try to parse it as JSON
                     try {
-                        processedCustomFields = JSON.parse(manufacturer.custom_fields);
+                        const parsed = JSON.parse(manufacturer.custom_fields);
+                        processedCustomFields = parsed;
+                        console.log('Successfully parsed custom fields from string:', processedCustomFields);
                     } catch (e) {
                         console.error('Error parsing custom fields string:', e);
                         processedCustomFields = {};
@@ -56,13 +58,14 @@
                             processedCustomFields[key] = value;
                         }
                     }
+                    console.log('Processed object custom fields:', processedCustomFields);
                 }
             } catch (e) {
                 console.error('Error processing custom fields:', e);
                 processedCustomFields = {};
             }
             
-            console.log('Processed custom fields:', processedCustomFields);
+            console.log('Final processed custom fields:', processedCustomFields);
         } else {
             processedCustomFields = {};
         }
