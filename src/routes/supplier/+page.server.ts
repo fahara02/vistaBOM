@@ -10,20 +10,14 @@ import { fail, redirect } from '@sveltejs/kit';
 
 import { z } from 'zod';
 
-// Create a custom schema for supplier form with string-based contact_info
-const createSupplierSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  description: z.string().optional().nullable(),
-  website_url: z.string().url("Must be a valid URL").optional().nullable(),
-  contact_info: z.string().optional().nullable(),  // Keep as string and process later
-  logo_url: z.string().url("Must be a valid URL").optional().nullable()
-});
+// Use the centralized supplier schema from schema.ts - following the project standard
+// No custom schemas - supplierSchema is the single source of truth
 
 export const load: PageServerLoad = async (event) => {
   const user = event.locals.user;
   // Call listSuppliers without the client parameter
   const suppliers = await listSuppliers();
-  const form = await superValidate(event, zod(createSupplierSchema), { 
+  const form = await superValidate(event, zod(supplierSchema), { 
     id: 'create-supplier'
   });
   return { user, suppliers, form };
@@ -33,7 +27,7 @@ export const actions: Actions = {
   default: async (event) => {
     const { request, locals } = event;
     const user = locals.user;
-    const form = await superValidate(request, zod(createSupplierSchema), { 
+    const form = await superValidate(request, zod(supplierSchema), { 
       id: 'create-supplier'
     });
     if (!form.valid) return fail(400, { form });
@@ -47,9 +41,10 @@ export const actions: Actions = {
         JSON.parse(parseContactInfo(contactInfoStr)) : undefined;
       
       // Call createSupplier without the client parameter
+      // Use the standardized field names from the centralized schema
       await createSupplier({
-        name: form.data.name,
-        description: form.data.description ?? undefined,
+        supplier_name: form.data.supplier_name,
+        supplier_description: form.data.supplier_description,
         websiteUrl: form.data.website_url ?? undefined,
         contactInfo: processedContactInfo,
         logoUrl: form.data.logo_url ?? undefined,

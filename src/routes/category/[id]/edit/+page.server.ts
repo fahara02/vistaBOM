@@ -132,7 +132,7 @@ export const actions: Actions = {
 
    
 
-      throw redirect(303, `/catagory`);
+      throw redirect(303, `/category`);
     } catch (err) {
       if (err instanceof Error) {
         return { form, error: err.message };

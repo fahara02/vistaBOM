@@ -8,9 +8,9 @@
   
   // Import components - SvelteKit will resolve these correctly 
   // even if TypeScript complains
-  import CategoryItem from '$lib/components/CategoryItem.svelte';
-  import CategoryTree from '$lib/components/CategoryTree.svelte';
-  import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
+  import CategoryItem from '$lib/components/forms/CategoryItem.svelte';
+  import CategoryTree from '$lib/components/forms/CategoryTree.svelte';
+  import CategoryComboBox from '$lib/components/forms/CategoryComboBox.svelte';
   
   // Define the category schema for validation
   const categorySchema = z.object({

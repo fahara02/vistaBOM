@@ -1,6 +1,6 @@
 <!-- src/routes/parts/new/+page.svelte -->
 <script lang="ts">
-	import { PartForm } from '$lib/components';
+	import { PartForm } from '$lib/components/forms';
 	import { superForm } from 'sveltekit-superforms/client';
 	import type { PageData } from './$types';
 	import { onMount } from 'svelte';

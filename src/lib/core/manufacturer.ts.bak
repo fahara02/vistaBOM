@@ -102,65 +102,21 @@ function deserializeCustomFields(json: unknown | null | undefined): Record<strin
     if (!json) return null;
     
     try {
-        // Log the input for debugging
-        console.log('[deserializeCustomFields] Input type:', typeof json);
-        console.log('[deserializeCustomFields] Input value:', JSON.stringify(json, null, 2));
-        
         // Handle string JSON
         if (typeof json === 'string') {
-            try {
-                const parsed = JSON.parse(json) as Record<string, JsonValue>;
-                console.log('[deserializeCustomFields] Parsed from string:', parsed);
-                
-                // Process the parsed object to extract values from JSONB format
-                const processedFields: Record<string, JsonValue> = {};
-                for (const [key, value] of Object.entries(parsed)) {
-                    if (value !== null && typeof value === 'object' && 'value' in value) {
-                        processedFields[key] = (value as any).value;
-                    } else {
-                        processedFields[key] = value;
-                    }
-                }
-                
-                return processedFields;
-            } catch (parseError) {
-                console.error('[deserializeCustomFields] Error parsing JSON string:', parseError);
-                return {}; // Return empty object instead of null for better UX
-            }
+            return JSON.parse(json) as Record<string, JsonValue>;
         }
         
-        // Already an object - handle PostgreSQL JSONB objects
+        // Already an object
         if (typeof json === 'object') {
-            // PostgreSQL JSONB often returns objects with values that are themselves JSONB
-            // We need to process these nested values
-            const result: Record<string, JsonValue> = {};
-            
-            // Process each key-value pair
-            for (const [key, value] of Object.entries(json as object)) {
-                // If the value is a JSONB object with a 'value' property, extract it
-                if (value !== null && typeof value === 'object') {
-                    if ('value' in value) {
-                        // Extract the actual value from the JSONB wrapper
-                        result[key] = (value as any).value;
-                    } else {
-                        // For nested objects without a 'value' property
-                        result[key] = value as JsonValue;
-                    }
-                } else {
-                    result[key] = value as JsonValue;
-                }
-            }
-            
-            console.log('[deserializeCustomFields] Processed object:', JSON.stringify(result, null, 2));
-            return result;
+            return json as Record<string, JsonValue>;
         }
         
         // Default case
-        console.log('[deserializeCustomFields] Returning empty object (default case)');
-        return {}; // Return empty object instead of null for better UX
+        return null;
     } catch (error) {
         console.error('[deserializeCustomFields] Error deserializing custom fields:', error);
-        return {}; // Return empty object instead of null for better UX
+        return null;
     }
 }
 
@@ -337,29 +293,8 @@ export async function getManufacturerById(manufacturerId: string): Promise<Manuf
         
         // Return normalized result or null if not found
         if (result.length > 0) {
-            // Log the raw result to help debug custom fields
-            console.log('Raw manufacturer result:', JSON.stringify(result[0], null, 2));
-            
-            // Check if custom_fields exist and log them
-            if (result[0].custom_fields) {
-                console.log('Custom fields from DB:', JSON.stringify(result[0].custom_fields, null, 2));
-            } else {
-                console.log('No custom fields found in DB result');
-            }
-            
             const manufacturer = normalizeManufacturer(result[0]);
-            
-            // Log the normalized manufacturer to check custom fields
-            console.log('Normalized manufacturer custom fields:', 
-                manufacturer.custom_fields ? JSON.stringify(manufacturer.custom_fields, null, 2) : 'null');
-            
-            const schemaManufacturer = toSchemaManufacturer(manufacturer);
-            
-            // Log the schema manufacturer to check custom fields
-            console.log('Schema manufacturer custom fields:', 
-                schemaManufacturer.custom_fields ? JSON.stringify(schemaManufacturer.custom_fields, null, 2) : 'undefined');
-            
-            return schemaManufacturer;
+            return toSchemaManufacturer(manufacturer);
         } else {
             return null;
         }
@@ -371,7 +306,9 @@ export async function getManufacturerById(manufacturerId: string): Promise<Manuf
 
 /**
  * List all manufacturers with their custom fields
- * @param options - Optional parameters for filtering and pagination
+ * @param limit - Optional limit on number of records to return
+ * @param offset - Optional offset for pagination
+ * @param nameFilter - Optional filter by name (case-insensitive partial match)
  * @returns Array of manufacturer objects with normalized structure
  */
 export async function listManufacturers(options?: { 
@@ -453,76 +390,6 @@ export async function getManufacturerCustomFields(manufacturerId: string): Promi
  * @returns Updated manufacturer with custom fields
  * @throws Error if manufacturer doesn't exist or another error occurs
  */
-/**
- * Update an existing manufacturer
- * @param manufacturerId - ID of the manufacturer to update
- * @param params - Manufacturer data for update
- * @returns The updated manufacturer with normalized structure
- */
-export async function updateManufacturer(manufacturerId: string, params: {
-    name: string;
-    description?: string;
-    websiteUrl?: string;
-    logoUrl?: string;
-    contactInfo?: Record<string, JsonValue>;
-    updatedBy: string;
-}): Promise<Manufacturer> {
-    try {
-        // First verify that the manufacturer exists
-        const manufacturer = await getManufacturerById(manufacturerId);
-        if (!manufacturer) {
-            throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
-        }
-        
-        // Update the manufacturer data
-        const result = await sql`
-            UPDATE "Manufacturer"
-            SET 
-                manufacturer_name = ${params.name},
-                manufacturer_description = ${params.description || null},
-                website_url = ${params.websiteUrl || null},
-                logo_url = ${params.logoUrl || null},
-                contact_info = ${params.contactInfo ? sql.json(params.contactInfo) : null},
-                updated_by = ${params.updatedBy},
-                updated_at = NOW()::timestamptz
-            WHERE manufacturer_id = ${manufacturerId}
-            RETURNING *
-        `;
-        
-        if (result.length === 0) {
-            throw new Error(MANUFACTURER_ERRORS.NOT_FOUND_AFTER_UPDATE);
-        }
-        
-        const updatedManufacturer = normalizeManufacturer(result[0]);
-        return toSchemaManufacturer(updatedManufacturer);
-    } catch (error) {
-        // Type guard for postgres error with code property
-        if (typeof error === 'object' && error !== null && 'code' in error) {
-            const pgError = error as { code: string; message: string };
-            
-            // Handle duplicate key violation
-            if (pgError.code === '23505') {
-                throw new Error(`${MANUFACTURER_ERRORS.NAME_EXISTS}: "${params.name}"`);
-            }
-        }
-        
-        // Re-throw specific errors we recognize
-        if (error instanceof Error && 
-            (error.message.includes(MANUFACTURER_ERRORS.NOT_FOUND) || 
-             error.message.includes(MANUFACTURER_ERRORS.NOT_FOUND_AFTER_UPDATE))) {
-            throw error;
-        }
-        
-        // Generic error with original message
-        if (error instanceof Error) {
-            throw new Error(`${MANUFACTURER_ERRORS.GENERAL_ERROR}: ${error.message}`);
-        }
-        
-        // Fallback for unknown error types
-        throw new Error(MANUFACTURER_ERRORS.GENERAL_ERROR);
-    }
-}
-
 export async function updateManufacturerCustomFields(
     manufacturerId: string, 
     customFields: Record<string, JsonValue>
@@ -534,9 +401,6 @@ export async function updateManufacturerCustomFields(
             throw new Error(MANUFACTURER_ERRORS.NOT_FOUND);
         }
         
-        console.log('Updating custom fields for manufacturer:', manufacturerId);
-        console.log('Custom fields to update:', JSON.stringify(customFields, null, 2));
-        
         // Start a transaction to ensure atomicity
         await sql.begin(async (sql) => {
             // Delete existing custom fields
@@ -547,7 +411,6 @@ export async function updateManufacturerCustomFields(
             
             // Skip further processing if no custom fields to add
             if (Object.keys(customFields).length === 0) {
-                console.log('No custom fields to add, skipping insertion');
                 return;
             }
             
@@ -559,58 +422,22 @@ export async function updateManufacturerCustomFields(
                 else if (typeof fieldValue === 'boolean') dataType = 'boolean';
                 else if (fieldValue instanceof Date) dataType = 'date';
                 
-                console.log(`Processing field: ${fieldName}, type: ${dataType}, value:`, fieldValue);
+                // Generate a UUID for the new custom field
+                const fieldId = crypto.randomUUID();
                 
-                // First, get or create the custom field definition
-                let customFieldResult = await sql`
-                    SELECT custom_field_id 
-                    FROM "CustomField" 
-                    WHERE field_name = ${fieldName} 
-                    AND applies_to = 'manufacturer'
-                `;
-                
-                let fieldId;
-                if (customFieldResult.length === 0) {
-                    // Create a new custom field definition
-                    console.log(`Creating new custom field definition for: ${fieldName}, type: ${dataType}`);
-                    const newCustomFieldResult = await sql`
-                        INSERT INTO "CustomField" (field_name, data_type, applies_to)
-                        VALUES (${fieldName}, ${dataType}, 'manufacturer')
-                        RETURNING custom_field_id
-                    `;
-                    fieldId = newCustomFieldResult[0].custom_field_id;
-                    console.log(`Created new custom field with ID: ${fieldId}`);
-                } else {
-                    fieldId = customFieldResult[0].custom_field_id;
-                    console.log(`Using existing custom field with ID: ${fieldId}`);
-                }
-                
-                // Now insert the custom field value
-                // Make sure we're using the correct format for JSONB values
-                console.log(`Inserting custom field: ${fieldName} with value:`, fieldValue);
-                
-                // For primitive values, wrap them in an object with a 'value' property
-                // This ensures consistent extraction later
-                const jsonValue = typeof fieldValue === 'object' && fieldValue !== null
-                    ? fieldValue
-                    : { value: fieldValue };
-                
-                console.log(`Formatted JSONB value:`, JSON.stringify(jsonValue, null, 2));
-                
+                // Insert the custom field value using sql.json for proper JSONB formatting
                 await sql`
                     INSERT INTO "ManufacturerCustomField" (manufacturer_id, field_id, custom_field_value)
                     VALUES (
                         ${manufacturerId}, 
                         ${fieldId},
-                        ${sql.json(jsonValue)}
+                        ${sql.json(fieldValue)}
                     )
                 `;
-                console.log(`Successfully inserted custom field value for ${fieldName}`);
             }
         });
         
         // Return the updated manufacturer with custom fields
-        console.log('Custom fields update completed, retrieving updated manufacturer');
         return await getManufacturerById(manufacturerId);
     } catch (error) {
         // Re-throw specific errors we recognize
@@ -656,60 +483,11 @@ export async function createManufacturerWithCustomFields(data: ManufacturerFormD
             
             // Add custom fields if any exist
             if (Object.keys(customFields).length > 0) {
-                // Process each custom field
-                for (const [fieldName, fieldValue] of Object.entries(customFields)) {
-                    // Determine data type based on the value
-                    let dataType = 'text'; // Default to text
-                    if (typeof fieldValue === 'number') dataType = 'number';
-                    else if (typeof fieldValue === 'boolean') dataType = 'boolean';
-                    else if (fieldValue instanceof Date) dataType = 'date';
-                    
-                    // First, get or create the custom field definition
-                    let customFieldResult = await sql`
-                        SELECT custom_field_id 
-                        FROM "CustomField" 
-                        WHERE field_name = ${fieldName} 
-                        AND applies_to = 'manufacturer'
-                    `;
-                    
-                    let fieldId;
-                    if (customFieldResult.length === 0) {
-                        // Create a new custom field definition
-                        const newCustomFieldResult = await sql`
-                            INSERT INTO "CustomField" (field_name, data_type, applies_to)
-                            VALUES (${fieldName}, ${dataType}, 'manufacturer')
-                            RETURNING custom_field_id
-                        `;
-                        fieldId = newCustomFieldResult[0].custom_field_id;
-                    } else {
-                        fieldId = customFieldResult[0].custom_field_id;
-                    }
-                    
-                    // Now insert the custom field value
-                    // Make sure we're using the correct format for JSONB values
-                    console.log(`Creating custom field: ${fieldName} with value:`, fieldValue);
-                    
-                    // For primitive values, wrap them in an object with a 'value' property
-                    // This ensures consistent extraction later
-                    const jsonValue = typeof fieldValue === 'object' && fieldValue !== null
-                        ? fieldValue
-                        : { value: fieldValue };
-                    
-                    console.log(`Formatted JSONB value:`, jsonValue);
-                    
-                    await sql`
-                        INSERT INTO "ManufacturerCustomField" (manufacturer_id, field_id, custom_field_value)
-                        VALUES (
-                            ${manufacturer.manufacturer_id}, 
-                            ${fieldId},
-                            ${sql.json(jsonValue)}
-                        )
-                    `;
-                }
+                await updateManufacturerCustomFields(manufacturer.manufacturer_id, customFields);
             }
             
             // Return the manufacturer with custom fields
-            return await getManufacturerById(manufacturer.manufacturer_id) || manufacturer;
+            return manufacturer;
         });
     } catch (error) {
         console.error('Error creating manufacturer with custom fields:', error);
@@ -778,34 +556,4 @@ export async function deleteManufacturer(id: string): Promise<void> {
             }
         }
     });
-}
-
-/**
- * List all manufacturers created by a specific user
- * @param userId - The user ID to filter by
- * @returns Array of manufacturer objects with normalized structure
- */
-export async function listManufacturersByUser(userId: string): Promise<Manufacturer[]> {
-    return listManufacturers({ userId });
-}
-
-/**
- * Get all manufacturer IDs created by a specific user
- * @param userId - The user ID to filter by
- * @returns Array of manufacturer IDs
- */
-export async function getManufacturerIdsByUser(userId: string): Promise<string[]> {
-    try {
-        const result = await sql`
-            SELECT manufacturer_id
-            FROM "Manufacturer"
-            WHERE created_by = ${userId}
-            ORDER BY manufacturer_name ASC
-        `;
-        
-        return result.map(row => row.manufacturer_id);
-    } catch (error) {
-        console.error('Error getting manufacturer IDs by user:', error);
-        throw new Error(`${MANUFACTURER_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
 }

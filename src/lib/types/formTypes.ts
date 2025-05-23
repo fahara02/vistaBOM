@@ -1,4 +1,6 @@
 import type { Dimensions, JsonValue, LongDescription, MaterialComposition } from "./primitive";
+import { z } from "zod";
+import { categoryFormSchema } from "$lib/schema/schema";
 import type { 
   ElectricalProperties, 
   EnvironmentalData, 
@@ -274,4 +276,34 @@ export interface PartFormData extends BaseFormData {
 // Part version form data for creating new versions
 export interface PartVersionFormData extends PartFormData {
   part_id: string; // Required for version updates
+}
+
+/**
+ * Server Response Types
+ * These interfaces define the data structure returned by server responses
+ * which may differ from the database schema format
+ */
+
+// Category form data
+export interface CategoryFormData {
+  category_name: string;
+  parent_id?: string;
+  category_description?: string | null;
+  is_public: boolean;
+}
+
+// Category response from server in camelCase format
+export interface ServerCategoryData {
+  categoryId: string;
+  categoryName: string;
+  categoryDescription: string | null;
+  categoryPath: string | null;
+  parentId: string | null;
+  parentName: string | null;
+  isPublic: boolean;
+  createdAt: string | Date;
+  updatedAt: string | Date | null;
+  createdBy: string;
+  updatedBy: string | null;
+  isDeleted?: boolean; // Optional since the server might not send this field
 }

@@ -8,8 +8,8 @@ import { adaptManufacturer, prepareManufacturerPartForSubmission } from '$lib/ty
 import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum, TemperatureUnitEnum, WeightUnitEnum } from '$lib/types/enums';
 import { createEventDispatcher, onMount } from 'svelte';
 import { superForm } from 'sveltekit-superforms/client';
-import type { z } from 'zod';
-import { prepareFormDataForValidation } from '../utils/formUtils';
+import { z } from 'zod';
+import { prepareFormDataForValidation } from './utils';
 import ManufacturerSelector from './ManufacturerSelector.svelte';
 import MultiCategorySelector from './MultiCategorySelector.svelte';
 
@@ -44,21 +44,23 @@ type FormDataType = {
   [key: string]: any;
 };
 
-// Define an ErrorsType for our component's use that accommodates SuperForm validation errors
-type ErrorsType = Record<string, string | string[] | undefined> | Record<string, any> | undefined;
+// Define SuperForm typing with the correct constraint
+type SuperFormData<T extends Record<string, unknown>> = ReturnType<typeof superForm<T>>;
+type ErrorsType = Record<string, string | string[] | undefined>;
 
 // REACTIVE DATAS
 // These are input props provided to the component
 // Allow form data to be passed directly or via a data object
 export let data: FormDataType = {};
-// Note: We're accessing errors through formErrors from superForm, so making this a const
-export const errors: ErrorsType = {};
-// Optional direct props for standalone edit page context - these take precedence over data object props
+
+// Form handling props - can be passed from parent or initialized locally
+// Using generic Record types for compatibility with the dashboard components
 export let form: any = undefined;
-export let enhance: any = undefined; // Will be used in SuperForm initialization
+export let errors: Record<string, any> = {};
+export let enhance: any = undefined;
 // Direct access to server form data - reliable source for edit mode
 // We're expecting SuperForm's structure which contains a data property
-export let serverFormData: { data: Record<string, unknown>; [key: string]: unknown } | undefined = undefined;
+export let serverFormData: { data: Record<string, any> } | undefined = undefined;
 
 // Initialize reactive form data with schema defaults
 let formData: PartFormExtended = {
@@ -96,30 +98,15 @@ let formData: PartFormExtended = {
 };
 
 // Initialize SuperForm at component top level
-const { form: formStore, enhance: enhanceStore, errors: formErrors } = superForm(
-  // Use provided form data or empty object
-  (form !== undefined ? form : data?.form || {}) as PartFormExtended,
-  {
-    resetForm: false,
-    dataType: 'json',
-    ...(enhance ? enhance : {}),
-    // Log all form update events to trace data flow
-    onUpdated: (event) => {
-      console.log(' FORM DATA UPDATED:', event.form);
-      // Keep formData in sync with the form store
-      formData = { ...formData, ...event.form };
-      console.log('DIMENSIONS STATE:', formData.dimensions);
-      
-      // Dispatch form update event to parent component when in dashboard context
-      if (isDashboardContext) {
-        // Only send the data when it's meaningful (not during initialization)
-        if (isFormInitialized) {
-          dispatch('formUpdate', formData);
-        }
-      }
-    }
-  }
-);
+// Use existing form instance directly if provided, otherwise initialize with empty defaults
+// We'll create a proper instance in onMount if needed
+const { form: formStore, enhance: enhanceStore, errors: formErrors } = form 
+  ? { form, enhance, errors } 
+  : { 
+      form: { subscribe: () => () => {} } as any, 
+      enhance: () => () => {}, 
+      errors: {} as ErrorsType 
+    };
 
 // Form variables - initialize to empty string by default, will be set during initialization
 // Default all sections to be active in edit mode
@@ -156,6 +143,17 @@ export let selectedCategoryIds: Array<string> = [];
 // Using ManufacturerPart from schema.ts
 
 export let selectedManufacturerParts: ManufacturerPartInput[] = [];
+
+// User ID for part creation - used in form submission
+export let currentUserId: string = '';
+
+// Callback function when the form completes successfully
+export let onComplete: (() => void) = () => {};
+
+// For dashboard integration, you can pass store references
+export let storeRefs: {
+    showPartForm?: any
+} = {};
 
 // Safe parsing helper for dimensions and other numeric fields
 function parseFloatOrNull(value: string | number | null | undefined): number | null {
@@ -344,10 +342,57 @@ $: if (formData && formData.dimensions) {
   dimensionsUnit = formData.dimensions_unit as DimensionUnitEnum | null;
 }
 
+// Initialize a local SuperForm instance if external one isn't provided
+let localForm: ReturnType<typeof superForm> | null = null;
+
+// Setup form handler when component mounts
+onMount(() => {
+  if (!form) {
+    // Create default part data with empty values
+    const defaultData = {
+      part_name: '',
+      part_version: '0.1.0',
+      status_in_bom: PartStatusEnum.CONCEPT,
+      version_status: LifecycleStatusEnum.DRAFT,
+      // Minimal required fields for a valid form
+    };
+
+    // Create a simple form instance with proper type casting to avoid TypeScript errors
+    localForm = superForm(defaultData as Record<string, unknown>, {
+      resetForm: false,
+      taintedMessage: false,
+      onResult({ result }) {
+        if (result.type === 'success') {
+          // Close the form in dashboard context
+          if (storeRefs && storeRefs.showPartForm) {
+            storeRefs.showPartForm.set(false);
+          }
+          // Trigger parent callback for data refresh
+          onComplete();
+        }
+      }
+    });
+    
+    // Use local form handlers if not externally provided
+    if (localForm) {
+      form = localForm.form;
+      errors = localForm.errors;
+      enhance = localForm.enhance;
+    }
+  }
+});
+
+// Watch for form submission status - handled by onResult above
+
 // Prepare form submission with enhanced validation and constraint handling
 function prepareFormSubmission(): Record<string, unknown> {
   // Start with data from formData to ensure we have complete data
   const extractedFormData: Record<string, unknown> = { ...getData() };
+  
+  // Set creator information using currentUserId
+  if (currentUserId && !extractedFormData.creator_id) {
+    extractedFormData.creator_id = currentUserId;
+  }
   
   // CRITICAL FIX: Handle dimensions specially - enforce paired fields constraint
   if (isCompleteDimensions(dimensions) && dimensionsUnit) {

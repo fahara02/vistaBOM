@@ -3,7 +3,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { getManufacturerById, updateManufacturerCustomFields } from '$lib/core/manufacturer';
+import { getManufacturerById, updateManufacturerCustomFields, deleteManufacturer } from '$lib/core/manufacturer';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!locals.user) {
@@ -59,24 +59,24 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
     if (!id) {
         throw error(400, 'Missing manufacturer ID');
     }
-    const userId = locals.user.id;
+    const userId = locals.user.user_id; // Fixed: using user_id instead of id
     if (!userId) {
         throw error(401, 'Unauthorized');
     }
     try {
-        // Check if manufacturer exists
-        const manufacturer = await getManufacturerById(id);
-        if (!manufacturer) {
-            throw error(404, 'Manufacturer not found');
-        }
-        
-        // First delete any custom fields
-        await sql`DELETE FROM "ManufacturerCustomField" WHERE manufacturer_id = ${id}`;
-        
-        // Then delete the manufacturer
-        await sql`DELETE FROM "Manufacturer" WHERE manufacturer_id = ${id}`;
+        // Use the new deleteManufacturer function which handles all validations and deletions in a transaction
+        await deleteManufacturer(id);
         return new Response(null, { status: 204 });
     } catch (e: any) {
-        throw error(500, e.message);
+        console.error('Delete manufacturer error:', e);
+        
+        // Return appropriate status codes based on error type
+        if (e.message.includes('referenced by') || e.message.includes('REFERENCED_BY_PARTS')) {
+            throw error(409, e.message); // Conflict - can't delete due to references
+        } else if (e.message.includes('not found') || e.message.includes('NOT_FOUND')) {
+            throw error(404, e.message); // Not found
+        } else {
+            throw error(500, e instanceof Error ? e.message : 'Failed to delete manufacturer');
+        }
     }
 };

@@ -2,7 +2,7 @@
 <script lang="ts">
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
-  import Manufacturer from '$lib/components/manufacturer.svelte';
+  import Manufacturer from '$lib/components/cards/manufacturer.svelte';
   
   export let data: PageData;
   const { form, errors } = superForm(data.form);

@@ -1,6 +1,6 @@
-<!-- //src/routes/catagory/[id]/edit/+page.svelte -->
+<!-- //src/routes/category/[id]/edit/+page.svelte -->
 <script lang="ts">
-  import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
+  import CategoryComboBox from '$lib/components/forms/CategoryComboBox.svelte';
   import type { Category } from '@/types/types';
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
@@ -96,7 +96,7 @@
   
 
       <div class="form-actions">
-        <a href="/catagory" class="cancel-btn">Cancel</a>
+        <a href="/category" class="cancel-btn">Cancel</a>
         <button type="submit" class="save-btn" disabled={$submitting }>
           {$submitting ? 'Saving...' : 'Save Category'}
         </button>

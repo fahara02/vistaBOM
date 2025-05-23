@@ -1,7 +1,7 @@
 <!-- src/routes/parts/[id]/edit/+page.svelte -->
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms/client';
-	import PartForm from '$lib/components/PartForm.svelte';
+	import PartForm from '$lib/components/forms/PartForm.svelte';
 	import { prepareFormDataForValidation } from '$lib/utils/formUtils';
 	import { LifecycleStatusEnum } from '$lib/types/types';
 	import type { PageData } from './$types';

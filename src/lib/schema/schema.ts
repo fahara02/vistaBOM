@@ -167,6 +167,31 @@ export const categorySchema = z.object({
     custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
+// Use the supplierSchema already defined later in this file (around line 1829)
+
+// Form submission schema with more relaxed validation
+export const supplierFormSchema = z.object({
+    supplier_id: z.string().uuid().optional(),
+    supplier_name: z.string().min(1, "Supplier name is required"),
+    supplier_description: z.string().optional().nullable(),
+    website_url: z.string()
+        .refine(val => !val || /^https?:\/\/.+/.test(val), {
+            message: "Website URL must start with http:// or https://"
+        })
+        .optional().nullable(),
+    contact_info: jsonStringSchema,
+    logo_url: z.string()
+        .refine(val => !val || /^https?:\/\/.+/.test(val), {
+            message: "Logo URL must start with http:// or https://"
+        })
+        .optional().nullable(),
+    created_by: z.string().uuid().optional(),
+    updated_by: z.string().uuid().optional().nullable(),
+    custom_fields: z.record(z.string(), z.union([
+        z.string(), z.number(), z.boolean(), z.null()
+    ])).optional().nullable()
+});
+
 // ### Dimension Schemas
 export const dimensionSchema = z.object({
     length: z.number().positive(),
@@ -1787,6 +1812,38 @@ export const manufacturerPartSchema = z.object({
     ).default(() => new Date()) // TIMESTAMPTZ DEFAULT NOW() NOT NULL
 });
 
+
+// Create a new schema with only the fields needed for creation
+export const createManufacturerSchema = z.object({
+  manufacturer_name: z.string().min(1, "Manufacturer name cannot be empty"),
+  manufacturer_description: z.string().optional().nullable(), 
+  website_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
+    message: "Website URL must start with http:// or https://"
+  }).optional().nullable(),
+  logo_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
+    message: "Logo URL must start with http:// or https://"
+  }).optional().nullable(),
+  // Add custom fields support
+  custom_fields: z.any().optional().nullable()
+});
+// Create a schema for manufacturer validation that follows the database schema
+export const manufacturerActionSchema = z.object({
+    manufacturer_id: z.preprocess(
+        // Pre-process to handle empty strings and validate UUID format
+        (val) => val === '' || val === undefined || val === null ? undefined : val,
+        z.string().uuid({ message: "Invalid UUID format" }).optional()
+    ),
+    manufacturer_name: z.string().min(1, { message: "Manufacturer name is required" }),
+    manufacturer_description: z.string().optional().nullable(),
+    website_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
+        message: "Website URL must start with http:// or https://"
+    }).optional().nullable(),
+    logo_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
+        message: "Logo URL must start with http:// or https://"
+    }).optional().nullable(),
+    contact_info: z.any().optional().nullable(),
+    custom_fields: z.any().optional().nullable()
+});
 // ### Supplier Schema
 export const supplierSchema = z.object({
     supplier_id: z.string().uuid({ message: "Invalid UUID format" }), // UUID PRIMARY KEY
@@ -2124,17 +2181,35 @@ export const categoryClientSchema = z.object({
 // Form schema for category creation/editing - avoid unions for FormData compatibility
 // These fields must match exactly what's in the form
 export const categoryFormSchema = z.object({
+    // Include category_id for edit operations
+    category_id: z.string().uuid().optional(),
     category_name: z.string().min(1, "Category name is required"),
-    parent_id: z.string().optional()
+    parent_id: z.string().optional().nullable()
         .transform(val => {
-            // Transform empty string to undefined
-            if (val === '' || val === undefined) {
-                return undefined;
+            // Transform empty string to undefined or null to handle different form data formats
+            if (val === '' || val === undefined || val === null) {
+                return null;
             }
             return val;
         }),
-    category_description: z.string().optional().nullable(),
-    is_public: z.boolean().default(true)
+    category_description: z.string().optional().nullable()
+        .transform(val => {
+            // Transform empty string to null for consistency
+            if (val === '') {
+                return null;
+            }
+            return val;
+        }),
+    is_public: z.union([
+        z.boolean(),
+        // Handle checkbox form data which can come as string 'true'/'false' or '0'/'1'
+        z.string().transform(val => {
+            if (val === 'true' || val === '1' || val === 'on') return true;
+            if (val === 'false' || val === '0' || val === '') return false;
+            return Boolean(val);
+        })
+    ]).default(true)
 });
+
 
 

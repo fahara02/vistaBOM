@@ -203,6 +203,41 @@ export async function POST({ locals, request }: RequestEvent) {
             return json({ success: true, message: 'Category deleted successfully' });
         }
         
+        // Handle supplier deletion
+        if (action === 'delete_supplier') {
+            const supplierId = formData.get('supplier_id');
+            if (!supplierId || typeof supplierId !== 'string') {
+                return json({ error: 'Supplier ID is required' }, { status: 400 });
+            }
+            
+            // Check if user owns the supplier or is admin
+            const supplier = await sql`
+                SELECT * FROM "Supplier"
+                WHERE supplier_id = ${supplierId.toString()}
+            `;
+            
+            if (supplier.length === 0) {
+                return json({ error: 'Supplier not found' }, { status: 404 });
+            }
+            
+            if (supplier[0].created_by !== user.user_id && !user.is_admin) {
+                return json({ error: 'Not authorized to delete this supplier' }, { status: 403 });
+            }
+            
+            // Execute delete
+            await sql`
+                DELETE FROM "SupplierCustomField"
+                WHERE supplier_id = ${supplierId.toString()}
+            `;
+            
+            await sql`
+                DELETE FROM "Supplier"
+                WHERE supplier_id = ${supplierId.toString()}
+            `;
+            
+            return json({ success: true, message: 'Supplier deleted successfully' });
+        }
+        
         // Return error for unknown actions
         return json({ error: 'Unknown action' }, { status: 400 });
     } catch (error) {

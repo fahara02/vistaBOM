@@ -1,22 +1,263 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { PartForm } from '$lib/components';
-	import CategoryComboBox from '$lib/components/CategoryComboBox.svelte';
-	import Category from '$lib/components/category.svelte';
-	import type { Category as CategoryType } from '$lib/types/schemaTypes';
-	import { LifecycleStatusEnum, PartStatusEnum } from '$lib/types/enums';
+	// Import type definitions
+	import type { Category } from '$lib/types/schemaTypes';
+	import type { PageData } from './$types';
+
+	// Import components and utilities
+	import { goto, invalidate, invalidateAll } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { PartForm } from '$lib/components/forms';
+	import CategoryComboBox from '$lib/components/forms/CategoryComboBox.svelte';
+	import CategoryComponent from '$lib/components/cards/category.svelte';
+	import Supplier from '$lib/components/cards/supplier.svelte';
+	import ManufacturersTab from '$lib/components/dashboard/manufacturers-tab.svelte';
 	import { categoryFormSchema } from '$lib/schema/schema';
 	import { z } from 'zod';
-	import { superForm } from 'sveltekit-superforms/client';
-	import type { PageData } from './$types';
+	import { superForm, type SuperForm } from 'sveltekit-superforms/client';
+	import { enhance } from '$app/forms';
+	import { LifecycleStatusEnum, PartStatusEnum } from '$lib/types/enums';
+
+	// Type definitions for form data
+	type CategoryFormType = z.infer<typeof categoryFormSchema>;
+	// Import form types from formTypes.ts
+	import type { SupplierFormData, ManufacturerFormData } from '$lib/types/formTypes';
+
+	// Interface for dashboard manufacturers that matches the snake_case format required by components
+	interface DashboardManufacturer {
+		manufacturer_id: string;
+		manufacturer_name: string;
+		manufacturer_description?: string | null;
+		website_url?: string | null;
+		contact_info?: string | null;
+		logo_url?: string | null;
+		custom_fields?: Record<string, unknown> | null;
+		created_at: Date;
+		updated_at: Date; // Required Date type (not nullable)
+		created_by: string;
+		updated_by?: string | null;
+	}
 
 	export let data: PageData;
 	const user = data.user!;
-	const projects = data.projects;
 
 	// Ensure fullName is a string for rendering
-	const fullName = user.full_name ?? '';
+	const fullName = user.username || user.email || '';
 	const initial = fullName.charAt(0) || '';
+	
+	// Variables for handling data based on the structure returned from the server
+	let categories: Category[] = data?.categories || [];
+	// For backward compatibility, alias categories as allCategories 
+	let allCategories: Category[] = categories;
+	// Extract projects data from page data
+	const projects = data?.projects || [];
+	// Define typed user items - use proper types instead of any
+	let userParts = data?.userParts || [];
+	// Transform the raw manufacturer data to match our DashboardManufacturer interface
+	let userManufacturers: DashboardManufacturer[] = transformManufacturerData(data?.userManufacturers || []);
+	let userSuppliers = data?.userSuppliers || [];
+	
+	// Transform server-side camelCase userCategories to component's snake_case format
+	$: transformedCategories = transformCategoryData(data?.userCategories || []);
+
+	// Reference to form element
+	let partFormElement: HTMLFormElement;
+	
+	// Initialize forms using superForm
+	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.forms?.category, {
+		dataType: 'json',
+		onResult: ({ result }) => {
+			if (result.type === 'success') {
+				showCategoryForm = false;
+				editCategoryMode = false;
+				currentCategoryId = null;
+				refreshData();
+			}
+			return result;
+		}
+	});
+	
+	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.forms?.part, {
+		dataType: 'json'
+	});
+	
+	const { form: manufacturerForm, errors: manufacturerErrors, enhance: manufacturerEnhance, submitting: manufacturerSubmitting, message: manufacturerMessage } = superForm(data.forms?.manufacturer || {
+			manufacturer_id: '',
+			manufacturer_name: '',
+			manufacturer_description: '',
+			website_url: '',
+			logo_url: '',
+			contact_info: '{}',
+			custom_fields: '{}',
+			created_by: user.user_id,
+			updated_by: user.user_id
+		}, {
+		dataType: 'json',
+		resetForm: true,
+		// Properly handle form validation before submission
+		validationMethod: 'submit-only',
+		onSubmit: ({ formData, cancel }) => {
+			// Log the submission data for debugging
+			console.log('Submitting manufacturer form with data:', Object.fromEntries(formData.entries()));
+			
+			// Ensure manufacturer_name is present
+			if (!formData.get('manufacturer_name') || String(formData.get('manufacturer_name')).trim() === '') {
+				cancel();
+				return {
+					manufacturer_name: ['Manufacturer name is required']
+				};
+			}
+		},
+		onResult: ({ result }) => {
+			console.log('Manufacturer form submission result:', result);
+			
+			// Handle the result of form submission
+			if (result.type === 'success') {
+				// Close the form and reset edit mode
+				showManufacturerForm = false;
+				editManufacturerMode = false;
+				currentManufacturerId = null;
+				
+				// Refresh the data to show the new/updated manufacturer
+				refreshData();
+			} else if (result.type === 'error') {
+				console.error('Manufacturer form submission error:', result.error);
+			}
+			return result;
+		}
+	});
+	
+	// Function to directly set form values to bypass store subscription issues
+	function updateManufacturerForm(formData: any) {
+		console.log('Updating manufacturer form with data:', formData);
+		
+		// Create a complete form object first to ensure all fields are properly set
+		const updatedForm = {
+			// Required fields
+			manufacturer_id: formData.manufacturer_id || '',
+			manufacturer_name: formData.manufacturer_name || '',
+			
+			// Optional fields with proper type handling
+			manufacturer_description: formData.manufacturer_description || '',
+			website_url: formData.website_url || '',
+			logo_url: formData.logo_url || '',
+			
+			// JSON fields with proper format handling
+			contact_info: processJsonField(formData.contact_info),
+			custom_fields: processJsonField(formData.custom_fields),
+			
+			// User tracking fields
+			created_by: formData.created_by || user.user_id,
+			updated_by: user.user_id, // Always set to current user for updates
+			
+			// Add timestamp fields to satisfy TypeScript
+			created_at: formData.created_at || new Date(),
+			updated_at: formData.updated_at || new Date()
+		};
+		
+		// Update the form with the complete object
+		$manufacturerForm = updatedForm;
+		
+		console.log('Updated manufacturer form:', $manufacturerForm);
+	}
+	
+	// Helper function to process JSON fields consistently
+	function processJsonField(value: any): string {
+		if (!value) return '{}';
+		
+		// If it's already a string, check if it's valid JSON
+		if (typeof value === 'string') {
+			if (value.trim() === '') return '{}';
+			
+			try {
+				// Try to parse and re-stringify to ensure valid JSON format
+				const parsed = JSON.parse(value);
+				return JSON.stringify(parsed);
+			} catch (e) {
+				// If it's not valid JSON but looks like it might be key-value pairs
+				if (value.includes(':') && !value.startsWith('{')) {
+					try {
+						// Try to convert key-value format to JSON
+						const pairs = value.split(/[;\n]+/);
+						const obj: Record<string, string> = {};
+						
+						for (const pair of pairs) {
+							const [key, val] = pair.split(':').map(s => s.trim());
+							if (key && val) {
+								obj[key] = val;
+							}
+						}
+						return JSON.stringify(obj);
+					} catch {
+						// If conversion fails, store as notes
+						return JSON.stringify({ notes: value });
+					}
+				} else {
+					// If not in key-value format, store as notes
+					return JSON.stringify({ notes: value });
+				}
+			}
+		}
+		
+		// If it's an object, stringify it
+		if (typeof value === 'object') {
+			return JSON.stringify(value);
+		}
+		
+		// For other types, convert to string and wrap in JSON
+		return JSON.stringify({ value: String(value) });
+	}
+	
+	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.forms?.supplier, {
+		dataType: 'json',
+		resetForm: true,
+		// Handle form data before submission to ensure conformity with schema
+		onSubmit: ({ formData }) => {
+			// Generate a valid UUID for supplier_id if empty or missing
+			const supplierIdValue = formData.get('supplier_id');
+			if (!supplierIdValue || supplierIdValue === '') {
+				const uuid = crypto.randomUUID();
+				formData.set('supplier_id', uuid);
+				// Also update the reactive store
+				$supplierForm.supplier_id = uuid;
+			}
+
+			// Handle contact info field - ensure it's properly formatted as JSON
+			const contactInfo = formData.get('contact_info');
+			if (contactInfo && typeof contactInfo === 'string' && contactInfo.trim() !== '') {
+				try {
+					// Try to parse it as JSON to validate it
+					JSON.parse(contactInfo);
+					// It's valid JSON, so we'll keep it as is
+				} catch (e) {
+					// Not valid JSON, so we'll wrap it as a note
+					formData.set('contact_info', JSON.stringify({ notes: contactInfo }));
+				}
+			} else if (contactInfo === '') {
+				// Empty string should be null for schema compliance
+				// Can't use undefined with FormData.set()
+				formData.set('contact_info', '');
+			}
+
+			// No need to process empty fields anymore - we just leave them as empty strings
+			// and let the server handle the conversion to null where appropriate
+			// The server's processEmptyString function will properly convert these
+		},
+		onResult: ({ result }) => {
+			if (result.type === 'success') {
+				showSupplierForm = false;
+				refreshData();
+			}
+			return result;
+		}
+	});
+	
+	// Variables for edit mode tracking
+	let editCategoryMode = false;
+	let currentCategoryId: string | null = null;
+	
+	// Manufacturer edit mode tracking
+	let editManufacturerMode = false;
+	let currentManufacturerId: string | null = null;
 
 	// Tab management with localStorage persistence
 	type TabType = 'projects' | 'parts' | 'manufacturers' | 'suppliers' | 'categories';
@@ -32,424 +273,360 @@
 		}
 	}
 	
-	// Form visibility toggles
-	let showPartForm = false;
-	let showManufacturerForm = false;
-	let showSupplierForm = false;
-	let showCategoryForm = false;
-
-	// Format field names from camelCase to Title Case with spaces
-	function formatFieldName(fieldName: string): string {
-		// Add space before capital letters and capitalize the first letter
-		const formatted = fieldName
-			.replace(/([A-Z])/g, ' $1') // Add space before capital letters
-			.replace(/^./, (str) => str.toUpperCase()); // Capitalize first letter
-		return formatted.trim();
-	}
-	
-	// // Process contact info for dashboard display
-	function processContactInfo(info: any): { email?: string; phone?: string; address?: string; text?: string } {
-		const result: { email?: string; phone?: string; address?: string; text?: string } = {};
-		
-		if (!info) return result;
-		
-		// If it's already a parsed object, just return it
-		if (typeof info === 'object' && info !== null) {
-			if ('email' in info) result.email = info.email;
-			if ('phone' in info) result.phone = info.phone;
-			if ('address' in info) result.address = info.address;
-			return result;
-		}
-		
-		// If it's a string, try to parse it as JSON
-		if (typeof info === 'string') {
-			try {
-				// Try JSON parsing first
-				if (info.trim().startsWith('{')) {
-					const parsed = JSON.parse(info);
-					if ('email' in parsed) result.email = parsed.email;
-					if ('phone' in parsed) result.phone = parsed.phone;
-					if ('address' in parsed) result.address = parsed.address;
-					return result;
-				}
-				
-				// Look for email:value format
-				if (info.includes(':')) {
-					const pairs = info.split(/[;,\n]+/);
-					
-					for (const pair of pairs) {
-						const parts = pair.split(':');
-						if (parts.length >= 2) {
-							const key = parts[0].trim().toLowerCase();
-							const value = parts.slice(1).join(':').trim();
-							
-							if (key.includes('email')) result.email = value;
-							else if (key.includes('phone') || key.includes('tel')) result.phone = value;
-							else if (key.includes('address')) result.address = value;
-						}
-					}
-					
-					if (Object.keys(result).length > 0) return result;
-				}
-				
-				// Default to storing as simple text
-				result.text = info;
-				return result;
-			} catch (e) {
-				// If JSON parsing fails, just store as text
-				result.text = info;
-				return result;
-			}
-		}
-		
-		return result;
-	}
-
-	// Function to handle tab changes with localStorage persistence
+	// Function to set active tab and save to localStorage
 	function setActiveTab(tab: TabType): void {
 		activeTab = tab;
-		// Save tab state to localStorage for persistence across page reloads
 		if (typeof window !== 'undefined') {
 			localStorage.setItem('vistaBOM_activeTab', tab);
 		}
 	}
-	
-	// Reference to the form element for form submission
-	let partFormElement: HTMLFormElement;
-	
-	// Function to toggle part form visibility
-	function togglePartForm(): void {
-		showPartForm = !showPartForm;
-		
-		// If we're closing the form, reset the form data to prevent stale data issues
-		if (!showPartForm) {
-			// Reset the part form to default values with proper enum values
-			// Use proper schema field names matching the createPartSchema
-			$partForm = {
-				part_name: '',
-				part_version: '0.1.0',
-				short_description: '',
-				// Use proper enum values to ensure type safety
-				version_status: LifecycleStatusEnum.DRAFT,
-				status_in_bom: PartStatusEnum.CONCEPT,
-				// Required fields
-				is_public: false,
-				compliance_info: [],
-				attachments: [],
-				representations: [],
-				technical_specifications: {},
-				// Note: properties is handled via technical_specifications
-				custom_fields: {},
-				// Required fields from schema
-				structure: [],
-				manufacturer_parts: [],
-				supplier_parts: []
-			};
-		}
-		
-		console.log("Part form is " + (showPartForm ? "showing" : "hidden"));
-	}
-	
-	// Update form data when the PartForm component changes
-	function updateFormData(event: CustomEvent) {
-		const formData = event.detail;
-		console.log('📦 Received form update from PartForm:', formData);
-		
-		// Update the SuperForm store with the new data
-		$partForm = { ...$partForm, ...formData };
-	}
-	
-	// Categories data management
-	// We need to make this a 'let' variable so we can update it reactively after operations
-	let allCategories: CategoryType[] = [];
-	// Create a reactive reference to the exported data.categories list to use in refresh operations
-	let categories: CategoryType[] = (data.categories || []) as CategoryType[];
 
-	// Initialize part form with superForm with improved error handling
-	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.partForm, {
-		dataType: 'json',
-		resetForm: false, // Keep form values on submission
-		onSubmit: ({ formData }) => {
-			console.log('Submitting part form with data:', formData);
-			
-			// Make sure enum fields with empty values are properly handled
-			// Update enum field names to match the schema
-			const enumFields = ['status', 'part_status', 'package_type', 'weight_unit', 'dimensions_unit', 'temperature_unit'];
-			enumFields.forEach(field => {
-				if (formData.has(field)) {
-					const value = formData.get(field);
-					if (value === '' || value === undefined) {
-						// Remove empty enum fields instead of setting to null
-						// This avoids FormData type issues with null values
-						formData.delete(field);
-					}
-				}
-			});
-		},
-		onResult: ({ result }) => {
-			console.log('Part form submission result:', result);
-			
-			// Check if the submission was successful
-			if (result.type === 'success') {
-				// Show success message
-				$partMessage = 'Part created successfully!';
-				
-				// Hide the form
-				showPartForm = false;
-				
-				// Reload the page to get updated parts list
-				setTimeout(() => {
-					window.location.reload();
-				}, 1000); // Short delay to show the success message
-			} else if (result.type === 'error') {
-				// Show error message
-				$partMessage = 'Failed to create part. Please check the form for errors.';
-				console.error('Part form submission error:', result.error);
-			}
-		},
-		onError: (error) => {
-			// Handle validation errors
-			console.error('Part form validation error:', error);
-			$partMessage = 'Form validation failed. Please check the highlighted fields.';
-		}
-	});
+	// Form visibility toggles
+	let showPartForm = false;
+	let showManufacturerForm = false;
+	let showCategoryForm = false;
+	let showSupplierForm = false;
 
-	// Initialize manufacturer form with superForm
-	const { form: manufacturerForm, errors: manufacturerErrors, enhance: manufacturerEnhance, submitting: manufacturerSubmitting, message: manufacturerMessage } = superForm(data.manufacturerForm, {
-		dataType: 'json',
-		resetForm: false, // Keep form values on submission
-		onSubmit: () => {
-			console.log('Submitting manufacturer form');
-		},
-		onResult: ({ result }) => {
-			if (result.type === 'success') {
-				// Successfully submitted, hide form after a delay
-				setTimeout(() => {
-					showManufacturerForm = false;
-				}, 2000); // Delay to allow user to see success message
-			}
-		}
-	});
 
-	// Define the inferred type for the form - must exactly match schema
-	type CategoryFormType = z.infer<typeof categoryFormSchema>;
-
-	// Function to refresh categories data directly from API without full page reload
-	async function refreshCategoriesData() {
-		console.log('Refreshing categories data from API...');
+	
+	// Data refresh function to handle updates without page reload
+	async function refreshData() {
 		try {
-			const response = await fetch('/api/categories');
-			if (!response.ok) throw new Error('Failed to fetch categories');
+			// Store current tab
+			const currentTab = activeTab;
 			
-			// Update our local categories data
-			const freshCategories = await response.json();
-			console.log(`Fetched ${freshCategories.length} categories from API`);
+			// Use SvelteKit's invalidate to refresh the data rather than direct fetch
+			// This ensures the data is loaded through the proper +page.server.ts load function
 			
-			// Filter out deleted categories using ONLY actual schema properties
-			const filteredCategories = freshCategories.filter((cat: CategoryType) => {
-				// Skip null/undefined categories
-				if (!cat) return false;
-				
-				// Only check properties that actually exist in the schema
-				return cat.is_deleted === false && cat.deleted_at === null;
-			});
+			// Add a small delay to prevent UI jank during invalidation
+			await Promise.all([
+				invalidate('data:dashboard'),
+				new Promise(resolve => setTimeout(resolve, 200))
+			]);
 			
-			// Update both category collections used in different parts of the UI
-			categories = filteredCategories;
-			allCategories = filteredCategories;
+			// The data is now updated automatically by SvelteKit's reactivity
+			// Update local variables from the refreshed data object
+			categories = data.categories || [];
+			allCategories = data.categories || []; // Keep the alias updated
+			transformedCategories = transformCategoryData(data.userCategories || []);
+			userParts = data.userParts || [];
+			// Apply transformation to manufacturer data to maintain type consistency
+			userManufacturers = transformManufacturerData(data.userManufacturers || []);
+			userSuppliers = data.userSuppliers || [];
 			
-			console.log(`Updated categories array with ${categories.length} non-deleted categories`);
-			console.log('Sample category after refresh:', categories.length > 0 ? categories[0] : 'No categories');
-			
-			// Force a UI refresh by toggling a reactive variable
-			uiRefreshTrigger = !uiRefreshTrigger;
-			
-			// Force the tree to rebuild with fresh data
+			// Restore tab state from localStorage or use current tab as fallback
 			if (typeof window !== 'undefined') {
-				// Dispatch a custom event to notify any components listening for category updates
-				window.dispatchEvent(new CustomEvent('categoriesUpdated', { 
-					detail: { categories: filteredCategories } 
-				}));
-				
-				// Trigger page rendering with fresh data
-				setTimeout(() => {
-					// Add logging to verify data state
-					console.log('Category data refresh complete. Tree should display correctly now.');
-				}, 100);
+				activeTab = (localStorage.getItem('vistaBOM_activeTab') as TabType) || currentTab;
+			} else {
+				activeTab = currentTab;
 			}
+			console.log('Dashboard data refresh complete.');
 		} catch (error) {
-			console.error('Error refreshing categories:', error);
+			console.error('Error refreshing dashboard data:', error);
 		}
 	}
-
-	// Reactive variable to force UI updates
-	let uiRefreshTrigger = false;
-
-	// Default values for category form
-	const categoryFormInitialValues = {
-		category_name: '',
-		category_description: '',
-		parent_id: undefined as string | undefined,
-		is_public: true
-	};
-
-	// Initialize category form with superForm - IMPORTANT: use dataType: 'json' for union types
-	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.categoryForm, {
-		dataType: 'json', // CRITICAL: Required for union types in schema
-		// Explicitly handle form submission
-		onSubmit: ({ formData, cancel }) => {
-			// Log form data for debugging
-			console.log('Submitting category form:', Object.fromEntries(formData));
-			
-			// Check if this is a delete operation
-			const isDelete = formData.get('delete') === 'true';
-			if (isDelete) {
-				console.log('This is a DELETE operation');
-			}
-			// Continue with submission
-		},
-		// Handle form submission
-		onResult: ({ result }) => {
-			// DEBUG: Log ALL form result details
-			console.log('CATEGORY FORM RESULT:', JSON.stringify(result, null, 2));
-			
-			// Check if this was a delete operation - special case, handle differently
-			// Access form data using type assertion for delete operation
-			const formData = $categoryForm as any;
-			const isDeleteOperation = formData.delete === true;
-			if (isDeleteOperation) {
-				console.log('DETECTED DELETE OPERATION');
-			}
-			
-			if (result.type === 'success') {
-				// Reset form and UI state
-				categoryForm.set({
-					category_name: '',
-					category_description: '',
-					parent_id: undefined,
-					is_public: true
-				});
-				showCategoryForm = false;
-				editCategoryMode = false;
-				currentCategoryId = null;
-				
-				// SUCCESS MESSAGE
-				console.log('SUCCESS: Form submitted successfully');
-				
-				// BRUTE FORCE APPROACH: Always force a full reload after category operations
-				console.log('FORCING COMPLETE PAGE RELOAD');
-				window.location.reload();
-			} else if (result.type === 'error') {
-				console.error('Category form error:', result.error);
-			}
-		},
-		// Handle errors without trying to interpret them
-		onError: (error) => {
-			console.error('Category form error:', error);
-		}
-	});
-
-	// Initialize supplier form with superForm
-	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.supplierForm, {
-		dataType: 'form',
-		resetForm: true,
-		onResult: ({ result }) => {
-			if (result.type === 'success') {
-				// Close the form
-				showCategoryForm = false;
-				
-				// Reset edit mode
-				editCategoryMode = false;
-				currentCategoryId = null;
-				
-				// Reset the form to initial values
-				// Form will be reset automatically due to resetForm: true
-				
-				// Display a success message
-				$categoryMessage = editCategoryMode ? 'Category updated successfully!' : 'Category created successfully!';
-				
-				// Reload the page to refresh data
-				setTimeout(() => {
-					window.location.reload();
-				}, 500);
-			}
-		}
-	});
-
-	// User entities from server
-	const userParts = data.userParts || [];
-	const userManufacturers = data.userManufacturers || [];
-	const userSuppliers = data.userSuppliers || [];
-	const userCategories = data.userCategories || [];
-
-	let editCategoryMode = false;
-	let currentCategoryId: string | null = null;
 	
-	// Edit category function - shows form pre-filled with category data
-	function editCategory(category: CategoryType) {
-		// Clear form and set edit mode
-		editCategoryMode = true;
-		currentCategoryId = category.category_id;
+	// For backward compatibility - can be replaced with refreshData() in the future
+	async function refreshCategoryData() {
+		await refreshData();
+	}
+
+	/**
+ * Helper function to transform categories from server's camelCase format to snake_case
+ * The server returns objects with camelCase properties but we need snake_case for our components
+ */
+function transformCategoryData(categories: any[]): (Category & { parent_name?: string | undefined })[] {
+    return categories.map(category => {
+        // Create properly typed Category object from the camelCase data
+        const transformedCategory: Category & { parent_name?: string | undefined } = {
+            category_id: category.categoryId || '',
+            category_name: category.categoryName || '',
+            category_description: category.categoryDescription || null,
+            category_path: category.categoryPath || '',
+            parent_id: category.parentId || null,
+            is_public: Boolean(category.isPublic),
+            created_at: category.createdAt ? new Date(category.createdAt) : new Date(), 
+            updated_at: category.updatedAt ? new Date(category.updatedAt) : new Date(),
+            created_by: category.createdBy || '',
+            updated_by: category.updatedBy || null,
+            is_deleted: false, // We know this is false because the server filters deleted categories
+            deleted_at: null,
+            deleted_by: null,
+            parent_name: category.parentName || undefined // Add parent_name from the join, ensure it's string or undefined
+        };
+        return transformedCategory;
+    });
+}
+
+/**
+ * Transform manufacturer data from server format (with snake_case property names)
+ * to the DashboardManufacturer interface format needed for our UI
+ * Ensuring proper handling of null values to match expected component types
+ */
+function transformManufacturerData(manufacturers: any[]): DashboardManufacturer[] {
+    // Log the first raw manufacturer data to debug structure
+    if (manufacturers.length > 0) {
+        console.log('Raw manufacturer data from server:', manufacturers[0]);
+    }
+    
+    // Create a Set to track used IDs and avoid duplicates
+    const usedIds = new Set<string>();
+    
+    return manufacturers.map(manufacturer => {
+        // The server returns fields in camelCase but our component expects snake_case
+        // Handle the camelCase to snake_case conversion for IDs
+        let manufacturerId = manufacturer.manufacturerId || manufacturer.manufacturer_id || '';
+        
+        // Ensure we have a valid ID - generate UUID if missing
+        if (!manufacturerId) {
+            manufacturerId = crypto.randomUUID();
+        }
+        
+        // Check for duplicate IDs and generate a new one if needed
+        if (usedIds.has(manufacturerId)) {
+            manufacturerId = crypto.randomUUID();
+        }
+        usedIds.add(manufacturerId);
+        
+        // Convert server data to our DashboardManufacturer interface with consistent snake_case properties
+        const transformedManufacturer: DashboardManufacturer = {
+            manufacturer_id: manufacturerId,
+            manufacturer_name: manufacturer.name || manufacturer.manufacturer_name || '',
+            // Convert null to undefined to match expected type in components
+            manufacturer_description: manufacturer.description === null ? undefined : (manufacturer.description || manufacturer.manufacturer_description),
+            website_url: manufacturer.website === null ? undefined : (manufacturer.website || manufacturer.website_url),
+            logo_url: manufacturer.logoUrl === null ? undefined : (manufacturer.logoUrl || manufacturer.logo_url),
+            contact_info: manufacturer.contact_info === null ? undefined : manufacturer.contact_info,
+            custom_fields: manufacturer.custom_fields || {},
+            created_at: new Date(manufacturer.createdAt || manufacturer.created_at || Date.now()),
+            updated_at: manufacturer.updatedAt ? new Date(manufacturer.updatedAt) 
+                     : (manufacturer.updated_at ? new Date(manufacturer.updated_at) : new Date()), // Ensure it's always a Date
+            created_by: manufacturer.createdBy || manufacturer.created_by || user?.user_id || '',
+            updated_by: manufacturer.updatedBy === null ? undefined : (manufacturer.updatedBy || manufacturer.updated_by)
+        };
+        return transformedManufacturer;
+    });
+}
+
+	// Function to toggle supplier form visibility
+	function toggleSupplierForm() {
+		showSupplierForm = !showSupplierForm;
 		
-		console.log('Edit category data:', category);
-		
-		// Populate form with category data - must match schema exactly
-		$categoryForm = {
-			category_name: category.category_name,
-			category_description: category.category_description || '',
-			parent_id: category.parent_id || '',
-			is_public: Boolean(category.is_public)
-		} as CategoryFormType; // Type assertion to match schema
-		
-		console.log('Form data after setting:', $categoryForm);
-		
-		// Log parent categories for debugging
-		if (data.allCategories) {
-			console.log('Available parent categories:', data.allCategories);
+		// Reset form to initial values when opening
+		if (showSupplierForm) {
+			// CRITICAL: Force complete form reset first, don't rely on previous state
+			// This resets all fields including any persisted values in the form state
+			const emptyForm = {
+				supplier_id: '', // ALWAYS empty for new suppliers
+				supplier_name: '',
+				supplier_description: '',
+				website_url: '',
+				contact_info: '',
+				logo_url: '',
+				created_at: new Date(),
+				updated_at: new Date(),
+				custom_fields: {},
+				created_by: '',
+				updated_by: ''
+			};
+			
+			// Apply the complete reset by assigning the entire object
+			$supplierForm = emptyForm;
+			console.log('RESET: New supplier form with EMPTY supplier_id:', $supplierForm.supplier_id);
+			
+			// Force a DOM refresh to ensure the form is truly reset
+			setTimeout(() => {
+				// Double-check that supplier_id is still empty after reset
+				if ($supplierForm.supplier_id) {
+					console.warn('WARNING: supplier_id was not empty after reset, forcing empty again');
+					$supplierForm.supplier_id = '';
+				}
+			}, 0);
 		}
-		
-		// Show form and set edit mode
-		showCategoryForm = true;
-		editCategoryMode = true;
 	}
 	
-	// Function to cancel editing
+	// Event handlers for entity deletion
+	function handleCategoryDeleted(event: CustomEvent<{ categoryId: string }>) {
+		transformedCategories = transformedCategories.filter(cat => cat.category_id !== event.detail.categoryId);
+		refreshData();
+	}
+	
+	// Function to cancel category edit mode
 	function cancelCategoryEdit() {
-		// Reset edit mode flags
 		editCategoryMode = false;
 		currentCategoryId = null;
-		showCategoryForm = false;
-		
-		// Reset form to initial state with type assertion
 		$categoryForm = {
+			category_name: '',
+			category_description: '',
+			parent_id: null, // Using null instead of undefined to satisfy TypeScript string | null type
+			is_public: true
+		};
+	}
+	
+	// Function to toggle part form visibility
+	function togglePartForm() {
+		showPartForm = !showPartForm;
+	}
+	
+	// Function to handle supplier deletion event
+	function handleSupplierDeleted(event: CustomEvent<{ supplierId: string }>) {
+		console.log('Supplier deleted:', event.detail.supplierId);
+		refreshData();
+	}
+
+	// Function to handle manufacturer edit
+	function editManufacturer(manufacturer: DashboardManufacturer) {
+		console.log('Editing manufacturer:', manufacturer);
+		
+		// Set edit mode
+		editManufacturerMode = true;
+		currentManufacturerId = manufacturer.manufacturer_id;
+		showManufacturerForm = true;
+		
+		// Make sure we have all required fields, starting with current form structure
+		const currentForm = { ...$manufacturerForm };
+		
+		// Create a properly formatted form data object with all required fields
+		// Map from dashboard data format to form format
+		$manufacturerForm = {
+			...currentForm,
+			manufacturer_id: manufacturer.manufacturer_id,
+			manufacturer_name: manufacturer.manufacturer_name,
+			manufacturer_description: manufacturer.manufacturer_description || '',
+			website_url: manufacturer.website_url || '',
+			// Correctly handle contact_info based on its type
+			contact_info: typeof manufacturer.contact_info === 'string'
+				? manufacturer.contact_info
+				: manufacturer.contact_info
+					? JSON.stringify(manufacturer.contact_info)
+					: '',
+			logo_url: manufacturer.logo_url || '',
+			// Ensure custom_fields is properly formatted
+			custom_fields: typeof manufacturer.custom_fields === 'string'
+				? JSON.parse(manufacturer.custom_fields || '{}')
+				: manufacturer.custom_fields || {}
+		};
+		
+		console.log('Form data set to:', $manufacturerForm);
+		
+		// Scroll to the form
+		setTimeout(() => {
+			const formContainer = document.querySelector('.form-container');
+			if (formContainer) {
+				console.log('Scrolling to form container');
+				formContainer.scrollIntoView({ behavior: 'smooth' });
+			} else {
+				console.warn('Form container not found for scrolling');
+			}
+		}, 100);
+	}
+	
+	// Function to cancel manufacturer edit mode
+	function cancelManufacturerEdit() {
+		editManufacturerMode = false;
+		currentManufacturerId = null;
+		showManufacturerForm = false;
+		
+		// Reset form data - need to keep the base structure from SuperForm
+		const currentForm = { ...$manufacturerForm };
+		// Only reset the editable fields
+		$manufacturerForm = {
+			...currentForm,
+			manufacturer_id: '',
+			manufacturer_name: '',
+			manufacturer_description: '',
+			website_url: '',
+			contact_info: '',
+			logo_url: '',
+			custom_fields: {}
+		};
+	}
+	
+	// Function to handle category edit event
+	function handleCategoryEdit(event: CustomEvent<{ category: Category }>) {
+		const categoryToEdit = event.detail.category;
+		console.log('Editing category:', categoryToEdit);
+		
+		// Set edit mode and current category ID
+		editCategoryMode = true;
+		currentCategoryId = categoryToEdit.category_id;
+		
+		// Set form data using standard CategoryFormType from schema.ts
+		// The schema now includes category_id field
+		$categoryForm = {
+			category_id: categoryToEdit.category_id,
+			category_name: categoryToEdit.category_name,
+			category_description: categoryToEdit.category_description || '',
+			parent_id: categoryToEdit.parent_id || '',
+			is_public: Boolean(categoryToEdit.is_public)
+		};
+		
+		// Show the form
+		showCategoryForm = true;
+		
+		// Signal to the CategoryComponent that we've handled the edit event
+		// This prevents the component from showing its own edit form
+		window.dispatchEvent(new CustomEvent('category:edit:handled'));
+	}
+	
+	// Function to handle part form updates 
+	function updateFormData(event: CustomEvent<Record<string, any>>) {
+		// Update the part form data with the values from the PartForm component
+		if (event.detail) {
+			console.log('Updating part form data:', event.detail);
+			// Update the reactive store
+			$partForm = {
+				...$partForm,
+				...event.detail
+			};
+		}
+	}
+	
+	// Function to reset category form
+	function resetCategoryForm() {
+		// Reset the form with all fields from schema
+		$categoryForm = {
+			category_id: undefined, // Make sure it's properly cleared for new entries
 			category_name: '',
 			category_description: '',
 			parent_id: '',
 			is_public: false
-		} as CategoryFormType;
+		};
+		
+		// Reset edit mode
+		editCategoryMode = false;
+		currentCategoryId = null;
 	}
-	
+
 	// Function to toggle category form visibility
 	function toggleCategoryForm() {
-		// If we're closing the form and in edit mode, cancel the edit
-		if (showCategoryForm && editCategoryMode) {
-			cancelCategoryEdit();
-		} else {
-			// If we're opening the form for a new category, reset edit mode
-			if (!showCategoryForm) {
-				editCategoryMode = false;
-				currentCategoryId = null;
-				// Reset form with type assertion
-				$categoryForm = {
-					category_name: '',
-					category_description: '',
-					parent_id: '',
-					is_public: false
-				} as CategoryFormType;
-			}
+		// Toggle the form visibility first
+		showCategoryForm = !showCategoryForm;
+		
+		// If we're closing the form, reset everything
+		if (!showCategoryForm) {
+			// Reset edit mode
+			editCategoryMode = false;
+			currentCategoryId = null;
 			
-			// Toggle form visibility
-			showCategoryForm = !showCategoryForm;
+			// Reset form values
+			$categoryForm = {
+				category_name: '',
+				category_description: '',
+				parent_id: '',
+				is_public: false
+			} as CategoryFormType;
+		} else if (showCategoryForm && !editCategoryMode) {
+			// If we're opening the form for a new category
+			editCategoryMode = false;
+			currentCategoryId = null;
+			// Reset form with type assertion
+			$categoryForm = {
+				category_name: '',
+				category_description: '',
+				parent_id: '',
+				is_public: false
+			} as CategoryFormType;
 		}
 	}
 </script>
@@ -608,186 +785,265 @@
 		<!-- Manufacturers Tab -->
 		{#if activeTab === 'manufacturers'}
 			<div class="tab-content">
-				<h2>Your Manufacturers</h2>
-				{#if userManufacturers.length > 0}
-					<div class="user-items-grid">
-						{#each userManufacturers as manufacturer (manufacturer.manufacturer_id)}
-							<div class="entity-card manufacturer-card">
-								<div class="card-header">
-									{#if manufacturer.logo_url}
-										<div class="logo-container">
-											<img src={manufacturer.logo_url} alt={`${manufacturer.manufacturer_name} logo`} class="manufacturer-logo" />
-										</div>
-									{:else}
-										<div class="logo-placeholder">
-											<span>{manufacturer.manufacturer_name.substring(0, 2).toUpperCase()}</span>
-										</div>
-									{/if}
-									<h3 class="manufacturer-name">{manufacturer.manufacturer_name}</h3>
-								</div>
-								
-								<div class="card-content">
-									{#if manufacturer.manufacturer_description}
-										<p class="entity-description">
-											{manufacturer.manufacturer_description.length > 100 ? 
-												`${manufacturer.manufacturer_description.substring(0, 100)}...` : 
-												manufacturer.manufacturer_description}
-										</p>
-									{:else}
-										<p class="entity-no-description">No description provided</p>
-									{/if}
-									
-									{#if manufacturer.website_url}
-										<p class="entity-meta website-link">
-											<span class="meta-label">Website:</span> 
-											<a href={manufacturer.website_url} target="_blank" rel="noopener noreferrer" class="website-url">
-												{new URL(manufacturer.website_url).hostname}
-											</a>
-										</p>
-									{/if}
-									
-									<p class="entity-meta">
-										<span class="meta-label">Created:</span> 
-										<span class="date-value">
-											{new Date(manufacturer.created_at).toLocaleDateString()}
-										</span>
-									</p>
-								</div>
-								
-								<div class="entity-actions">
-									<a href={`/manufacturer/${manufacturer.manufacturer_id}/edit`} class="icon-btn edit-btn" title="Edit Manufacturer">✏️</a>
-									<a href="/manufacturer" class="icon-btn view-btn" title="View All Manufacturers">👁️</a>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<p class="no-items">You haven't created any manufacturers yet.</p>
-				{/if}
-
-				<div class="action-buttons">
-					<button 
-						type="button" 
-						class="enhanced-btn add-btn" 
-						on:click={() => showManufacturerForm = !showManufacturerForm}
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							{#if showManufacturerForm}
-								<line x1="18" y1="6" x2="6" y2="18"></line>
-								<line x1="6" y1="6" x2="18" y2="18"></line>
-							{:else}
-								<line x1="12" y1="5" x2="12" y2="19"></line>
-								<line x1="5" y1="12" x2="19" y2="12"></line>
-							{/if}
-						</svg>
-						<span>{showManufacturerForm ? 'Cancel' : 'Add New Manufacturer'}</span>
-					</button>
-					<a href="/manufacturer" class="secondary-btn">View All Manufacturers</a>
+				<!-- Hidden manufacturer form with SuperForm's enhance function -->
+				<div class="hidden-form-container" style="display: none;" aria-hidden="true">
+					<form method="POST" action="?/manufacturer" use:manufacturerEnhance id="manufacturer-hidden-form">
+						<!-- Standard fields -->
+						<input type="hidden" name="manufacturer_id" value={$manufacturerForm.manufacturer_id || ''} />
+						<input type="hidden" name="manufacturer_name" value={$manufacturerForm.manufacturer_name || ''} />
+						<input type="hidden" name="manufacturer_description" value={$manufacturerForm.manufacturer_description || ''} />
+						<input type="hidden" name="website_url" value={$manufacturerForm.website_url || ''} />
+						<input type="hidden" name="logo_url" value={$manufacturerForm.logo_url || ''} />
+						
+						<!-- Complex fields with special handling -->
+						<input type="hidden" name="contact_info" value={typeof $manufacturerForm.contact_info === 'string' 
+							? $manufacturerForm.contact_info 
+							: JSON.stringify($manufacturerForm.contact_info || {})} />
+						<input type="hidden" name="custom_fields" value={typeof $manufacturerForm.custom_fields === 'string' 
+							? $manufacturerForm.custom_fields 
+							: JSON.stringify($manufacturerForm.custom_fields || {})} />
+						
+						<!-- User tracking fields -->
+						<input type="hidden" name="created_by" value={$manufacturerForm.created_by || user.user_id} />
+						<input type="hidden" name="updated_by" value={user.user_id} />
+						<button type="submit" id="manufacturer-submit-button">Submit</button>
+					</form>
 				</div>
-
-				{#if showManufacturerForm}
-					<div class="form-container enhanced-form">
-						<h2 class="form-title">Create New Manufacturer</h2>
+				
+				<ManufacturersTab 
+					manufacturers={userManufacturers} 
+					currentUserId={user.user_id}
+					manufacturerForm={$manufacturerForm}
+					manufacturerErrors={$manufacturerErrors || {}}
+					showForm={showManufacturerForm}
+					editMode={editManufacturerMode}
+					on:submit={(event) => {
+						console.log('Manufacturer form submitted:', event.detail);
 						
-						{#if $manufacturerMessage}
-							<div class="form-message {$manufacturerMessage.includes('Failed') ? 'error' : 'success'}">
-								{$manufacturerMessage}
-							</div>
-						{/if}
+						// Update the form data with the submitted values
+						const formData = event.detail.formData;
+						console.log('Received form data from component:', formData);
 						
-						<form method="POST" action="?/manufacturer" use:manufacturerEnhance class="form-grid">
-							<div class="form-group">
-								<label for="mfr-name" class="form-label">Name <span class="required">*</span></label>
-								<input 
-									id="mfr-name" 
-									name="manufacturer_name" 
-									bind:value={$manufacturerForm.manufacturer_name} 
-									class="form-input enhanced-input"
-									placeholder="Enter manufacturer name"
-									required 
-								/>
-								{#if $manufacturerErrors.manufacturer_name}
-									<span class="field-error">{$manufacturerErrors.manufacturer_name}</span>
-								{/if}
-							</div>
+						// Ensure manufacturer_id is set correctly
+						if (!editManufacturerMode || !formData.manufacturer_id) {
+							// For new manufacturers, ensure ID is empty to generate a new one on the server
+							formData.manufacturer_id = '';
+						}
+						
+						// Update the form with the submitted values
+						$manufacturerForm = {
+							...formData,
+							// Ensure required fields are set
+							manufacturer_name: formData.manufacturer_name || '',
+							// Ensure user tracking fields are set
+							created_by: editManufacturerMode ? $manufacturerForm.created_by : user.user_id,
+							updated_by: user.user_id
+						};
+						
+						// Validate that manufacturer_name is not empty
+						if (!$manufacturerForm.manufacturer_name || $manufacturerForm.manufacturer_name.trim() === '') {
+							console.error('Manufacturer name is required');
+							return; // Don't proceed with submission if name is empty
+						}
+						
+						// Use the hidden form with SuperForm's enhance function
+						const hiddenForm = document.getElementById('manufacturer-hidden-form') as HTMLFormElement;
+						if (hiddenForm) {
+							// Update hidden form fields with current values
+							Object.entries($manufacturerForm).forEach(([key, value]) => {
+								const input = hiddenForm.querySelector(`[name="${key}"]`) as HTMLInputElement;
+								if (input) {
+									if (typeof value === 'object' && value !== null) {
+										input.value = JSON.stringify(value);
+									} else {
+										input.value = value === null ? '' : String(value);
 							
-							<div class="form-group">
-								<label for="mfr-description" class="form-label">Description</label>
-								<textarea 
-									id="mfr-description" 
-									name="manufacturer_description" 
-									bind:value={$manufacturerForm.manufacturer_description}
-									class="form-textarea enhanced-textarea"
-									placeholder="Enter manufacturer description"
-									rows="3"
-								></textarea>
-								{#if $manufacturerErrors.manufacturer_description}
-									<span class="field-error">{$manufacturerErrors.manufacturer_description}</span>
-								{/if}
-							</div>
+							// Ensure manufacturer_id is set correctly
+							if (!editManufacturerMode || !formData.manufacturer_id) {
+								// For new manufacturers, ensure ID is empty to generate a new one on the server
+								formData.manufacturer_id = '';
+							}
 							
-							<div class="form-group">
-								<label for="mfr-website" class="form-label">Website URL</label>
-								<div class="input-with-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<circle cx="12" cy="12" r="10"></circle>
-										<line x1="2" y1="12" x2="22" y2="12"></line>
-										<path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-									</svg>
-									<input 
-										id="mfr-website" 
-										name="website_url" 
-										type="url" 
-										class="form-input enhanced-input with-icon"
-										bind:value={$manufacturerForm.website_url} 
-										placeholder="https://example.com"
-									/>
-								</div>
-								{#if $manufacturerErrors.website_url}
-									<span class="field-error">{$manufacturerErrors.website_url}</span>
-								{/if}
-							</div>
+							// Update the form with the submitted values
+							$manufacturerForm = {
+								...formData,
+								// Ensure required fields are set
+								manufacturer_name: formData.manufacturer_name || '',
+								// Ensure user tracking fields are set
+								created_by: editManufacturerMode ? $manufacturerForm.created_by : user.user_id,
+								updated_by: user.user_id
+							};
 							
-							<div class="form-group">
-								<label for="mfr-logo" class="form-label">Logo URL</label>
-								<div class="input-with-icon">
-									<svg xmlns="http://www.w3.org/2000/svg" class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-										<circle cx="8.5" cy="8.5" r="1.5"></circle>
-										<polyline points="21 15 16 10 5 21"></polyline>
-									</svg>
-									<input 
-										id="mfr-logo" 
-										name="logo_url" 
-										type="url" 
-										class="form-input enhanced-input with-icon"
-										bind:value={$manufacturerForm.logo_url}
-										placeholder="https://example.com/logo.png"
-									/>
-								</div>
-								{#if $manufacturerErrors.logo_url}
-									<span class="field-error">{$manufacturerErrors.logo_url}</span>
-								{/if}
-							</div>
+							// Validate that manufacturer_name is not empty
+							if (!$manufacturerForm.manufacturer_name || $manufacturerForm.manufacturer_name.trim() === '') {
+								console.error('Manufacturer name is required');
+								return; // Don't proceed with submission if name is empty
+							}
 							
-							<div class="form-actions">
-								<button type="submit" class="enhanced-btn submit-btn" disabled={$manufacturerSubmitting}>
-									<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<path d="M20 6L9 17l-5-5"></path>
-									</svg>
-									<span>{$manufacturerSubmitting ? 'Creating...' : 'Create Manufacturer'}</span>
-								</button>
-								<button type="button" class="enhanced-btn cancel-btn" on:click={() => showManufacturerForm = false}>
-									<svg xmlns="http://www.w3.org/2000/svg" class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<line x1="18" y1="6" x2="6" y2="18"></line>
-										<line x1="6" y1="6" x2="18" y2="18"></line>
-									</svg>
-									<span>Cancel</span>
-								</button>
-							</div>
-						</form>
-					</div>
-				{/if}
+							// Use the hidden form with SuperForm's enhance function
+							const hiddenForm = document.getElementById('manufacturer-hidden-form') as HTMLFormElement;
+							if (hiddenForm) {
+								// Update hidden form fields with current values
+								Object.entries($manufacturerForm).forEach(([key, value]) => {
+									const input = hiddenForm.querySelector(`[name="${key}"]`) as HTMLInputElement;
+									if (input) {
+										if (typeof value === 'object' && value !== null) {
+											input.value = JSON.stringify(value);
+										} else {
+											input.value = value === null ? '' : String(value);
+										}
+										console.log(`Updated hidden form field: ${key} = ${input.value}`);
+									}
+								});
+								
+								// Submit the hidden form which has the enhance function attached
+								const submitButton = hiddenForm.querySelector('#manufacturer-submit-button') as HTMLButtonElement;
+								if (submitButton) {
+									console.log('Submitting hidden form with SuperForm enhance');
+									submitButton.click();
+								} else {
+									console.error('Submit button not found in hidden form');
+								}
+							} else {
+								console.error('Hidden manufacturer form not found');
+							}
+							
+							// Reset UI state after submission
+							showManufacturerForm = false;
+							editManufacturerMode = false;
+							currentManufacturerId = null;
+							
+							// Refresh data after a short delay
+							setTimeout(() => refreshData(), 500);
+						}}
+						on:formUpdate={(event) => {
+							console.log('Form update event received:', event.detail);
+							
+							// Update the form data when the form is changed
+							if (event.detail && event.detail.data) {
+								// Get the updated data from the event
+								const formUpdateData = event.detail.data;
+								
+								// Create a new form object with the updated data
+								const updatedForm = {
+									...$manufacturerForm,
+									...formUpdateData
+								};
+								
+								console.log('Updated form data:', updatedForm);
+								
+								// Update the store with the new data
+								$manufacturerForm = updatedForm;
+							}
+						}}
+						on:cancelEdit={() => {
+							console.log('Cancel edit event received');
+							// Reset form and hide it
+							showManufacturerForm = false;
+							editManufacturerMode = false;
+							currentManufacturerId = null;
+							// Reset the form data
+							$manufacturerForm = {
+								manufacturer_id: '',
+								manufacturer_name: '',
+								manufacturer_description: '',
+								website_url: '',
+								logo_url: '',
+								contact_info: '{}',
+								custom_fields: '{}',
+								created_by: user.user_id,
+								updated_by: user.user_id,
+								// Add these fields to satisfy TypeScript
+								created_at: new Date(),
+								updated_at: new Date()
+							};
+						}}
+						on:refreshData={refreshData}
+						on:toggleForm={() => {
+							console.log('Toggle form event received, current state:', showManufacturerForm);
+							// Toggle form visibility
+							showManufacturerForm = !showManufacturerForm;
+							// If closing the form, also reset edit mode
+							if (!showManufacturerForm) {
+								editManufacturerMode = false;
+								currentManufacturerId = null;
+								// Reset the form data
+								$manufacturerForm = {
+									manufacturer_id: '',
+									manufacturer_name: '',
+									manufacturer_description: '',
+									website_url: '',
+									logo_url: '',
+									contact_info: '{}',
+									custom_fields: '{}',
+									created_by: user.user_id,
+									updated_by: user.user_id,
+									// Add these fields to satisfy TypeScript
+									created_at: new Date(),
+									updated_at: new Date()
+								};
+							} else {
+								// If opening the form for a new manufacturer, ensure form is reset
+								if (!editManufacturerMode) {
+									$manufacturerForm = {
+										manufacturer_id: '',
+										manufacturer_name: '',
+										manufacturer_description: '',
+										website_url: '',
+										logo_url: '',
+										contact_info: '{}',
+										custom_fields: '{}',
+										created_by: user.user_id,
+										updated_by: user.user_id,
+										// Add these fields to satisfy TypeScript
+										created_at: new Date(),
+										updated_at: new Date()
+									};
+								}
+							}
+						}}
+						on:editManufacturer={(event) => {
+							console.log('Edit manufacturer event received:', event.detail);
+							
+							// Make sure we have manufacturer data
+							const manufacturerToEdit = event.detail.manufacturer;
+							if (!manufacturerToEdit) {
+								console.error('No manufacturer data received in edit event');
+								return;
+							}
+							
+							// First, make the form visible
+							showManufacturerForm = true;
+							
+							// Set up edit mode
+							editManufacturerMode = true;
+							currentManufacturerId = manufacturerToEdit.manufacturer_id;
+							
+							// Use the correct schema field names from manufacturerActionSchema
+							console.log('Raw manufacturer data from server:', manufacturerToEdit);
+							
+							// Set the form data using the correct field names
+							$manufacturerForm = {
+								manufacturer_id: manufacturerToEdit.manufacturer_id,
+								manufacturer_name: manufacturerToEdit.manufacturer_name,
+								manufacturer_description: manufacturerToEdit.manufacturer_description || null,
+								website_url: manufacturerToEdit.website_url || null,
+								logo_url: manufacturerToEdit.logo_url || null,
+								contact_info: typeof manufacturerToEdit.contact_info === 'object' 
+									? JSON.stringify(manufacturerToEdit.contact_info)
+									: manufacturerToEdit.contact_info || '{}',
+								custom_fields: typeof manufacturerToEdit.custom_fields === 'object'
+									? JSON.stringify(manufacturerToEdit.custom_fields)
+									: manufacturerToEdit.custom_fields || '{}',
+								created_by: manufacturerToEdit.created_by || user.user_id,
+								updated_by: user.user_id,
+								created_at: manufacturerToEdit.created_at || new Date(),
+								updated_at: new Date()
+							};
+							
+							console.log('Manufacturer form updated for editing, form state:', $manufacturerForm);
+						}}
+					/>
 			</div>
 		{/if}
 
@@ -795,88 +1051,58 @@
 		{#if activeTab === 'suppliers'}
 			<div class="tab-content">
 				<h2>Your Suppliers</h2>
-				{#if userSuppliers.length > 0}
+				
+				{#if userSuppliers && userSuppliers.length > 0}
 					<div class="user-items-grid">
-						{#each userSuppliers as supplier (supplier.supplier_id)}
-							<div class="entity-card">
-								<div class="card-header">
-									{#if supplier.logo_url}
-										<div class="logo-container">
-											<img src={supplier.logo_url} alt={`${supplier.supplier_name} logo`} class="entity-logo" />
-										</div>
-									{:else}
-										<div class="logo-placeholder">
-											<span>{supplier.supplier_name.substring(0, 2).toUpperCase()}</span>
-										</div>
-									{/if}
-									<h3 class="entity-name">{supplier.supplier_name}</h3>
-								</div>
-								
-								<div class="card-content">
-									{#if supplier.supplier_description}
-										<p class="entity-description">
-											{supplier.supplier_description.length > 60 ? 
-												`${supplier.supplier_description.substring(0, 60)}...` : 
-												supplier.supplier_description}
-										</p>
-									{:else}
-										<p class="entity-no-description">No description provided</p>
-									{/if}
-									
-									{#if supplier.website_url}
-										<p class="entity-meta website-link">
-											<span class="meta-label">Website:</span> 
-											<a href={supplier.website_url} target="_blank" rel="noopener noreferrer" class="website-url">
-												{new URL(supplier.website_url).hostname}
-											</a>
-										</p>
-									{/if}
-									
-									{#if supplier.contact_info}
-										{@const contact = processContactInfo(supplier.contact_info)}
-										<div class="entity-meta contact-info">
-											<span class="meta-label">Contact:</span>
-											{#if contact.email}
-												<a href="mailto:{contact.email}" class="contact-value">{contact.email}</a>
-											{:else if contact.phone}
-												<a href="tel:{contact.phone}" class="contact-value">{contact.phone}</a>
-											{:else if contact.text}
-												<span class="contact-value">{contact.text.length > 30 ? contact.text.substring(0, 30) + '...' : contact.text}</span>
-											{:else}
-												<span class="contact-value">Available</span>
-											{/if}
-										</div>
-									{/if}
-									
-									<p class="entity-meta">
-										<span class="meta-label">Created:</span> 
-										<span class="date-value">
-											{new Date(supplier.created_at).toLocaleDateString()}
-										</span>
-									</p>
-								</div>
-								
-								<div class="entity-actions">
-									<a href={`/supplier/${supplier.supplier_id}/edit`} class="icon-btn edit-btn" title="Edit Supplier">✏️</a>
-									<a href="/supplier" class="icon-btn view-btn" title="View All Suppliers">👁️</a>
-								</div>
-							</div>
+						{#each userSuppliers as supplier}
+							<Supplier 
+								{supplier} 
+								allowEdit={user.user_id === supplier.created_by} 
+								allowDelete={user.user_id === supplier.created_by}
+								on:deleted={handleSupplierDeleted}
+							/>
 						{/each}
 					</div>
 				{:else}
 					<p class="no-items">You haven't created any suppliers yet.</p>
 				{/if}
-
-				<div class="action-buttons">
-					<button type="button" class="primary-btn" on:click={() => showSupplierForm = !showSupplierForm}>
-						{showSupplierForm ? 'Cancel' : 'Add New Supplier'}
+				
+				<!-- Toggle Form Button -->
+				<div class="form-toggle-container">
+					<button class="primary-btn" on:click={() => showSupplierForm = !showSupplierForm}>
+						{showSupplierForm ? 'Hide' : 'Add New Supplier'}
 					</button>
-					<a href="/supplier" class="secondary-btn">View All Suppliers</a>
 				</div>
 				
+				<!-- Manufacturer form using SuperForm for programmatic submission and validation -->
+				<div hidden aria-hidden="true">
+					<form method="POST" action="?/manufacturer" use:manufacturerEnhance id="manufacturer-hidden-form">
+						<!-- Standard fields -->
+						<input type="hidden" name="manufacturer_id" value={$manufacturerForm.manufacturer_id || ''} />
+						<input type="hidden" name="manufacturer_name" value={$manufacturerForm.manufacturer_name || ''} />
+						<input type="hidden" name="manufacturer_description" value={$manufacturerForm.manufacturer_description || ''} />
+						<input type="hidden" name="website_url" value={$manufacturerForm.website_url || ''} />
+						<input type="hidden" name="logo_url" value={$manufacturerForm.logo_url || ''} />
+						
+						<!-- Complex fields with special handling -->
+						<input type="hidden" name="contact_info" value={typeof $manufacturerForm.contact_info === 'string' 
+							? $manufacturerForm.contact_info 
+							: JSON.stringify($manufacturerForm.contact_info || {})} />
+						<input type="hidden" name="custom_fields" value={typeof $manufacturerForm.custom_fields === 'string' 
+							? $manufacturerForm.custom_fields 
+							: JSON.stringify($manufacturerForm.custom_fields || {})} />
+						
+						<!-- User tracking fields -->
+						<input type="hidden" name="created_by" value={user.user_id} />
+						<input type="hidden" name="updated_by" value={user.user_id} />
+						<button type="submit" id="manufacturer-submit-button">Submit</button>
+					</form>
+				</div>
+
+				<!-- Supplier Form using SuperForm pattern -->
 				{#if showSupplierForm}
-					<div class="form-container">
-						<h2>Create New Supplier</h2>
+					<div class="entity-form">
+						<h3>Add New Supplier</h3>
 						
 						{#if $supplierMessage}
 							<div class="form-message {$supplierMessage.includes('Failed') ? 'error' : 'success'}">
@@ -885,13 +1111,15 @@
 						{/if}
 						
 						<form method="POST" action="?/supplier" use:supplierEnhance class="form-grid">
+							<!-- Hidden supplier_id field for UUID -->
+							<input type="hidden" name="supplier_id" bind:value={$supplierForm.supplier_id} />
 							<div class="form-group">
-								<label for="sup-name">Name <span class="required">*</span></label>
+								<label for="supplier-name" class="form-label">Name <span class="required">*</span></label>
 								<input 
-									id="sup-name" 
+									id="supplier-name" 
 									name="supplier_name" 
 									bind:value={$supplierForm.supplier_name} 
-									class="form-input"
+									class="form-input enhanced-input"
 									placeholder="Enter supplier name"
 									required 
 								/>
@@ -901,12 +1129,12 @@
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-description">Description</label>
+								<label for="supplier-description" class="form-label">Description</label>
 								<textarea 
-									id="sup-description" 
+									id="supplier-description" 
 									name="supplier_description" 
-									bind:value={$supplierForm.supplier_description} 
-									class="form-textarea"
+									bind:value={$supplierForm.supplier_description}
+									class="form-textarea enhanced-textarea"
 									placeholder="Enter supplier description"
 									rows="3"
 								></textarea>
@@ -916,13 +1144,13 @@
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-website">Website URL</label>
+								<label for="supplier-website" class="form-label">Website URL</label>
 								<input 
-									id="sup-website" 
+									id="supplier-website" 
 									name="website_url" 
-									type="url"
-									bind:value={$supplierForm.website_url} 
-									class="form-input"
+									type="url" 
+									bind:value={$supplierForm.website_url}
+									class="form-input enhanced-input"
 									placeholder="https://example.com"
 								/>
 								{#if $supplierErrors.website_url}
@@ -931,31 +1159,35 @@
 							</div>
 							
 							<div class="form-group">
-								<label for="sup-contact">Contact Information</label>
-								<input
-									id="sup-contact" 
-									name="contact_info" 
-									bind:value={$supplierForm.contact_info} 
-									class="form-input"
-									placeholder="Enter contact info (e.g., email or phone)"
-								/>
-								{#if $supplierErrors.contact_info}
-									<span class="field-error">{$supplierErrors.contact_info}</span>
-								{/if}
-							</div>
-							
-							<div class="form-group">
-								<label for="sup-logo">Logo URL</label>
+								<label for="supplier-logo" class="form-label">Logo URL</label>
 								<input 
-									id="sup-logo" 
+									id="supplier-logo" 
 									name="logo_url" 
-									type="url"
-									bind:value={$supplierForm.logo_url} 
-									class="form-input"
+									type="url" 
+									bind:value={$supplierForm.logo_url}
+									class="form-input enhanced-input"
 									placeholder="https://example.com/logo.png"
 								/>
 								{#if $supplierErrors.logo_url}
 									<span class="field-error">{$supplierErrors.logo_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="supplier-contact" class="form-label">Contact Info</label>
+								<textarea 
+									id="supplier-contact" 
+									name="contact_info"
+									bind:value={$supplierForm.contact_info}
+									class="form-textarea enhanced-textarea"
+									placeholder="Enter contact information"
+									rows="3"
+								></textarea>
+								<small class="helper-text">
+									Enter as JSON: {@html '{ "email": "contact@example.com", "phone": "123-456-7890" }'}
+								</small>
+								{#if $supplierErrors.contact_info}
+									<span class="field-error">{$supplierErrors.contact_info}</span>
 								{/if}
 							</div>
 							
@@ -979,13 +1211,15 @@
 				<!-- No duplicate form here -->
 
 				<!-- User's categories list -->
-				{#if userCategories.length > 0}
-					<div class="user-items-grid">
-						{#each userCategories as category}
-							<Category 
-								category={category} 
-								allowEdit={user.user_id === category.created_by} 
-								allowDelete={user.user_id === category.created_by}
+				{#if transformedCategories.length > 0}
+						<div class="user-items-grid">
+							{#each transformedCategories as category}
+								<CategoryComponent 
+									category={category} 
+									allowEdit={user.user_id === category.created_by} 
+									allowDelete={user.user_id === category.created_by}
+									on:deleted={handleCategoryDeleted}
+									on:edit={handleCategoryEdit}
 							/>
 						{/each}
 					</div>
@@ -1012,8 +1246,9 @@
 						
 						<div class="embedded-form">
 							<form method="POST" action="?/category" use:categoryEnhance enctype="application/x-www-form-urlencoded">
+								<!-- We need to conditionally add category_id only when in edit mode -->
 								{#if editCategoryMode}
-									<input type="hidden" name="categoryId" value={currentCategoryId} />
+									<input type="hidden" name="category_id" value={currentCategoryId} />
 								{/if}
 								<div class="form-group">
 									<label for="category_name">Name*</label>
@@ -1050,7 +1285,10 @@
 									<button type="submit" class="primary-btn" disabled={$categorySubmitting}>
 										{$categorySubmitting ? (editCategoryMode ? 'Saving...' : 'Creating...') : (editCategoryMode ? 'Save Changes' : 'Create Category')}
 									</button>
-									<button type="button" class="secondary-btn" on:click={cancelCategoryEdit}>Cancel</button>
+									<button type="button" class="secondary-btn" on:click={() => {
+									resetCategoryForm();
+									showCategoryForm = false;
+								}}>Cancel</button>
 								</div>
 							</form>
 						</div>
@@ -1061,7 +1299,7 @@
 	</section>
 </div>
 
-<style>
+<style lang="postcss">
 	.dashboard-container {
 		max-width: 1000px;
 		margin: 2rem auto;
@@ -1105,18 +1343,7 @@
 		color: hsl(var(--muted-foreground));
 	}
 
-	.entity-card .logo-container {
-		width: 50px;
-		height: 50px;
-		border-radius: 8px;
-		overflow: hidden;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		border: 1px solid hsl(var(--border));
-		background-color: hsl(var(--surface-100));
-	}
+
 
 	.user-details {
 		display: flex;
@@ -1320,58 +1547,11 @@
 		font-size: 0.875rem;
 	}
 
-	.entity-description {
-		font-size: 0.95rem;
-		line-height: 1.5;
-		color: hsl(var(--foreground));
-		margin-bottom: 1rem;
-	}
+	
 
-	.entity-no-description {
-		font-size: 0.95rem;
-		color: hsl(var(--muted-foreground));
-		font-style: italic;
-		margin-bottom: 1rem;
-	}
+	
+	/* Contact styling moved to component level for better modularity */
 
-	.website-link {
-		display: flex;
-		align-items: center;
-	}
-
-	.website-url {
-		color: hsl(var(--primary));
-		text-decoration: none;
-		font-size: 0.825rem;
-		word-break: break-all;
-	}
-
-	.website-url:hover {
-		text-decoration: underline;
-	}
-
-	.contact-value {
-		color: hsl(var(--foreground));
-		font-size: 0.825rem;
-		word-break: break-all;
-	}
-
-	.contact-info {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.date-value {
-		color: hsl(var(--muted-foreground));
-	}
-
-	.entity-actions {
-		display: flex;
-		gap: 0.5rem;
-		margin-top: 0.75rem;
-		justify-content: flex-end;
-	}
 
 	.icon-btn {
 		padding: 0.25rem 0.5rem;
@@ -1455,33 +1635,6 @@
 		color: hsl(var(--muted-foreground));
 	}
 
-	.input-with-icon {
-		position: relative;
-	}
-
-	.input-icon {
-		position: absolute;
-		left: 0.75rem;
-		top: 50%;
-		transform: translateY(-50%);
-		color: hsl(var(--muted-foreground));
-	}
-
-	.enhanced-form {
-		background-color: hsl(var(--surface-100));
-		border: 1px solid hsl(var(--border));
-		border-radius: 6px;
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-	}
-
-	.form-title {
-		color: hsl(var(--foreground));
-		font-size: 1.25rem;
-		font-weight: 600;
-		padding-bottom: 0.5rem;
-		border-bottom: 1px solid hsl(var(--border));
-		margin-bottom: 1.5rem;
-	}
 
 	.form-textarea {
 		resize: vertical;
@@ -1523,58 +1676,11 @@
 		background: hsl(var(--primary-dark));
 	}
 
-	.enhanced-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.625rem 1.25rem;
-		font-size: 0.875rem;
-		font-weight: 600;
-		border-radius: 6px;
-		transition: all 0.15s ease;
-		gap: 0.5rem;
-		cursor: pointer;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-		border: 1px solid transparent;
-	}
 
-	.add-btn {
-		background-color: hsl(var(--primary));
-		color: hsl(var(--primary-foreground));
-		border-color: hsl(var(--primary-dark));
-	}
 
-	.add-btn:hover {
-		background-color: hsl(var(--primary-dark));
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-		transform: translateY(-1px);
-	}
+	
+	
 
-	.submit-btn {
-		background-color: hsl(var(--success));
-		color: hsl(var(--success-foreground));
-		border-color: hsl(var(--success-dark));
-	}
-
-	.submit-btn:hover {
-		background-color: hsl(var(--success-dark));
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-	}
-
-	.cancel-btn {
-		background-color: hsl(var(--background));
-		color: hsl(var(--foreground));
-		border-color: hsl(var(--border));
-	}
-
-	.cancel-btn:hover {
-		background-color: hsl(var(--muted));
-		border-color: hsl(var(--muted-foreground));
-	}
-
-	.btn-icon {
-		flex-shrink: 0;
-	}
 
 	.secondary-btn {
 		background: hsl(var(--background));

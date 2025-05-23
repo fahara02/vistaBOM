@@ -1,13 +1,26 @@
 <!-- src/lib/components/supplier.svelte -->
 <script lang="ts">
-    import type { Supplier } from '$lib/types';
-    import { formatFieldName, processContactInfo } from '@/utils/util';
-    import { onDestroy } from 'svelte';
+    import type { Supplier } from '$lib/types/schemaTypes';
+    import { formatFieldName, processContactInfo } from '$lib/utils/util';
+    import { createEventDispatcher, onDestroy } from 'svelte';
+    import { enhance } from '$app/forms';
+    import type { SubmitFunction } from '@sveltejs/kit';
+    import * as Dialog from '$lib/components/ui/dialog';
     
+    const dispatch = createEventDispatcher<{
+        deleted: { supplierId: string };
+    }>();
 
+    export let supplier: Supplier & { parent_name?: string };
+    export let allowEdit = true;
+    export let allowDelete = true;
+    export let showConfirmation = true;
+    export let currentUserId: string | undefined = undefined;
 
-    export let supplier: Supplier;
-    export let currentUserId: string;
+    // Derived values - follow the Props → Derived → Methods pattern
+    // Determine if current user is the owner of this supplier to enable certain features
+    $: isOwner = currentUserId && supplier.created_by === currentUserId;
+    $: canEdit = allowEdit && (isOwner || false);
 
     let editMode = false;
     let edits: Partial<Supplier> = {};
@@ -15,8 +28,7 @@
     let success: string | null = null;
     let contactInfoString = '';
     let abortController = new AbortController();
-    
-
+    let showDeleteDialog = false;
     
     // Prepare contact info for display
     const getContactInfo = (contactInfoInput: any) => {
@@ -28,6 +40,12 @@
     });
 
     const startEdit = () => {
+        // Check is handled by the UI, but add extra safety check
+        if (!allowEdit) {
+            error = 'You do not have permission to edit this supplier';
+            return;
+        }
+        
         edits = { ...supplier };
         // Get contact info data for editing
         const contactData = getContactInfo(supplier.contact_info);
@@ -69,18 +87,18 @@
                 }
             }
 
-            const response = await fetch(`/api/suppliers/${supplier.supplier_id}`, {
+            const response = await fetch(`/api/supplier/${supplier.supplier_id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    name: edits.supplier_name,
-                    description: edits.supplier_description,
+                    supplier_name: edits.supplier_name,
+                    supplier_description: edits.supplier_description,
                     websiteUrl: edits.website_url,
                     contactInfo,
                     logoUrl: edits.logo_url,
-                    userId: currentUserId
+                    updatedBy: supplier.created_by
                 }),
                 signal: abortController.signal
             });
@@ -106,38 +124,81 @@
         }
     };
 
-    const removeSupplier = async () => {
-        if (!confirm('Are you sure you want to delete this supplier? This action cannot be undone.')) return;
-        
+    const deleteSupplier = async () => {
         try {
-            const response = await fetch(`/api/suppliers/${supplier.supplier_id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ userId: currentUserId }),
+            error = null;
+            showDeleteDialog = false;
+            
+            // Create a FormData object for the delete operation
+            const formData = new FormData();
+            formData.append('action', 'delete_supplier');
+            formData.append('supplier_id', supplier.supplier_id.toString());
+            
+            // Send the delete request to the dashboard endpoint
+            const response = await fetch('/dashboard?/supplier', {
+                method: 'POST',
+                body: formData,
                 signal: abortController.signal
             });
-
+            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to delete supplier');
+                let errorMessage = `Failed to delete supplier (status: ${response.status})`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorMessage;
+                } catch (parseError) {
+                    console.error('Failed to parse error response:', parseError);
+                }
+                throw new Error(errorMessage);
             }
 
+            console.log('Supplier deleted successfully:', supplier.supplier_id);
+            
+            // Dispatch event for parent component to handle
+            dispatch('deleted', { supplierId: supplier.supplier_id });
+            
             success = 'Supplier deleted successfully';
-            setTimeout(() => success = null, 3000);
-            // Emit event or handle removal in parent component
-        } catch (e: unknown) {
+        } catch (e) {
             if (e instanceof Error && e.name !== 'AbortError') {
                 error = e.message;
-            } else if (e && typeof e === 'object' && 'name' in e && e.name !== 'AbortError') {
-                error = String(e);
-            } else if (e !== 'AbortError') {
-                error = 'An unknown error occurred while deleting';
+                console.error('Delete supplier error:', e);
             }
         }
     };
+    
+    // Form submission enhancement
+    const handleSubmit: SubmitFunction = ({ cancel }) => {
+        error = null;
+        return async ({ result }) => {
+            if (result.type === 'error') {
+                error = result.error.message;
+            } else if (result.type === 'success') {
+                editMode = false;
+                success = 'Supplier updated successfully';
+            }
+        };
+    };
 </script>
+
+<!-- Delete confirmation dialog -->
+{#if showConfirmation}
+<Dialog.Root bind:open={showDeleteDialog}>
+    <Dialog.Content>
+        <Dialog.Header>
+            <Dialog.Title>Delete Supplier</Dialog.Title>
+            <Dialog.Description>
+                Are you sure you want to delete supplier "{supplier.supplier_name}"? This action cannot be undone.
+            </Dialog.Description>
+        </Dialog.Header>
+        <Dialog.Footer>
+            <button class="btn-secondary" on:click={() => showDeleteDialog = false}>Cancel</button>
+            <button class="btn-delete" on:click={deleteSupplier}>
+                Delete
+            </button>
+        </Dialog.Footer>
+    </Dialog.Content>
+</Dialog.Root>
+{/if}
 
 <div class="supplier-card">
     {#if error}
@@ -245,18 +306,32 @@
                 {/if}
                 
                 <div class="meta">
-                    <small>Created: {supplier.created_at.toLocaleDateString()}</small>
+                    <small>Created: {supplier.created_at instanceof Date ? supplier.created_at.toLocaleDateString() : new Date(supplier.created_at).toLocaleDateString()}</small>
                     {#if supplier.updated_at}
-                        <small>Updated: {supplier.updated_at.toLocaleDateString()}</small>
+                        <small>Updated: {supplier.updated_at instanceof Date ? supplier.updated_at.toLocaleDateString() : new Date(supplier.updated_at).toLocaleDateString()}</small>
                     {/if}
                 </div>
             </div>
             
-            <!-- Only show edit/delete buttons if user is logged in and created this supplier -->
-            {#if currentUserId && supplier.created_by === currentUserId}
+            <!-- Action buttons for edit/delete with original permission logic restored -->
+            {#if allowEdit || allowDelete}
                 <div class="actions">
-                    <button on:click={startEdit} class="btn-edit">Edit</button>
-                    <button on:click={removeSupplier} class="danger">Delete</button>
+                    {#if allowEdit}
+                        <button class="btn-secondary" on:click={startEdit}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            Edit
+                        </button>
+                    {/if}
+                    {#if allowDelete}
+                        {#if showConfirmation}
+                            <button class="btn-delete" on:click={() => showDeleteDialog = true}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                Delete
+                            </button>
+                        {:else}
+                            <button class="btn-delete" on:click={deleteSupplier}>Delete</button>
+                        {/if}
+                    {/if}
                 </div>
             {/if}
         </div>
@@ -264,7 +339,7 @@
         <div class="edit-mode">
             <h2>Edit Supplier</h2>
             
-            <form on:submit|preventDefault={saveSupplier}>
+            <form method="POST" on:submit|preventDefault={saveSupplier}>
                 <label>
                     Name*
                     <input
@@ -466,135 +541,147 @@
     }
     
     .field-name {
-        font-weight: 600;
+        font-weight: 500;
+        margin-bottom: 0.25rem;
         color: hsl(var(--foreground));
-        font-size: 0.875rem;
-        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
     }
     
     .field-value {
         color: hsl(var(--foreground));
-        font-size: 1rem;
         word-break: break-word;
+        line-height: 1.4;
     }
     
+    /* Boolean field styles */
     .boolean-value {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        border-radius: 9999px;
-        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.85rem;
         font-weight: 500;
     }
     
-    .boolean-value.positive {
-        background: hsl(var(--success) / 0.2);
+    .positive {
+        background-color: hsl(var(--success) / 0.15);
         color: hsl(var(--success));
     }
     
-    .boolean-value.negative {
-        background: hsl(var(--destructive) / 0.2);
+    .negative {
+        background-color: hsl(var(--destructive) / 0.15);
         color: hsl(var(--destructive));
     }
     
+    /* Number field styles */
     .number-value {
-        font-family: 'Courier New', monospace;
-        font-weight: 600;
+        font-family: monospace;
         color: hsl(var(--foreground));
     }
     
-    /* Links within contact values */
-    :global(.contact-value a) {
-        color: hsl(var(--primary));
-        text-decoration: none;
-        transition: color 0.3s;
+    /* Meta information */
+    .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-top: 2rem;
+        font-size: 0.8rem;
+        opacity: 0.8;
+        color: hsl(var(--muted-foreground));
     }
     
-    :global(.contact-value a:hover) {
-        text-decoration: underline;
-    }
-
-    .meta {
-        margin-top: 1.5rem;
-        color: hsl(var(--muted-foreground));
-        font-size: 0.85em;
+    /* Form Styling */
+    form {
         display: flex;
+        flex-direction: column;
         gap: 1rem;
     }
-
+    
+    label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        font-weight: 500;
+        color: hsl(var(--foreground));
+    }
+    
+    input, textarea {
+        padding: 0.75rem;
+        border: 1px solid hsl(var(--input-border));
+        border-radius: 4px;
+        background: hsl(var(--input));
+        color: hsl(var(--input-foreground));
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    
+    input:focus, textarea:focus {
+        outline: none;
+        border-color: hsl(var(--primary));
+        box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+    }
+    
+    .contact-info-help {
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+        color: hsl(var(--muted-foreground));
+    }
+    
+    .form-actions {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    
     .actions {
         margin-top: 1.5rem;
         display: flex;
         gap: 0.75rem;
     }
-
+    
+    /* Button Styling */
     button {
-        padding: 0.625rem 1.25rem;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        background: hsl(var(--secondary));
-        color: hsl(var(--secondary-foreground));
-        transition: background-color 0.3s, color 0.3s;
-        font-weight: 500;
-    }
-
-    button:hover {
-        background: #e0e0e0;
-    }
-
-    .danger {
-        background: #ffe6e6;
-        color: #c00;
-    }
-
-    .danger:hover {
-        background: #ffcccc;
-    }
-
-    form {
-        display: grid;
-        gap: 1.5rem;
-    }
-
-    label {
-        display: block;
-        font-weight: 500;
-        margin-bottom: 0.5rem;
-    }
-
-    textarea {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ccc;
+        padding: 0.5rem 1rem;
         border-radius: 4px;
-        resize: vertical;
-        min-height: 100px;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
     }
     
-    .contact-info-help {
-        margin-top: 5px;
-        font-size: 0.85em;
-        color: #555;
-        background-color: #f8f9fa;
-        padding: 8px;
-        border-radius: 4px;
-        border-left: 3px solid #ccc;
+    button:hover {
+        opacity: 0.9;
     }
-
-    input, textarea {
-        font-family: inherit;
-        font-size: 0.9em;
+    
+    button:active {
+        transform: translateY(1px);
     }
-
-    textarea {
-        resize: vertical;
-        min-height: 100px;
+    
+    button svg {
+        height: 16px;
+        width: 16px;
     }
-
-    .form-actions {
-        display: flex;
-        gap: 0.75rem;
-        justify-content: flex-end;
-        margin-top: 1rem;
+    
+    button[type="submit"] {
+        background-color: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border: none;
+    }
+    
+    button[type="button"] {
+        background-color: transparent;
+        color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border));
+    }
+    
+    .btn-secondary {
+        background-color: hsl(var(--secondary));
+        color: hsl(var(--secondary-foreground));
+        border: none;
+    }
+    
+    .btn-delete {
+        background-color: hsl(var(--destructive));
+        color: hsl(var(--destructive-foreground));
+        border: none;
     }
 </style>

@@ -2,11 +2,22 @@
 <script lang="ts">
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
-  import Supplier from '$lib/components/supplier.svelte';
+  import Supplier from '$lib/components/cards/supplier.svelte';
   import { parseContactInfo } from '$lib/utils/util';
 
   export let data: PageData;
-  const { form, errors, enhance } = superForm(data.form);
+  const { form, errors, enhance } = superForm(data.form, {
+    onSubmit: ({ formData }) => {
+      // Generate a valid UUID for supplier_id if empty
+      const supplierIdValue = formData.get('supplier_id');
+      if (!supplierIdValue || supplierIdValue === '') {
+        const uuid = crypto.randomUUID();
+        formData.set('supplier_id', uuid);
+        // Also update the reactive store
+        $form.supplier_id = uuid;
+      }
+    }
+  });
   const { suppliers, user } = data;
   
   // Contact info examples to show in the helper textye
@@ -26,18 +37,21 @@
 {#if user}
   <form method="POST" use:enhance class="create-form">
     <h2>Add New Supplier</h2>
+    <!-- Hidden field for supplier_id -->
+    <input type="hidden" name="supplier_id" bind:value={$form.supplier_id} />
+    
     <div class="field">
-      <label for="name">Name</label>
-      <input id="name" name="name" bind:value={$form.name} required />
-      {#if $errors.name}
-        <span class="error">{$errors.name}</span>
+      <label for="supplier_name">Name</label>
+      <input id="supplier_name" name="supplier_name" bind:value={$form.supplier_name} required />
+      {#if $errors.supplier_name}
+        <span class="error">{$errors.supplier_name}</span>
       {/if}
     </div>
     <div class="field">
-      <label for="description">Description</label>
-      <textarea id="description" name="description" bind:value={$form.description}></textarea>
-      {#if $errors.description}
-        <span class="error">{$errors.description}</span>
+      <label for="supplier_description">Description</label>
+      <textarea id="supplier_description" name="supplier_description" bind:value={$form.supplier_description}></textarea>
+      {#if $errors.supplier_description}
+        <span class="error">{$errors.supplier_description}</span>
       {/if}
     </div>
     <div class="field">
@@ -86,7 +100,7 @@
 {/if}
 
 {#each suppliers as supplier}
-  <Supplier {supplier} currentUserId={user?.id} />
+  <Supplier {supplier} currentUserId={user?.user_id} />
 {/each}
 
 <style>

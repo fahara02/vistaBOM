@@ -3,7 +3,7 @@
   import { superForm } from 'sveltekit-superforms/client';
   import type { PageData } from './$types';
   import { goto } from '$app/navigation';
-  import ManufacturerForm from '$lib/components/ManufacturerForm.svelte';
+  import ManufacturerForm from '$lib/components/forms/ManufacturerForm.svelte';
   
   export let data: PageData;
   

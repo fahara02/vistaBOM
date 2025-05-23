@@ -2,7 +2,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { superForm } from 'sveltekit-superforms/client';
-  import { PartForm } from '$lib/components';
+  import { PartForm } from '$lib/components/forms';
   
   // Create a sample data structure to mimic what comes from the server
   const mockData = {

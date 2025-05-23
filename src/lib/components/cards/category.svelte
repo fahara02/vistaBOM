@@ -1,14 +1,15 @@
-<!-- src/lib/components/category.svelte -->
+<!-- src/lib/components/cards/category.svelte -->
 <script lang="ts">
     import type { Category } from '$lib/types/schemaTypes';
     import { createEventDispatcher, onDestroy } from 'svelte';
     import { enhance } from '$app/forms';
     import type { SubmitFunction } from '@sveltejs/kit';
     import * as Dialog from '$lib/components/ui/dialog';
-    import CategoryComboBox from './CategoryComboBox.svelte';
+    import CategoryComboBox from '$lib/components/forms/CategoryComboBox.svelte';
 
     const dispatch = createEventDispatcher<{
         deleted: { categoryId: string };
+        edit: { category: Category & { parent_name?: string } };
     }>();
 
     export let category: Category & { parent_name?: string }; // Add parent_name as an optional property
@@ -36,6 +37,10 @@
     let success: string | null = null;
     let abortController = new AbortController();
     let allCategories: (Category & { parent_name?: string })[] = [];
+    
+    onDestroy(() => {
+        abortController.abort();
+    });
     
     // Format field names from camelCase to Title Case with spaces
     function formatFieldName(fieldName: string): string {
@@ -65,15 +70,48 @@
         }
     };
 
+    // Track if the edit event was handled by a parent component
+    let editHandledByParent = false;
+    
     const startEdit = async () => {
-        edits = { 
-            category_name: category.category_name,
-            category_description: category.category_description || '',
-            parent_id: category.parent_id || '',
-            is_public: Boolean(category.is_public)
-        };
-        await loadCategories(); // Load categories for the ComboBox
-        editMode = true;
+        // First check if we're in dashboard context by dispatching an edit event
+        // If the parent handles it, we don't need to show the inline edit form
+        console.log('Dispatching edit event for category:', category.category_id);
+        
+        // Create a promise to track if the event was handled
+        const eventPromise = new Promise<boolean>((resolve) => {
+            // Set a timeout to detect if no parent component handles the event
+            const timeoutId = setTimeout(() => resolve(false), 100);
+            
+            // Use a one-time listener to detect if the event was handled
+            const handleEditResponse = () => {
+                clearTimeout(timeoutId);
+                editHandledByParent = true;
+                resolve(true);
+                // Remove the one-time listener
+                window.removeEventListener('category:edit:handled', handleEditResponse);
+            };
+            window.addEventListener('category:edit:handled', handleEditResponse, { once: true });
+        });
+        
+        // Dispatch the edit event
+        dispatch('edit', { category: category });
+        
+        // Wait to see if event was handled
+        const wasHandled = await eventPromise;
+        
+        // Only proceed with local editing if not handled by parent
+        if (!wasHandled) {
+            // If we're in a standalone context, we'll set up local editing
+            edits = { 
+                category_name: category.category_name,
+                category_description: category.category_description || '',
+                parent_id: category.parent_id || '',
+                is_public: Boolean(category.is_public)
+            };
+            await loadCategories(); // Load categories for the ComboBox
+            editMode = true;
+        }
     };
 
     const cancelEdit = () => {
@@ -163,7 +201,11 @@
     };
 
 
-
+    
+    onDestroy(() => {
+        if (abortController) abortController.abort();
+    });
+    
     const removeCategory = async () => {
         // First step is just to show the confirmation dialog
         if (showConfirmation && !showDeleteConfirm) {
@@ -176,64 +218,52 @@
         console.log('Delete confirmed for category:', category.category_id);
         showDeleteConfirm = false;
         
-        // Reset status variables
         error = null;
-        success = null;
         isDeleting = true;
         
         try {
-            console.log('Preparing delete request for category ID:', category.category_id);
+            console.log('Attempting to delete category:', category.category_id);
             
-            // Use FormData for deletion (SvelteKit form actions require FormData)
-            const formData = new FormData();
-            formData.append('categoryId', category.category_id);
-            formData.append('delete', 'true');
+            // First abort any pending request
+            if (abortController) abortController.abort();
+            abortController = new AbortController();
             
-            console.log('Sending delete request to /dashboard?/category');
-            
-            // Add credentials to ensure cookies are sent
-            const response = await fetch(`/dashboard?/category`, {
-                method: 'POST',
-                body: formData,
+            // Use the proper REST API endpoint for category deletion
+            const response = await fetch(`/category/${category.category_id}`, {
+                method: 'DELETE',  // Use DELETE method for REST API
                 credentials: 'same-origin',
                 signal: abortController.signal
             });
             
+            // Log response for debugging
             console.log('Delete response status:', response.status);
             
             if (!response.ok) {
                 // Try to parse error response
+                let errorData: { message?: string } = {};
                 try {
                     const responseText = await response.text();
                     console.log('Error response text:', responseText);
-                    
-                    let errorMessage;
                     try {
-                        const errorData = JSON.parse(responseText) as { message?: string };
-                        errorMessage = errorData?.message;
-                    } catch (jsonError) {
-                        console.error('Failed to parse error as JSON:', jsonError);
-                        errorMessage = responseText;
+                        errorData = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.error('Failed to parse error as JSON:', parseError);
                     }
-                    
-                    throw new Error(errorMessage || `Failed to delete category (status: ${response.status})`);
-                } catch (parseError) {
-                    console.error('Failed to parse error response:', parseError);
-                    throw new Error(`Failed to delete category (status: ${response.status})`);
+                } catch (textError) {
+                    console.error('Failed to get response text:', textError);
                 }
+                
+                throw new Error(errorData?.message || `Delete failed with status ${response.status}`);
             }
-
-            console.log('Category deleted successfully:', category.category_id);
             
-            // Dispatch event for parent component to handle
+            // Use proper Svelte event dispatching
             dispatch('deleted', { categoryId: category.category_id });
             
             success = 'Category deleted successfully';
+            console.log('Category deleted successfully:', category.category_id);
             
-            // Force reload to update UI
-            setTimeout(() => {
-                window.location.reload();
-            }, 800);
+            // Need to trigger a refresh - both CategoryItem and we need this
+            window.location.reload();
         } catch (e) {
             if (e instanceof Error && e.name !== 'AbortError') {
                 error = e.message;
@@ -246,6 +276,7 @@
 </script>
 
 <div class="category-card {isDeleting ? 'deleting' : ''} {isSaving ? 'saving' : ''}">
+    <!-- No form needed for the direct fetch approach -->
     <Dialog.Root bind:open={showDeleteConfirm}>
         <Dialog.Portal>
             <Dialog.Overlay />

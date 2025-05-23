@@ -1,11 +1,75 @@
-<!-- src/lib/components/manufacturer.svelte -->
+<!-- src/lib/components/cards/manufacturer.svelte -->
 <script lang="ts">
-    import type { Manufacturer } from '@/types/types';
-    import { formatFieldName } from '@/utils/util';
-    import { onDestroy } from 'svelte';
+    import { formatFieldName } from '$lib/utils/util';
+    import { onDestroy, createEventDispatcher } from 'svelte';
+    
+    // Create event dispatcher for communicating with parent components
+    const dispatch = createEventDispatcher();
+    
+    // Define the interface consistent with the dashboard's manufacturer data structure
+    interface Manufacturer {
+        manufacturer_id: string;
+        manufacturer_name: string;
+        manufacturer_description?: string | null;
+        website_url?: string | null;
+        contact_info?: string | null;
+        logo_url?: string | null;
+        custom_fields?: Record<string, unknown> | null;
+        created_at: Date;
+        updated_at: Date;
+        created_by: string;
+        updated_by?: string | null;
+    }
 
     export let manufacturer: Manufacturer;
     export let currentUserId: string;
+    export let allowEdit: boolean = true;
+    export let allowDelete: boolean = true;
+    
+    // Process custom fields for display
+    let processedCustomFields: Record<string, unknown> = {};
+    
+    // Process the custom fields whenever the manufacturer data changes
+    $: {
+        if (manufacturer && manufacturer.custom_fields) {
+            console.log('Processing custom fields:', manufacturer.custom_fields);
+            
+            try {
+                if (typeof manufacturer.custom_fields === 'string') {
+                    // If it's a string, try to parse it as JSON
+                    try {
+                        processedCustomFields = JSON.parse(manufacturer.custom_fields);
+                    } catch (e) {
+                        console.error('Error parsing custom fields string:', e);
+                        processedCustomFields = {};
+                    }
+                } else if (typeof manufacturer.custom_fields === 'object') {
+                    // Extract values from JSONB format where each field might have a nested 'value' property
+                    const fields = manufacturer.custom_fields as Record<string, any>;
+                    processedCustomFields = {};
+                    
+                    for (const [key, value] of Object.entries(fields)) {
+                        if (value !== null && typeof value === 'object' && 'value' in value) {
+                            // Extract the value from the JSONB wrapper
+                            processedCustomFields[key] = value.value;
+                        } else {
+                            processedCustomFields[key] = value;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Error processing custom fields:', e);
+                processedCustomFields = {};
+            }
+            
+            console.log('Processed custom fields:', processedCustomFields);
+        } else {
+            processedCustomFields = {};
+        }
+    }
+    
+    // We'll use the custom_fields directly from the manufacturer object
+    // This ensures we're displaying exactly what's in the database
 
     let editMode = false;
     let edits: Partial<Manufacturer> = {};
@@ -13,17 +77,119 @@
     let error: string | null = null;
     let success: string | null = null;
     let abortController = new AbortController();
-    
+    let showDeleteConfirm = false;
+    let isDeleting = false;
+    let showConfirmation = true; // Set to true to enable confirmation dialog
 
+    // Delete manufacturer function using REST API approach
+    const deleteManufacturer = async () => {
+        // First step is just to show the confirmation dialog
+        if (showConfirmation && !showDeleteConfirm) {
+            console.log('Opening delete confirmation dialog for manufacturer:', manufacturer.manufacturer_id);
+            showDeleteConfirm = true;
+            return;
+        }
+        
+        // This is the actual delete action after confirmation
+        console.log('Delete confirmed for manufacturer:', manufacturer.manufacturer_id);
+        showDeleteConfirm = false;
+        
+        error = null;
+        isDeleting = true;
+        
+        try {
+            console.log('Attempting to delete manufacturer:', manufacturer.manufacturer_id);
+            
+            // First abort any pending request
+            if (abortController) abortController.abort();
+            abortController = new AbortController();
+            
+            // Use the proper REST API endpoint for manufacturer deletion
+            const response = await fetch(`/api/manufacturers/${manufacturer.manufacturer_id}`, {
+                method: 'DELETE',  // Use DELETE method for REST API
+                credentials: 'same-origin',
+                signal: abortController.signal
+            });
+            
+            // If the API returns 404, try the alternative endpoint structure
+            if (response.status === 404) {
+                console.log('API endpoint not found, trying alternative endpoint');
+                abortController = new AbortController();
+                
+                // Try the manufacturer/[id] endpoint
+                const altResponse = await fetch(`/manufacturer/${manufacturer.manufacturer_id}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    signal: abortController.signal
+                });
+                
+                if (altResponse.ok) {
+                    console.log('Alternative endpoint successful');
+                    return altResponse;
+                }
+            }
+            
+            // Log response for debugging
+            console.log('Delete response status:', response.status);
+            
+            if (!response.ok) {
+                // Try to parse error response
+                let errorData: { message?: string } = {};
+                try {
+                    const responseText = await response.text();
+                    console.log('Error response text:', responseText);
+                    try {
+                        errorData = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.error('Failed to parse error as JSON:', parseError);
+                    }
+                } catch (textError) {
+                    console.error('Failed to get response text:', textError);
+                }
+                
+                throw new Error(errorData?.message || `Delete failed with status ${response.status}`);
+            }
+            
+            // Use proper Svelte event dispatching
+            dispatch('deleted', { manufacturerId: manufacturer.manufacturer_id });
+            
+            success = 'Manufacturer deleted successfully';
+            console.log('Manufacturer deleted successfully:', manufacturer.manufacturer_id);
+            
+            // Refresh the page to show the updated list
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } catch (e) {
+            if (e instanceof Error && e.name !== 'AbortError') {
+                error = e.message;
+                console.error('Delete manufacturer error:', e);
+            }
+        } finally {
+            isDeleting = false;
+        }
+    };
 
     onDestroy(() => {
         abortController.abort();
     });
 
     const startEdit = () => {
-        edits = { ...manufacturer };
-        customFieldsString = manufacturer.custom_fields ? JSON.stringify(manufacturer.custom_fields, null, 2) : '';
-        editMode = true;
+        // Prepare to edit this manufacturer
+        console.log('Starting edit for manufacturer:', manufacturer);
+        console.log('Custom fields before edit:', manufacturer.custom_fields);
+        
+        // Use Svelte's dispatch to send the event to the parent component
+        dispatch('edit', { 
+            manufacturer: {
+                ...manufacturer,
+                // Ensure the ID is available in both formats for maximum compatibility
+                manufacturer_id: manufacturer.manufacturer_id,
+                manufacturerId: manufacturer.manufacturer_id
+            }
+        });
+        
+        console.log('Dispatched edit event with manufacturer data');
     };
 
     const cancelEdit = () => {
@@ -110,11 +276,28 @@
     {#if error}
         <div class="alert error">{error}</div>
     {/if}
-    
     {#if success}
         <div class="alert success">{success}</div>
     {/if}
-
+    
+    <!-- Delete confirmation dialog -->
+    {#if showDeleteConfirm}
+        <div class="delete-confirmation">
+            <p>Are you sure you want to delete this manufacturer?</p>
+            <p class="warning">This action cannot be undone.</p>
+            <div class="confirmation-actions">
+                <button type="button" class="btn-cancel" on:click={() => showDeleteConfirm = false}>Cancel</button>
+                <button type="button" class="btn-delete" class:loading={isDeleting} disabled={isDeleting} on:click={deleteManufacturer}>
+                    {#if isDeleting}
+                        Deleting...
+                    {:else}
+                        Confirm Delete
+                    {/if}
+                </button>
+            </div>
+        </div>
+    {/if}
+    
     {#if !editMode}
         <div class="view-mode">
             <h2>{manufacturer.manufacturer_name}</h2>
@@ -135,11 +318,13 @@
                     </p>
                 {/if}
                 
-                {#if manufacturer.custom_fields && Object.keys(manufacturer.custom_fields).length > 0}
+           
+                
+                {#if processedCustomFields && Object.keys(processedCustomFields).length > 0}
                     <div class="custom-fields">
                         <h3>Additional Information</h3>
                         <div class="custom-fields-grid">
-                            {#each Object.entries(manufacturer.custom_fields) as [fieldName, fieldValue]}
+                            {#each Object.entries(processedCustomFields) as [fieldName, fieldValue]}
                                 <div class="custom-field-item">
                                     <div class="field-name">{formatFieldName(fieldName)}</div>
                                     <div class="field-value">
@@ -171,11 +356,15 @@
                 </div>
             </div>
             
-            <!-- Only show edit/delete buttons if user is logged in and created this manufacturer -->
+            <!-- Only show edit/delete buttons if user is logged in, created this manufacturer, and allowEdit/allowDelete are true -->
             {#if currentUserId && manufacturer.created_by === currentUserId}
                 <div class="actions">
-                    <button on:click={startEdit} class="btn-edit">Edit</button>
-                    <button on:click={removeManufacturer} class="danger">Delete</button>
+                    {#if allowEdit}
+                        <button on:click={startEdit} class="btn-edit">Edit</button>
+                    {/if}
+                    {#if allowDelete}
+                        <button on:click={deleteManufacturer} class="btn-delete danger">Delete</button>
+                    {/if}
                 </div>
             {/if}
         </div>
@@ -448,5 +637,63 @@
         gap: 0.75rem;
         justify-content: flex-end;
         margin-top: 1rem;
+    }
+    
+    .delete-confirmation {
+        background-color: hsl(var(--destructive) / 0.1);
+        border: 1px solid hsl(var(--destructive));
+        border-radius: 4px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .delete-confirmation p {
+        margin: 0 0 0.5rem;
+    }
+    
+    .delete-confirmation .warning {
+        color: hsl(var(--destructive));
+        font-weight: 500;
+    }
+    
+    .confirmation-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        margin-top: 1rem;
+    }
+    
+    .btn-delete {
+        background-color: hsl(var(--destructive));
+        color: hsl(var(--destructive-foreground));
+        border: none;
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+    
+    .btn-delete:hover {
+        background-color: hsl(var(--destructive) / 0.9);
+    }
+    
+    .btn-delete.loading {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+    
+    .btn-cancel {
+        background-color: hsl(var(--muted));
+        color: hsl(var(--muted-foreground));
+        border: none;
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    
+    .btn-cancel:hover {
+        background-color: hsl(var(--muted) / 0.9);
     }
 </style>

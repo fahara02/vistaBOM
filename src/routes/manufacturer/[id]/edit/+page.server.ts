@@ -161,62 +161,25 @@ export const actions: Actions = {
         console.log('Processing custom fields...');
         
         try {
-          // Delete existing custom fields first
-          await sql`DELETE FROM "ManufacturerCustomField" WHERE manufacturer_id = ${manufacturerId}`;
-          console.log('Deleted existing custom fields');
-
-          for (const [fieldName, fieldValue] of Object.entries(customFields)) {
-            // Check if this field already exists
-            const existingField = await sql`
-              SELECT field_id FROM "CustomField" WHERE field_name = ${fieldName}
-            `;
-            
-            let fieldId;
-            if (existingField.length > 0) {
-              fieldId = existingField[0].field_id;
-              console.log(`Using existing field ID ${fieldId} for ${fieldName}`);
-            } else {
-              // Create a new custom field with correct data_type according to schema
-              let dataType;
-              if (typeof fieldValue === 'string') dataType = 'text';  // Use 'text' instead of 'string'
-              else if (typeof fieldValue === 'number') dataType = 'number';
-              else if (typeof fieldValue === 'boolean') dataType = 'boolean';
-              else if (fieldValue instanceof Date) dataType = 'date';
-              else dataType = 'text';  // Default to text for other types
-              
-              const newField = await sql`
-                INSERT INTO "CustomField" (field_name, data_type, applies_to)
-                VALUES (${fieldName}, ${dataType}, ${'manufacturer'})
-                RETURNING field_id
-              `;
-              fieldId = newField[0].field_id;
-              console.log(`Created new field ID ${fieldId} for ${fieldName}`);
-            }
-            
-            // Convert any value to string for safe storage in db
-            // Explicitly handle different types to avoid errors
-            let fieldValueStr = '';
-            if (typeof fieldValue === 'string') {
-              fieldValueStr = fieldValue;
-            } else if (typeof fieldValue === 'number' || 
-                      typeof fieldValue === 'boolean' || 
-                      fieldValue === null) {
-              fieldValueStr = JSON.stringify(fieldValue);
-            } else if (typeof fieldValue === 'object') {
-              fieldValueStr = JSON.stringify(fieldValue);
-            }
-            
-            // Now add the value
-            await sql`
-              INSERT INTO "ManufacturerCustomField" (manufacturer_id, field_id, field_value)
-              VALUES (${manufacturerId}, ${fieldId}, ${fieldValueStr})
-            `;
-            console.log(`Added value for field ${fieldName}`);
+          // Import the updateManufacturerCustomFields function
+          const { updateManufacturerCustomFields } = await import('$lib/core/manufacturer');
+          
+          // Use the core function to update custom fields
+          // This ensures consistent handling with the rest of the application
+          const updatedManufacturer = await updateManufacturerCustomFields(manufacturerId, customFields);
+          
+          if (!updatedManufacturer) {
+            console.error('Failed to update custom fields');
+            return message(form, 'Manufacturer updated but custom fields update failed', { status: 500 });
           }
+          
+          console.log('Custom fields updated successfully');
         } catch (error) {
           console.error('Error handling custom fields:', error);
           // Don't fail the whole update if custom fields processing fails
           // Just log the error and continue
+          return message(form, 'Manufacturer updated but custom fields update failed: ' + 
+                        (error instanceof Error ? error.message : 'Unknown error'), { status: 500 });
         }
       }
       

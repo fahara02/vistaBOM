@@ -95,11 +95,16 @@
         <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </Button>
     </Popover.Trigger>
-    <Popover.Content class="w-[var(--radix-popover-trigger-width)] p-0 max-h-[300px] overflow-y-auto dropdown-content" side="bottom" align="start" sideOffset={8}>
-      <Command.Root>
-        <Command.Input placeholder="Search categories..." />
-        <Command.Empty>No category found.</Command.Empty>
-        <Command.Group>
+    <Popover.Content 
+        class="w-[var(--radix-popover-trigger-width)] p-0 max-h-[300px] overflow-y-auto dropdown-content" 
+        style="background-color: hsl(var(--background)) !important; border: 1px solid hsl(var(--border)) !important; color: hsl(var(--foreground)) !important; box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;"
+        side="bottom" 
+        align="start" 
+        sideOffset={8}>
+      <Command.Root style="background-color: hsl(var(--background)) !important; color: hsl(var(--foreground)) !important;">
+        <Command.Input placeholder="Search categories..." style="background-color: hsl(var(--background)) !important; color: hsl(var(--foreground)) !important; border-bottom: 1px solid hsl(var(--border)) !important;" />
+        <Command.Empty style="color: hsl(var(--muted-foreground)) !important; padding: 0.5rem 1rem !important;">No category found.</Command.Empty>
+        <Command.Group style="background-color: hsl(var(--background)) !important; color: hsl(var(--foreground)) !important;">
           {#each options as option}
             <Command.Item
               value={option.label}
@@ -107,6 +112,7 @@
                 value = option.value;
                 closeAndFocusTrigger(ids.trigger);
               }}
+              style="background-color: hsl(var(--background)) !important; color: hsl(var(--foreground)) !important; padding: 0.5rem 1rem !important;"
             >
               <Check
                 class={cn(
@@ -139,6 +145,7 @@
     max-height: 300px;
     overflow-y: auto;
     transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s !important;
+    color: hsl(var(--foreground)) !important;
   }
   
   /* Dark mode specific dropdown styling */

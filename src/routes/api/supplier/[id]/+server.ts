@@ -1,4 +1,4 @@
-// src/routes/api/suppliers/[id]/+server.ts
+// src/routes/api/supplier/[id]/+server.ts
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
@@ -12,7 +12,7 @@ export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!id) {
         throw error(400, 'Missing supplier ID');
     }
-    const userId = locals.user.id;
+    const userId = locals.user.user_id;
     if (!userId) {
         throw error(401, 'Unauthorized');
     }
@@ -22,17 +22,19 @@ export const PUT: RequestHandler = async ({ request, params, locals }) => {
         const updated = await updateSupplier(
             id,
             {
-                name: data.name,
-                description: data.description,
+                supplier_name: data.supplier_name,
+                supplier_description: data.supplier_description,
                 websiteUrl: data.websiteUrl,
                 contactInfo: data.contactInfo,
                 logoUrl: data.logoUrl,
-                updatedBy: userId // Include user ID as part of the params object
+                updatedBy: userId, // Include user ID as part of the params object
+                customFields: data.customFields // Pass custom fields from the request
             }
         );
         return json(updated);
     } catch (e: any) {
-        throw error(500, e.message);
+        console.error('Delete supplier error:', e);
+        throw error(500, e instanceof Error ? e.message : 'Failed to delete supplier');
     }
 };
 
@@ -44,7 +46,7 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
     if (!id) {
         throw error(400, 'Missing supplier ID');
     }
-    const userId = locals.user.id;
+    const userId = locals.user.user_id;
     if (!userId) {
         throw error(401, 'Unauthorized');
     }
@@ -53,6 +55,7 @@ export const DELETE: RequestHandler = async ({ params, locals }) => {
         await deleteSupplier(id);
         return new Response(null, { status: 204 });
     } catch (e: any) {
-        throw error(500, e.message);
+        console.error('Delete supplier error:', e);
+        throw error(500, e instanceof Error ? e.message : 'Failed to delete supplier');
     }
 };

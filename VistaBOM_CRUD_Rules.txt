@@ -1,0 +1,121 @@
+# VistaBOM Entity CRUD Rules
+
+## Type Safety Rules
+1. NEVER use 'any' or 'unknown' types except in isolated, controlled situations
+2. Import ALL types from centralized schema.ts, NEVER redefine them
+3. Use TypeScript type assertions only when necessary and with specific types
+4. Define component props with exact types including optional properties with ? syntax
+5. For extended types, use intersection: `export let entity: Entity & { parent_name?: string }`
+
+## Form Handling Rules
+1. Use SuperForm with dataType: 'json' for all forms with complex types
+2. Initialize form values with EXACT MATCHING TYPES to schema definition
+   - Use `undefined` NOT `null` for optional string fields
+   - Example: `parent_id: undefined as string | undefined`
+3. Reset forms with explicit field assignment, not spread syntax
+4. Always validate input before database operations
+
+## Database Rules
+1. Use sql.begin() for transactions involving multiple operations
+2. Always filter deleted entities with `WHERE is_deleted = false`
+3. For soft delete, update is_deleted + deleted_by + deleted_at fields
+4. Use explicit type casting for SQL parameters: `${entityId.toString()}`
+5. Table names are camelCase with capital first letter in quotes: `"Category"`
+6. Field names are snake_case without quotes: `category_name`
+
+## Component Structure Rules
+1. Component script order: imports → props → local state → derived state → lifecycle → methods
+2. Component props: define default values for all optional props
+3. Use event dispatching for component communication, not stores
+4. Type event dispatch: `createEventDispatcher<{ deleted: { entityId: string } }>()`
+
+## State Persistence Rules
+1. Always guard localStorage with: `if (typeof window !== 'undefined')`
+2. Save UI state before async operations, restore afterward
+3. Save active tab with setActiveTab function that updates localStorage
+4. Validate stored values before using: check against allowed enum values
+
+## API/Server Rules
+1. Use the new SvelteKit 5 syntax: `export async function POST({ locals, request }: RequestEvent)`
+2. For dashboard endpoints, use GET handler to return JSON data
+3. Return appropriate HTTP status codes: 200, 201, 400, 401, 403, 404, 500
+4. Handle errors with specific error messages in try/catch blocks
+
+## Data Refresh Rules
+1. Implement refreshEntityData() functions that fetch via AJAX
+2. Add minimum timeout (200ms) with Promise.all to prevent UI jank
+3. Save current state before refresh, restore afterward
+4. Update reactive variables after successful refresh
+
+## Delete Operation Rules
+1. Use confirmation dialogs for destructive actions
+2. Support both direct API delete and form-based delete operations
+3. For form-based delete:
+   ```typescript
+   const formData = $entityForm as any;
+   const isDeleteOperation = formData.delete === true;
+   ```
+4. Dispatch events after successful operations: `dispatch('deleted', { entityId })`
+
+## Common Bug Prevention
+1. ALWAYS guard localStorage access for SSR compatibility
+2. Reset currentEntityId to null after form operations
+3. Reset form state completely after submission
+4. Use TypeScript assertion after validating data: `activeTab = storedTab as TabType`
+5. Wait for server response before updating UI state
+6. Never assume server operations succeed - always check response status
+
+## SQL Query Templates
+1. Get All: 
+   ```sql
+   SELECT e.*, p.entity_name as parent_name
+   FROM "Entity" e
+   LEFT JOIN "Entity" p ON e.parent_id = p.entity_id
+   WHERE e.is_deleted = false
+   ORDER BY e.entity_name ASC
+   ```
+
+2. Get By ID:
+   ```sql
+   SELECT e.*, p.entity_name as parent_name
+   FROM "Entity" e
+   LEFT JOIN "Entity" p ON e.parent_id = p.entity_id
+   WHERE e.entity_id = ${entityId} AND e.is_deleted = false
+   ```
+
+3. Create:
+   ```sql
+   INSERT INTO "Entity" (
+       entity_name, entity_description, parent_id, is_public, created_by
+   ) VALUES (
+       ${data.entity_name}, 
+       ${data.entity_description || null}, 
+       ${data.parent_id || null}, 
+       ${data.is_public}, 
+       ${userId}
+   ) RETURNING *
+   ```
+
+4. Update:
+   ```sql
+   UPDATE "Entity"
+   SET 
+       entity_name = ${data.entity_name},
+       entity_description = ${data.entity_description || null},
+       parent_id = ${data.parent_id || null},
+       is_public = ${data.is_public},
+       updated_at = NOW(),
+       updated_by = ${userId}
+   WHERE entity_id = ${entityId}
+   RETURNING *
+   ```
+
+5. Soft Delete:
+   ```sql
+   UPDATE "Entity"
+   SET 
+       is_deleted = true,
+       deleted_at = NOW(),
+       deleted_by = ${userId}
+   WHERE entity_id = ${entityId}
+   ```
