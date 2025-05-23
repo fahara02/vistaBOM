@@ -1,9 +1,27 @@
 <!-- src/lib/components/forms/ManufacturerForm.svelte -->
 <script lang="ts">
-    import { validateJSON } from '$lib/utils/util';
+    import { validateJSON, formatFieldName } from '$lib/utils/util';
     import { onMount, createEventDispatcher } from 'svelte';
     import { slide } from 'svelte/transition';
     import { manufacturerActionSchema } from '$lib/schema/schema';
+    import { 
+        Mail, 
+        Phone, 
+        MapPin, 
+        User, 
+        Building, 
+        Globe, 
+        Smartphone, 
+        AtSign, 
+        Printer,
+        MessageSquare,
+        Briefcase,
+        HelpCircle,
+        Check,
+        AlertCircle,
+        ChevronDown,
+        ChevronUp
+    } from 'lucide-svelte';
     
     // Use the schema from the central schema.ts file
     // Define the type based on the schema for type safety
@@ -84,6 +102,7 @@
     let customFieldsError: string = '';
     let contactInfoError: string = '';
     let showJsonHelp: boolean = false; // Toggle for JSON help panel
+    let showContactJsonHelp: boolean = false; // Toggle for contact info JSON help panel
 
     // Initialize JSON fields on mount and when data changes
     onMount(() => {
@@ -153,6 +172,7 @@
                                 }
                                 contactInfoString = JSON.stringify(contactObj, null, 2);
                             } catch {
+                                // If conversion fails, store as notes
                                 contactInfoString = JSON.stringify({ notes: data.contact_info }, null, 2);
                             }
                         } else {
@@ -242,16 +262,20 @@
                                     contactObj[key] = value;
                                 }
                             }
+                            
+                            console.log('Converted key-value pairs to object:', contactObj);
                             formData.contact_info = JSON.stringify(contactObj);
                             contactInfoError = '';
                             return true;
-                        } catch {
+                        } catch (kvError) {
+                            console.error('Error converting key-value format:', kvError);
                             // If conversion fails, store as notes
                             formData.contact_info = JSON.stringify({ notes: contactInfoString });
                             contactInfoError = '';
                             return true;
                         }
                     } else {
+                        console.log('Using plain text as notes in contact info');
                         // If not in key-value format, store as notes
                         formData.contact_info = JSON.stringify({ notes: contactInfoString });
                         contactInfoError = '';
@@ -259,7 +283,7 @@
                     }
                 }
             } else {
-                formData.contact_info = '';
+                formData.contact_info = '{}';
                 contactInfoError = '';
                 return true;
             }
@@ -332,7 +356,7 @@
             
             // Process contact_info for storage (must be string per the interface)
             contact_info: typeof formData.contact_info === 'string' && formData.contact_info
-                ? formData.contact_info 
+                ? (formData.contact_info.trim() === '' ? '{}' : formData.contact_info)
                 : JSON.stringify(formData.contact_info || {}),
                 
             // Ensure custom_fields is a properly formatted JSON string
@@ -382,6 +406,11 @@
     // Toggle JSON help panel visibility
     function toggleJsonHelp(): void {
         showJsonHelp = !showJsonHelp;
+    }
+
+    // Toggle contact info JSON help panel visibility
+    function toggleContactJsonHelp(): void {
+        showContactJsonHelp = !showContactJsonHelp;
     }
 
     // Debug function - only used in development
@@ -473,45 +502,110 @@
         </div>
         
         <div class="form-group json-field">
-            <label for="contact_info">Contact Info (JSON)</label>
+            <label for="contact_info">Contact Info</label>
             <div class="contact-info-tools">
                 <div>
-                    {#if contactInfoError}
-                        <span class="json-status invalid-json">Invalid JSON</span>
-                    {:else if contactInfoString && contactInfoString !== '{}'}
-                        <span class="json-status valid-json">Valid JSON</span>
+                <button type="button" class="format-button" on:click={() => formatJson('contact')}>
+                    <Check size={14} /> Format JSON
+                </button>
+                {#if contactInfoString && contactInfoString.trim() !== '{}'}
+                    {#if validateJSON(contactInfoString)}
+                        <div class="json-status valid-json">
+                            <Check size={14} /> Valid JSON
+                        </div>
+                    {:else}
+                        <div class="json-status invalid-json">
+                            <AlertCircle size={14} /> Invalid JSON
+                        </div>
                     {/if}
-                </div>
-                <button type="button" class="format-button" on:click={() => formatJson('contact')}>Format JSON</button>
+                {/if}
             </div>
-            <textarea 
-                id="contact_info" 
-                bind:value={contactInfoString} 
-                class:error={contactInfoError}
+            <textarea
+                id="contact_info"
                 rows="5"
-                placeholder="Enter contact information in JSON format or key:value pairs"
-                on:input={(e) => {
-                    // Update the form data on input
-                    formData.contact_info = contactInfoString;
-                    handleFormChange();
-                }}
+                bind:value={contactInfoString}
+                on:input={(e) => handleTextareaChange(e, 'contact_info')}
+                class:error={contactInfoError}
+                placeholder="Enter contact information in JSON format"
             ></textarea>
             {#if contactInfoError}
-                <div class="error-message">{contactInfoError}</div>
+                <p class="error-message">{contactInfoError}</p>
+            {/if}
+            
+            <div class="helper-toggle">
+                <button type="button" class="toggle-button" on:click={() => showContactJsonHelp = !showContactJsonHelp}>
+                    {#if showContactJsonHelp}
+                        <span class="toggle-icon"><ChevronUp size={16} /></span>
+                        <span class="toggle-text">Hide Contact Info Help</span>
+                    {:else}
+                        <span class="toggle-icon"><HelpCircle size={16} /></span>
+                        <span class="toggle-text">Show Contact Info Help</span>
+                    {/if}
+                </button>
+            </div>
+            
+            {#if showContactJsonHelp}
+                <div class="help-panel" transition:slide={{ duration: 300 }}>
+                    <p><strong>Contact Information Guide</strong></p>
+                    <p>You can enter contact information in two formats:</p>
+                    
+                    <div class="help-section">
+                        <h4>1. JSON Format (Recommended)</h4>
+                        <p>Example:</p>
+                        <pre>{@html `<code>{
+  "email": "contact@example.com",
+  "phone": "+1 (555) 123-4567",
+  "address": "123 Main St, City, Country",
+  "contact_name": "John Doe",
+  "position": "Sales Manager"
+}</code>`}</pre>
+                    </div>
+                    
+                    <div class="help-section">
+                        <h4>2. Key-Value Pairs</h4>
+                        <p>Example:</p>
+                        <pre><code>email: contact@example.com
+phone: +1 (555) 123-4567
+address: 123 Main St, City, Country</code></pre>
+                        <p>Each line should have a key, followed by a colon, then the value.</p>
+                    </div>
+                    
+                    <div class="help-section">
+                        <h4>Common Field Names</h4>
+                        <ul class="icon-list">
+                            <li><Mail size={14} /> <code>email</code> - Email address</li>
+                            <li><Phone size={14} /> <code>phone</code> - Phone number</li>
+                            <li><Smartphone size={14} /> <code>mobile</code> - Mobile number</li>
+                            <li><MapPin size={14} /> <code>address</code> - Physical address</li>
+                            <li><User size={14} /> <code>contact_name</code> - Contact person's name</li>
+                            <li><Briefcase size={14} /> <code>position</code> - Job title/position</li>
+                            <li><Building size={14} /> <code>department</code> - Department or division</li>
+                            <li><Globe size={14} /> <code>website</code> - Additional website</li>
+                            <li><Printer size={14} /> <code>fax</code> - Fax number</li>
+                            <li><MessageSquare size={14} /> <code>notes</code> - Additional notes</li>
+                        </ul>
+                    </div>
+                </div>
             {/if}
         </div>
         
         <div class="form-group json-field">
             <label for="custom_fields">Custom Fields (JSON)</label>
             <div class="contact-info-tools">
-                <div>
-                    {#if customFieldsError}
-                        <span class="json-status invalid-json">Invalid JSON</span>
-                    {:else if customFieldsString && customFieldsString !== '{}'}
-                        <span class="json-status valid-json">Valid JSON</span>
+                <button type="button" class="format-button" on:click={() => formatJson('custom')}>
+                    <Check size={14} /> Format JSON
+                </button>
+                {#if customFieldsString && customFieldsString.trim() !== '{}'}
+                    {#if validateJSON(customFieldsString)}
+                        <div class="json-status valid-json">
+                            <Check size={14} /> Valid JSON
+                        </div>
+                    {:else}
+                        <div class="json-status invalid-json">
+                            <AlertCircle size={14} /> Invalid JSON
+                        </div>
                     {/if}
-                </div>
-                <button type="button" class="format-button" on:click={() => formatJson('custom')}>Format JSON</button>
+                {/if}
             </div>
             <textarea 
                 id="custom_fields" 
@@ -531,7 +625,13 @@
             
             <div class="helper-toggle">
                 <button type="button" class="toggle-button" on:click={toggleJsonHelp}>
-                    <span class="toggle-icon">{showJsonHelp ? '-' : '+'}</span>
+                    <span class="toggle-icon">
+                        {#if showJsonHelp}
+                            <ChevronUp size={16} />
+                        {:else}
+                            <ChevronDown size={16} />
+                        {/if}
+                    </span>
                     <span class="toggle-text">JSON Help</span>
                 </button>
             </div>
@@ -551,7 +651,7 @@
                 </div>
             {/if}
         </div>
-        N
+        
         {#if !hideButtons}
             <div class="form-actions">
                 <button type="button" class="btn cancel-btn" on:click={handleCancel}>Cancel</button>
@@ -696,14 +796,17 @@
     }
     
     .format-button {
-        font-size: 0.75rem;
         padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
         background-color: hsl(var(--secondary));
         border: 1px solid hsl(var(--border));
         border-radius: 0.25rem;
         cursor: pointer;
         color: hsl(var(--secondary-foreground));
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+        transition: background-color 0.3s, color 0.3s, border-color 0.3s, transform 0.1s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
     }
     
     .format-button:hover {
@@ -729,10 +832,9 @@
     }
     
     .toggle-icon {
-        font-size: 1rem;
-        width: 1rem;
-        text-align: center;
-        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .toggle-text {
@@ -741,11 +843,24 @@
     
     .help-panel {
         margin-top: 0.75rem;
-        padding: 0.75rem;
+        padding: 0.75rem 1rem;
         background-color: hsl(var(--muted));
         border-radius: 4px;
         font-size: 0.875rem;
         transition: background-color 0.3s;
+        border: 1px solid hsl(var(--border));
+    }
+    
+    .help-section {
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .help-section h4 {
+        font-size: 0.9rem;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        color: hsl(var(--foreground));
     }
     
     .help-panel p {
@@ -770,11 +885,50 @@
         border-radius: 3px;
     }
     
+    pre {
+        background-color: hsl(var(--card));
+        padding: 0.75rem;
+        border-radius: 4px;
+        overflow-x: auto;
+        border: 1px solid hsl(var(--border));
+        margin: 0.5rem 0;
+    }
+    
+    pre code {
+        background-color: transparent;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.8rem;
+        white-space: pre;
+    }
+    
+    .icon-list {
+        list-style-type: none;
+        padding-left: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    
+    .icon-list li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
     /* Error styles are used directly on inputs via class:error */
     
     .json-status {
         font-size: 0.75rem;
         font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        animation: fadeIn 0.3s ease-out;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     
     .valid-json {
@@ -782,6 +936,7 @@
         background-color: hsl(var(--success) / 0.2);
         padding: 0.25rem 0.5rem;
         border-radius: 0.25rem;
+        border: 1px solid hsl(var(--success) / 0.3);
     }
     
     .invalid-json {
@@ -789,5 +944,6 @@
         background-color: hsl(var(--destructive) / 0.2);
         padding: 0.25rem 0.5rem;
         border-radius: 0.25rem;
+        border: 1px solid hsl(var(--destructive) / 0.3);
     }
 </style>

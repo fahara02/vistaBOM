@@ -119,6 +119,20 @@ export interface ManufacturerPartFormData {
   is_recommended?: boolean;
 }
 
+export interface DashboardManufacturer {
+  manufacturer_id: string;
+  manufacturer_name: string;
+  manufacturer_description?: string | null;
+  website_url?: string | null;
+  contact_info?: string | null;
+  logo_url?: string | null;
+  custom_fields?: Record<string, unknown> | null;
+  created_at: Date;
+  updated_at: Date; // Required Date type (not nullable)
+  created_by: string;
+  updated_by?: string | null;
+}
+
 // Supplier part form data
 export interface SupplierPartFormData {
   supplier_id: string;
@@ -139,6 +153,20 @@ export interface SupplierPartFormData {
   is_preferred?: boolean;
   packaging_info?: Record<string, any>;
   pricing_info?: string;
+}
+
+export interface DashboardSupplier {
+  supplier_id: string;
+  supplier_name: string;
+  supplier_description?: string | null;
+  website_url?: string | null;
+  contact_info?: string | null;
+  logo_url?: string | null;
+  custom_fields?: Record<string, unknown> | null;
+  created_at: Date;
+  updated_at: Date; // Required Date type (not nullable)
+  created_by: string;
+  updated_by?: string | null;
 }
 
 // Validation record form data

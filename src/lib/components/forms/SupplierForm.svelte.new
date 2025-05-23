@@ -8,11 +8,7 @@
     // Use the schema from the central schema.ts file
     // Define the type based on the schema for type safety
     import type { z } from 'zod';
-    type SupplierFormType = z.infer<typeof supplierActionSchema> & {
-        // Additional fields used in the edit form but not in the schema
-        custom_fields_json?: string;
-        supplierId?: string; // Alternative ID format for compatibility
-    };
+    type SupplierFormType = z.infer<typeof supplierActionSchema>;
 
     // Event dispatcher for communicating with parent components
     const dispatch = createEventDispatcher<{
@@ -27,7 +23,7 @@
     export let isEditMode: boolean = false; // Whether we're editing an existing supplier
     export let hideButtons: boolean = false; // Option to hide buttons in embedded contexts
     export let submitText: string = isEditMode ? 'Save Changes' : 'Create Supplier'; // Button text
-    export const isDashboardContext: boolean = true; // Whether this form is used in the dashboard (exported as const since not used internally)
+    export let isDashboardContext: boolean = true; // Whether this form is used in the dashboard
     export const isStandalone: boolean = false; // Whether this is used standalone or in dashboard (exported as const since not used internally)
     // Used in the component for setting created_by/updated_by in the action handler
     export const currentUserId: string | undefined = undefined;
@@ -50,32 +46,20 @@
     // Update form data when props change - use consistent field names from schema
     $: if (data && (!formInitialized)) {
         console.log('Initializing form with data:', data);
-        
         // Create a new object to ensure reactivity
         const newFormData = {
             supplier_id: data.supplier_id || '',
-            supplierId: data.supplier_id || data.supplierId || '',
             supplier_name: data.supplier_name || '',
             supplier_description: data.supplier_description || null,
             website_url: data.website_url || '',
             logo_url: data.logo_url || '',
-            // Handle both custom_fields and custom_fields_json fields
             custom_fields: typeof data.custom_fields === 'object' 
                 ? JSON.stringify(data.custom_fields, null, 2) 
                 : data.custom_fields || '{}',
-            // Also ensure custom_fields_json is available for the action
-            custom_fields_json: data.custom_fields_json || (
-                typeof data.custom_fields === 'object' 
-                    ? JSON.stringify(data.custom_fields) 
-                    : data.custom_fields || '{}'
-            ),
             contact_info: typeof data.contact_info === 'object' 
                 ? JSON.stringify(data.contact_info, null, 2) 
                 : data.contact_info || '{}'
         };
-        
-        console.log('Using custom_fields:', newFormData.custom_fields);
-        console.log('Using custom_fields_json:', newFormData.custom_fields_json);
         
         console.log('Processed custom fields for form:', newFormData.custom_fields);
         
@@ -99,7 +83,6 @@
     let contactInfoString: string = '{}';
     let customFieldsError: string = '';
     let contactInfoError: string = '';
-    let formError: string = ''; // General form error message
     let showJsonHelp: boolean = false; // Toggle for JSON help panel
 
     // Initialize JSON fields on mount and when data changes
@@ -109,126 +92,77 @@
 
     // Methods
     function initializeJsonFields(): void {
-        // Initialize custom fields from the data - prioritize custom_fields_json if available
-        let customFieldsSource = data.custom_fields_json || data.custom_fields;
-        
-        // Always ensure we're working with a non-null value
-        if (customFieldsSource === null || customFieldsSource === undefined) {
-            console.log('Custom fields source is null or undefined, using empty object');
-            customFieldsString = '{}';
-            return;
-        }
-        
-        try {
-            console.log('Initializing custom fields from:', customFieldsSource);
-            console.log('Type of custom fields source:', typeof customFieldsSource);
-            
-            if (typeof customFieldsSource === 'string') {
-                // Try to parse it as JSON
-                try {
-                    // Only try to parse if it looks like JSON
-                    if (customFieldsSource.trim().startsWith('{')) {
-                        const parsed = JSON.parse(customFieldsSource);
+        // Initialize custom fields from the data
+        if (data.custom_fields) {
+            try {
+                console.log('Initializing custom fields from:', data.custom_fields);
+                console.log('Type of custom_fields:', typeof data.custom_fields);
+                
+                if (typeof data.custom_fields === 'string') {
+                    try {
+                        // Try to parse it as JSON first
+                        const parsed = JSON.parse(data.custom_fields);
                         customFieldsString = JSON.stringify(parsed, null, 2);
-                        console.log('Successfully parsed custom fields string');
-                    } else if (customFieldsSource.trim() === '') {
-                        // Empty string case
-                        customFieldsString = '{}';
-                        console.log('Empty custom fields string, using empty object');
-                    } else {
-                        // Not JSON but not empty - use empty object and log warning
-                        customFieldsString = '{}';
-                        console.warn('Custom fields string is not JSON format, using empty object');
+                        console.log('Parsed and formatted custom fields:', customFieldsString);
+                    } catch {
+                        // If it's not valid JSON, use as is
+                        customFieldsString = data.custom_fields;
+                        console.log('Using string custom fields as is:', customFieldsString);
                     }
-                } catch (parseError) {
-                    // If not valid JSON, log error and use empty object
-                    console.error('Failed to parse custom fields JSON:', parseError);
+                } else if (typeof data.custom_fields === 'object') {
+                    // If it's an object, stringify it for the form
+                    customFieldsString = JSON.stringify(data.custom_fields, null, 2);
+                    console.log('Converted object custom fields to string:', customFieldsString);
+                } else {
+                    // Default to empty object
                     customFieldsString = '{}';
                 }
-            } else if (typeof customFieldsSource === 'object') {
-                // Direct object - stringify it
-                customFieldsString = JSON.stringify(customFieldsSource, null, 2);
-                console.log('Custom fields provided as object, stringified for editing');
-            } else {
-                // Default to empty object for any other type
+                customFieldsError = '';
+            } catch (e) {
                 customFieldsString = '{}';
-                console.log('Unknown custom fields type, defaulting to empty object');
+                customFieldsError = 'Invalid JSON in custom fields';
+                console.error('Error processing custom fields:', e);
             }
-            customFieldsError = ''; // Clear any errors
-        } catch (e) {
+        } else {
             customFieldsString = '{}';
-            customFieldsError = 'Invalid JSON in custom fields';
-            console.error('Error processing custom fields:', e);
         }
 
         // Initialize contact info from the data
         if (data.contact_info) {
             try {
-                console.log('Initializing contact info from:', data.contact_info);
-                console.log('Type of contact info:', typeof data.contact_info);
-                
                 if (typeof data.contact_info === 'string') {
-                    // First check if it's empty
-                    if (data.contact_info.trim() === '') {
-                        contactInfoString = '{}';
-                        console.log('Contact info is empty string, using empty object');
-                    }
-                    // Try to parse it as JSON if it looks like JSON
-                    else if (data.contact_info.trim().startsWith('{')) {
-                        try {
-                            const parsed = JSON.parse(data.contact_info);
-                            contactInfoString = JSON.stringify(parsed, null, 2);
-                            console.log('Successfully parsed contact info as JSON');
-                        } catch (parseError) {
-                            console.error('Failed to parse contact info JSON:', parseError);
-                            // Use as plain text if not valid JSON
-                            contactInfoString = JSON.stringify({ notes: data.contact_info }, null, 2);
-                            console.log('Contact info was not valid JSON, wrapped as notes');
-                        }
-                    }
-                    // Check if it's in key-value format
-                    else if (data.contact_info.includes(':') && !data.contact_info.startsWith('{')) {
-                        // Looks like a key-value format, convert to JSON
-                        try {
-                            const lines = data.contact_info.split(/[;\n]+/);
-                            const contactObj: Record<string, string> = {};
-                            
-                            for (const line of lines) {
-                                const match = line.match(/^\s*([^:]+)\s*:\s*(.+?)\s*$/);
-                                if (match) {
-                                    const [, key, value] = match;
-                                    contactObj[key.trim()] = value.trim();
-                                }
-                            }
-                            
-                            if (Object.keys(contactObj).length > 0) {
+                    // Try to parse it as JSON first
+                    try {
+                        const parsed = JSON.parse(data.contact_info);
+                        contactInfoString = JSON.stringify(parsed, null, 2);
+                    } catch {
+                        // If it's not valid JSON, use as is or convert to JSON
+                        if (data.contact_info.includes(':') && !data.contact_info.startsWith('{')) {
+                            // If it looks like key-value pairs but not proper JSON,
+                            // try to convert it to JSON format
+                            try {
+                                const pairs = data.contact_info.split(',');
+                                const contactObj: Record<string, string> = {};
+                                
+                                pairs.forEach(pair => {
+                                    const [key, value] = pair.split(':').map(s => s.trim());
+                                    if (key && value) {
+                                        contactObj[key] = value;
+                                    }
+                                });
+                                
                                 contactInfoString = JSON.stringify(contactObj, null, 2);
-                                console.log('Converted key-value contact info to JSON');
-                            } else {
-                                // If no key-value pairs found, use as plain text
+                            } catch {
                                 contactInfoString = JSON.stringify({ notes: data.contact_info }, null, 2);
-                                console.log('No key-value pairs found, used as notes');
                             }
-                        } catch (e) {
-                            // Fallback to simple structure
+                        } else {
                             contactInfoString = JSON.stringify({ notes: data.contact_info }, null, 2);
-                            console.error('Error processing key-value format:', e);
                         }
-                    } else {
-                        // Use as plain text for any other string format
-                        contactInfoString = JSON.stringify({ notes: data.contact_info }, null, 2);
-                        console.log('Using contact info as plain text notes');
                     }
-                } else if (typeof data.contact_info === 'object' && data.contact_info !== null) {
-                    // Direct object - stringify it
-                    contactInfoString = JSON.stringify(data.contact_info, null, 2);
-                    console.log('Contact info provided as object, stringified for editing');
                 } else {
-                    // Default to empty object for any other type
-                    contactInfoString = '{}';
-                    console.log('Unknown contact info type, defaulting to empty object');
+                    contactInfoString = JSON.stringify(data.contact_info, null, 2);
                 }
-                contactInfoError = ''; // Clear any errors
+                contactInfoError = '';
             } catch (e) {
                 contactInfoString = '{}';
                 contactInfoError = 'Error parsing contact info';
@@ -236,7 +170,6 @@
             }
         } else {
             contactInfoString = '{}';
-            console.log('No contact info provided, using empty object');
         }
     }
 
@@ -279,20 +212,9 @@
         
         if (field === 'custom_fields') {
             customFieldsString = value;
-            // Update formData with the custom fields value
-            formData = {
-                ...formData,
-                custom_fields: value,
-                custom_fields_json: value // Also update custom_fields_json for compatibility
-            };
             // Don't validate immediately on each keystroke
         } else if (field === 'contact_info') {
             contactInfoString = value;
-            // Update formData with the contact info value
-            formData = {
-                ...formData,
-                contact_info: value
-            };
             // Don't validate immediately on each keystroke
         }
         
@@ -356,93 +278,33 @@
         }
     }
 
-    // Prepare form data before submission to ensure all fields are properly included
-    function prepareFormData() {
-        // Ensure JSON fields are properly formatted and included
-        try {
-            // Update the form data with current field values
-            formData = {
-                ...formData,
-                contact_info: contactInfoString,
-                custom_fields: customFieldsString,
-                custom_fields_json: customFieldsString // Ensure both versions are set
-            };
-            
-            // Log the data being prepared for submission
-            console.log('Prepared form data for submission:', formData);
-            console.log('Custom fields being submitted:', customFieldsString);
-            
-            return true;
-        } catch (e) {
-            formError = `Error preparing form data: ${e instanceof Error ? e.message : 'Unknown error'}`;
-            console.error('Form preparation error:', e);
-            return false;
-        }
-    }
-
-    // Validate and submit form data
-    function validateAndSubmit() {
-        if (!validateContactInfo() || !validateCustomFields()) {
-            console.error('Form validation failed');
-            return;
-        }
-        
-        // Prevent multiple submissions
-        if (isSubmitting) {
-            return;
-        }
-        
-        isSubmitting = true;
-        formError = '';
-        
-        try {          
-            // Prepare the form data with all current values
-            if (!prepareFormData()) {
-                throw new Error('Failed to prepare form data');
-            }
-            
-            console.log('Submitting form with data:', formData);
-            dispatch('submit', { success: true, formData });
-        } catch (e) {
-            formError = `Error submitting form: ${e instanceof Error ? e.message : 'Unknown error'}`;
-            console.error('Form submission error:', e);
-        } finally {
-            isSubmitting = false;
-        }
-    }
-    
     // Handle form submission
     function handleSubmit(event: Event): void {
         event.preventDefault();
         
-        // Inline validation and submission to avoid reference error
-        if (!validateContactInfo() || !validateCustomFields()) {
+        // Validate JSON fields before submission
+        const contactInfoValid = validateContactInfo();
+        const customFieldsValid = validateCustomFields();
+        
+        if (!contactInfoValid || !customFieldsValid) {
             console.error('Form validation failed');
             return;
         }
         
-        // Prevent multiple submissions
-        if (isSubmitting) {
-            return;
-        }
-        
         isSubmitting = true;
-        formError = '';
         
-        try {          
-            // Prepare the form data with all current values
-            if (!prepareFormData()) {
-                throw new Error('Failed to prepare form data');
-            }
-            
-            console.log('Submitting form with data:', formData);
-            dispatch('submit', { success: true, formData });
-        } catch (e) {
-            formError = `Error submitting form: ${e instanceof Error ? e.message : 'Unknown error'}`;
-            console.error('Form submission error:', e);
-        } finally {
-            isSubmitting = false;
-        }
+        // Prepare form data with the current values
+        const submitData: SupplierFormType = {
+            ...formData,
+            // Ensure we're using the latest textarea values
+            contact_info: contactInfoString,
+            custom_fields: customFieldsString
+        };
+        
+        console.log('Submitting form data:', submitData);
+        
+        // Dispatch the submit event with the form data
+        dispatch('submit', { success: true, formData: submitData });
     }
 
     // Handle cancel button
@@ -762,7 +624,15 @@
         justify-content: flex-end;
     }
     
-   
+    .debug-button {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        background-color: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+        border-radius: 0.25rem;
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+    }
     
     .btn {
         padding: 0.625rem 1.25rem;

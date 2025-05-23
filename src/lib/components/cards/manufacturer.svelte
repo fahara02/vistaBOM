@@ -2,6 +2,24 @@
 <script lang="ts">
     import { formatFieldName } from '$lib/utils/util';
     import { onDestroy, createEventDispatcher } from 'svelte';
+    import { 
+        Mail, 
+        Phone, 
+        MapPin, 
+        User, 
+        Building, 
+        Globe, 
+        Smartphone, 
+        AtSign, 
+        Printer,
+        MessageSquare,
+        Briefcase,
+        Pencil,
+        Trash2,
+        X,
+        History,
+        FileEdit
+    } from 'lucide-svelte';
     
     // Create event dispatcher for communicating with parent components
     const dispatch = createEventDispatcher();
@@ -77,6 +95,7 @@
     let editMode = false;
     let edits: Partial<Manufacturer> = {};
     let customFieldsString = '';
+    let contactInfoString = '';
     let error: string | null = null;
     let success: string | null = null;
     let abortController = new AbortController();
@@ -199,6 +218,7 @@
         editMode = false;
         edits = {};
         customFieldsString = '';
+        contactInfoString = '';
         error = null;
     };
 
@@ -217,6 +237,15 @@
                 }
             }
 
+            let contactInfo: unknown;
+            if (contactInfoString.trim()) {
+                try {
+                    contactInfo = JSON.parse(contactInfoString);
+                } catch (e) {
+                    throw new Error('Invalid JSON format for contact info');
+                }
+            }
+
             const response = await fetch(`/api/manufacturers/${manufacturer.manufacturer_id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -226,7 +255,8 @@
                         manufacturer_description: edits.manufacturer_description,
                         website_url: edits.website_url,
                         logo_url: edits.logo_url,
-                        customFields
+                        custom_fields: customFields,
+                        contact_info: contactInfo
                     },
                     userId: currentUserId
                 }),
@@ -289,13 +319,13 @@
             <p>Are you sure you want to delete this manufacturer?</p>
             <p class="warning">This action cannot be undone.</p>
             <div class="confirmation-actions">
-                <button type="button" class="btn-cancel" on:click={() => showDeleteConfirm = false}>Cancel</button>
+                <button type="button" class="btn-cancel" on:click={() => showDeleteConfirm = false}>
+                    <X size={16} />
+                    Cancel
+                </button>
                 <button type="button" class="btn-delete" class:loading={isDeleting} disabled={isDeleting} on:click={deleteManufacturer}>
-                    {#if isDeleting}
-                        Deleting...
-                    {:else}
-                        Confirm Delete
-                    {/if}
+                    <Trash2 size={16} />
+                    {isDeleting ? 'Deleting...' : 'Confirm Delete'}
                 </button>
             </div>
         </div>
@@ -316,12 +346,121 @@
                 {#if manufacturer.website_url}
                     <p class="website">
                         <a href={manufacturer.website_url} target="_blank" rel="noopener">
-                            {manufacturer.website_url}
+                            <Globe size={16} /> {manufacturer.website_url}
                         </a>
                     </p>
                 {/if}
+
+                <!-- Display contact info if available -->
+                {#if manufacturer.contact_info}
+                    <div class="contact-info">
+                        <h3>Contact Information</h3>
+                        <div class="contact-info-content">
+                            {#if typeof manufacturer.contact_info === 'string'}
+                                {#if manufacturer.contact_info.startsWith('{')}
+                                    <!-- Parse JSON string safely with standard JavaScript try/catch -->
+                                    {#if (() => {
+                                        try {
+                                            return Object.entries(JSON.parse(manufacturer.contact_info) || {});
+                                        } catch (e) {
+                                            console.error('Error parsing contact_info:', e);
+                                            return null;
+                                        }
+                                    })()}
+                                        {#each (() => {
+                                            try {
+                                                return Object.entries(JSON.parse(manufacturer.contact_info) || {});
+                                            } catch (e) {
+                                                return [];
+                                            }
+                                        })() as [key, value]}
+                                            <div class="contact-item">
+                                                <div class="contact-label">{formatFieldName(key)}</div>
+                                                <div class="contact-value">
+                                                    <span class="contact-icon">
+                                                        {#if key.toLowerCase().includes('email')}
+                                                            <Mail size={16} />
+                                                        {:else if key.toLowerCase().includes('phone')}
+                                                            <Phone size={16} />
+                                                        {:else if key.toLowerCase().includes('address')}
+                                                            <MapPin size={16} />
+                                                        {:else if key.toLowerCase().includes('name')}
+                                                            <User size={16} />
+                                                        {:else if key.toLowerCase().includes('company')}
+                                                            <Building size={16} />
+                                                        {:else if key.toLowerCase().includes('website')}
+                                                            <Globe size={16} />
+                                                        {:else if key.toLowerCase().includes('mobile')}
+                                                            <Smartphone size={16} />
+                                                        {:else if key.toLowerCase().includes('fax')}
+                                                            <Printer size={16} />
+                                                        {:else if key.toLowerCase().includes('title') || key.toLowerCase().includes('position')}
+                                                            <Briefcase size={16} />
+                                                        {:else}
+                                                            <AtSign size={16} />
+                                                        {/if}
+                                                    </span>
+                                                    {value}
+                                                </div>
+                                            </div>
+                                        {/each}
+                                    {:else}
+                                        <div class="contact-item">
+                                            <div class="contact-value">
+                                                <span class="contact-icon">
+                                                    <MessageSquare size={16} />
+                                                </span>
+                                                {manufacturer.contact_info}
+                                            </div>
+                                        </div>
+                                    {/if}
+                                {:else}
+                                    <div class="contact-item">
+                                        <div class="contact-value">
+                                            <span class="contact-icon">
+                                                <MessageSquare size={16} />
+                                            </span>
+                                            {manufacturer.contact_info}
+                                        </div>
+                                    </div>
+                                {/if}
+                            {:else if typeof manufacturer.contact_info === 'object' && manufacturer.contact_info !== null}
+                                {#each Object.entries(manufacturer.contact_info) as [key, value]}
+                                    <div class="contact-item">
+                                        <div class="contact-label">{formatFieldName(key)}</div>
+                                        <div class="contact-value">
+                                            <span class="contact-icon">
+                                                {#if key.toLowerCase().includes('email')}
+                                                    <Mail size={16} />
+                                                {:else if key.toLowerCase().includes('phone')}
+                                                    <Phone size={16} />
+                                                {:else if key.toLowerCase().includes('address')}
+                                                    <MapPin size={16} />
+                                                {:else if key.toLowerCase().includes('name')}
+                                                    <User size={16} />
+                                                {:else if key.toLowerCase().includes('company')}
+                                                    <Building size={16} />
+                                                {:else if key.toLowerCase().includes('website')}
+                                                    <Globe size={16} />
+                                                {:else if key.toLowerCase().includes('mobile')}
+                                                    <Smartphone size={16} />
+                                                {:else if key.toLowerCase().includes('fax')}
+                                                    <Printer size={16} />
+                                                {:else if key.toLowerCase().includes('title') || key.toLowerCase().includes('position')}
+                                                    <Briefcase size={16} />
+                                                {:else}
+                                                    <AtSign size={16} />
+                                                {/if}
+                                            </span>
+                                            {value}
+                                        </div>
+                                    </div>
+                                {/each}
+                            {/if}
+                        </div>
+                    </div>
+                {/if}
                 
-           
                 
                 {#if processedCustomFields && Object.keys(processedCustomFields).length > 0}
                     <div class="custom-fields">
@@ -352,9 +491,15 @@
                 {/if}
                                 
                 <div class="meta">
-                    <small>Created: {manufacturer.created_at.toLocaleDateString()}</small>
+                    <div>
+                        <span class="meta-icon"><History size={14} /></span>
+                        Created: {manufacturer.created_at.toLocaleDateString()}
+                    </div>
                     {#if manufacturer.updated_at}
-                        <small>Updated: {manufacturer.updated_at.toLocaleDateString()}</small>
+                        <div>
+                            <span class="meta-icon"><FileEdit size={14} /></span>
+                            Updated: {manufacturer.updated_at.toLocaleDateString()}
+                        </div>
                     {/if}
                 </div>
             </div>
@@ -363,10 +508,16 @@
             {#if currentUserId && manufacturer.created_by === currentUserId}
                 <div class="actions">
                     {#if allowEdit}
-                        <button on:click={startEdit} class="btn-edit">Edit</button>
+                        <button on:click={startEdit} class="btn-edit">
+                            <Pencil size={16} />
+                            Edit
+                        </button>
                     {/if}
                     {#if allowDelete}
-                        <button on:click={deleteManufacturer} class="btn-delete danger">Delete</button>
+                        <button on:click={deleteManufacturer} class="btn-delete danger">
+                            <Trash2 size={16} />
+                            Delete
+                        </button>
                     {/if}
                 </div>
             {/if}
@@ -422,6 +573,15 @@
                     ></textarea>
                 </label>
                 
+                <label>
+                    Contact Information (JSON)
+                    <textarea
+                        bind:value={contactInfoString}
+                        rows="6"
+                        placeholder={`Example:\n{\n  "email": "contact@example.com",\n  "phone": "+1 (555) 123-4567",\n  "address": "123 Main St, City, Country"\n}`}
+                    ></textarea>
+                </label>
+                
                 <div class="form-actions">
                     <button type="submit">Save Changes</button>
                     <button type="button" on:click={cancelEdit}>Cancel</button>
@@ -433,14 +593,23 @@
 
 <style>
     .manufacturer-card {
-        border: 1px solid hsl(var(--border));
+        background-color: hsl(var(--card));
         border-radius: 8px;
+        border: 1px solid hsl(var(--border));
         padding: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        width: 100%;
+        transition: background-color 0.3s, color 0.3s, border-color 0.3s, box-shadow 0.3s;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
         margin: 1rem 0;
-        background: hsl(var(--card));
         color: hsl(var(--card-foreground));
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+    }
+    
+    /* Add dark mode specific adjustments */
+    :global([data-theme="dark"]) .manufacturer-card {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }
 
     .alert {
@@ -472,7 +641,9 @@
     }
 
     .details {
-        margin: 1rem 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
     }
 
     .description {
@@ -484,6 +655,9 @@
         color: hsl(var(--primary));
         text-decoration: none;
         transition: color 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
     .website a:hover {
@@ -491,12 +665,10 @@
     }
 
     .custom-fields {
-        margin: 1.5rem 0;
-        padding: 1.5rem;
-        background: hsl(var(--surface-100));
-        border-radius: 8px;
-        border: 1px solid hsl(var(--border));
+        border-top: 1px solid hsl(var(--border));
+        padding-top: 1.5rem;
         transition: background-color 0.3s, border-color 0.3s;
+        margin-top: 1.5rem;
     }
     
     .custom-fields h3 {
@@ -551,15 +723,95 @@
         color: hsl(var(--success));
     }
     
+    :global([data-theme="dark"]) .boolean-value.positive {
+        background: hsl(var(--success) / 0.15);
+        color: hsl(var(--success) / 0.9);
+    }
+    
     .boolean-value.negative {
         background: hsl(var(--destructive) / 0.2);
         color: hsl(var(--destructive));
+    }
+    
+    :global([data-theme="dark"]) .boolean-value.negative {
+        background: hsl(var(--destructive) / 0.15);
+        color: hsl(var(--destructive) / 0.9);
     }
     
     .number-value {
         font-family: 'Courier New', monospace;
         font-weight: 600;
         color: hsl(var(--foreground));
+    }
+
+    .contact-info {
+        border-top: 1px solid hsl(var(--border));
+        padding-top: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    
+    .contact-info h3 {
+        font-size: 1.125rem;
+        margin-top: 0;
+        margin-bottom: 1rem;
+        color: hsl(var(--foreground));
+        border-bottom: 1px solid hsl(var(--border));
+        padding-bottom: 0.5rem;
+    }
+    
+    .contact-info-content {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+    
+    .contact-item {
+        padding: 0.875rem;
+        background: hsl(var(--card));
+        border-radius: 6px;
+        border: 1px solid hsl(var(--border));
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .contact-item:hover {
+        border-color: hsl(var(--primary));
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+    }
+    
+    .contact-label {
+        font-weight: 600;
+        color: hsl(var(--foreground));
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .contact-value {
+        color: hsl(var(--foreground));
+        word-break: break-word;
+        line-height: 1.4;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .contact-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: hsl(var(--primary));
+        flex-shrink: 0;
+        background-color: hsl(var(--primary) / 0.1);
+        padding: 0.375rem;
+        border-radius: 4px;
+        transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    
+    .contact-item:hover .contact-icon {
+        background-color: hsl(var(--primary) / 0.15);
     }
 
     .meta {

@@ -24,7 +24,7 @@ export * from './enums';
 export type {
   BaseFormData,
   ManufacturerFormData, PartFormData,
-  PartVersionFormData, SupplierFormData
+  PartVersionFormData, SupplierFormData,DashboardManufacturer
 } from './formTypes';
 
 // Import types from schemaTypes.ts

@@ -173,7 +173,6 @@
 	let userSuppliers: DashboardSupplier[] = transformSupplierData(data?.userSuppliers || []);
 	
 	// Transform server-side camelCase userCategories to component's snake_case format
-	// Initialize transformedCategories using the transformCategoryData function defined below
 	$: transformedCategories = transformCategoryData(data?.userCategories || []);
 
 	// Reference to form element
@@ -456,32 +455,24 @@
 	 * Helper function to transform categories from server's camelCase format to snake_case
 	 * The server returns objects with camelCase properties but we need snake_case for our components
 	 */
-	/**
-	 * Transform category data from server format to the Category interface
-	 * Ensuring proper handling of null values and consistent data types
-	 */
 	function transformCategoryData(categories: any[]): (Category & { parent_name?: string | undefined })[] {
-		if (categories.length > 0) {
-			console.log('Raw category data from server:', categories[0]);
-		}
-		
 		return categories.map(category => {
 			// Create properly typed Category object from the camelCase data
 			const transformedCategory: Category & { parent_name?: string | undefined } = {
-				category_id: category.categoryId || category.category_id || '',
-				category_name: category.categoryName || category.category_name || '',
-				category_description: category.categoryDescription || category.category_description || null,
-				category_path: category.categoryPath || category.category_path || '',
-				parent_id: category.parentId || category.parent_id || null,
-				is_public: Boolean(category.isPublic || category.is_public),
-				created_at: category.createdAt ? new Date(category.createdAt) : (category.created_at ? new Date(category.created_at) : new Date()), 
-				updated_at: category.updatedAt ? new Date(category.updatedAt) : (category.updated_at ? new Date(category.updated_at) : new Date()),
-				created_by: category.createdBy || category.created_by || '',
-				updated_by: category.updatedBy || category.updated_by || null,
-				is_deleted: Boolean(category.isDeleted || category.is_deleted) || false, // We know this is false because the server filters deleted categories
-				deleted_at: category.deletedAt || category.deleted_at || null,
-				deleted_by: category.deletedBy || category.deleted_by || null,
-				parent_name: category.parentName || category.parent_name || undefined // Add parent_name from the join, ensure it's string or undefined
+				category_id: category.categoryId || '',
+				category_name: category.categoryName || '',
+				category_description: category.categoryDescription || null,
+				category_path: category.categoryPath || '',
+				parent_id: category.parentId || null,
+				is_public: Boolean(category.isPublic),
+				created_at: category.createdAt ? new Date(category.createdAt) : new Date(), 
+				updated_at: category.updatedAt ? new Date(category.updatedAt) : new Date(),
+				created_by: category.createdBy || '',
+				updated_by: category.updatedBy || null,
+				is_deleted: false, // We know this is false because the server filters deleted categories
+				deleted_at: null,
+				deleted_by: null,
+				parent_name: category.parentName || undefined // Add parent_name from the join, ensure it's string or undefined
 			};
 			return transformedCategory;
 		});
@@ -1140,33 +1131,11 @@
 						editSupplierMode = true;
 						currentSupplierId = event.detail.supplier.supplier_id;
 						
-						// Get the supplier to edit from the event
-						const supplierToEdit = event.detail.supplier;
-						
-						// Format the data for the form, matching the manufacturer pattern
+						// Update form with supplier data
 						$supplierForm = {
 							...$supplierForm,
-							supplier_id: supplierToEdit.supplier_id,
-							supplier_name: supplierToEdit.supplier_name || '',
-							supplier_description: supplierToEdit.supplier_description || '',
-							website_url: supplierToEdit.website_url || '',
-							logo_url: supplierToEdit.logo_url || '',
-							// Ensure contact_info is a string
-							contact_info: typeof supplierToEdit.contact_info === 'object' 
-								? JSON.stringify(supplierToEdit.contact_info)
-								: supplierToEdit.contact_info || '{}',
-							// Ensure custom_fields is a string
-							custom_fields: typeof supplierToEdit.custom_fields === 'object'
-								? JSON.stringify(supplierToEdit.custom_fields)
-								: supplierToEdit.custom_fields || '{}',
-							// The custom_fields_json property isn't needed here as the form component will handle it
-							created_by: supplierToEdit.created_by || user.user_id,
-							updated_by: user.user_id,
-							created_at: supplierToEdit.created_at || new Date(),
-							updated_at: new Date()
+							...event.detail.supplier
 						};
-						
-						console.log('Supplier form updated for editing, form state:', $supplierForm);
 						
 						// Show the form
 						showSupplierForm = true;
@@ -1284,30 +1253,107 @@
 					</form>
 				</div>
 
-				<!-- Hidden supplier form for SuperForm submission -->
-				<div hidden aria-hidden="true">
-					<form method="POST" action="?/supplier" use:supplierEnhance id="supplier-hidden-form">
-						<!-- Standard fields -->
-						<input type="hidden" name="supplier_id" value={$supplierForm.supplier_id || ''} />
-						<input type="hidden" name="supplier_name" value={$supplierForm.supplier_name || ''} />
-						<input type="hidden" name="supplier_description" value={$supplierForm.supplier_description || ''} />
-						<input type="hidden" name="website_url" value={$supplierForm.website_url || ''} />
-						<input type="hidden" name="logo_url" value={$supplierForm.logo_url || ''} />
+				<!-- Supplier Form using SuperForm pattern -->
+				{#if showSupplierForm}
+					<div class="entity-form">
+						<h3>Add New Supplier</h3>
 						
-						<!-- Complex fields with special handling -->
-						<input type="hidden" name="contact_info" value={typeof $supplierForm.contact_info === 'string' 
-							? $supplierForm.contact_info 
-							: JSON.stringify($supplierForm.contact_info || {})} />
-						<input type="hidden" name="custom_fields" value={typeof $supplierForm.custom_fields === 'string' 
-							? $supplierForm.custom_fields 
-							: JSON.stringify($supplierForm.custom_fields || {})} />
+						{#if $supplierMessage}
+							<div class="form-message {$supplierMessage.includes('Failed') ? 'error' : 'success'}">
+								{$supplierMessage}
+							</div>
+						{/if}
 						
-						<!-- User tracking fields -->
-						<input type="hidden" name="created_by" value={user.user_id} />
-						<input type="hidden" name="updated_by" value={user.user_id} />
-						<button type="submit" id="supplier-submit-button">Submit</button>
-					</form>
-				</div>
+						<form method="POST" action="?/supplier" use:supplierEnhance class="form-grid">
+							<!-- Hidden supplier_id field for UUID -->
+							<input type="hidden" name="supplier_id" bind:value={$supplierForm.supplier_id} />
+							<div class="form-group">
+								<label for="supplier-name" class="form-label">Name <span class="required">*</span></label>
+								<input 
+									id="supplier-name" 
+									name="supplier_name" 
+									bind:value={$supplierForm.supplier_name} 
+									class="form-input enhanced-input"
+									placeholder="Enter supplier name"
+									required 
+								/>
+								{#if $supplierErrors.supplier_name}
+									<span class="field-error">{$supplierErrors.supplier_name}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="supplier-description" class="form-label">Description</label>
+								<textarea 
+									id="supplier-description" 
+									name="supplier_description" 
+									bind:value={$supplierForm.supplier_description}
+									class="form-textarea enhanced-textarea"
+									placeholder="Enter supplier description"
+									rows="3"
+								></textarea>
+								{#if $supplierErrors.supplier_description}
+									<span class="field-error">{$supplierErrors.supplier_description}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="supplier-website" class="form-label">Website URL</label>
+								<input 
+									id="supplier-website" 
+									name="website_url" 
+									type="url" 
+									bind:value={$supplierForm.website_url}
+									class="form-input enhanced-input"
+									placeholder="https://example.com"
+								/>
+								{#if $supplierErrors.website_url}
+									<span class="field-error">{$supplierErrors.website_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="supplier-logo" class="form-label">Logo URL</label>
+								<input 
+									id="supplier-logo" 
+									name="logo_url" 
+									type="url" 
+									bind:value={$supplierForm.logo_url}
+									class="form-input enhanced-input"
+									placeholder="https://example.com/logo.png"
+								/>
+								{#if $supplierErrors.logo_url}
+									<span class="field-error">{$supplierErrors.logo_url}</span>
+								{/if}
+							</div>
+							
+							<div class="form-group">
+								<label for="supplier-contact" class="form-label">Contact Info</label>
+								<textarea 
+									id="supplier-contact" 
+									name="contact_info"
+									bind:value={$supplierForm.contact_info}
+									class="form-textarea enhanced-textarea"
+									placeholder="Enter contact information"
+									rows="3"
+								></textarea>
+								<small class="helper-text">
+									Enter as JSON: {@html '{ "email": "contact@example.com", "phone": "123-456-7890" }'}
+								</small>
+								{#if $supplierErrors.contact_info}
+									<span class="field-error">{$supplierErrors.contact_info}</span>
+								{/if}
+							</div>
+							
+							<div class="form-actions">
+								<button type="submit" class="primary-btn" disabled={$supplierSubmitting}>
+									{$supplierSubmitting ? 'Creating...' : 'Create Supplier'}
+								</button>
+								<button type="button" class="secondary-btn" on:click={() => showSupplierForm = false}>Cancel</button>
+							</div>
+						</form>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
@@ -1697,6 +1743,10 @@
 		margin-top: 1.5rem;
 	}
 
+	.form-grid {
+		display: grid;
+		gap: 1.5rem;
+	}
 
 	.form-group {
 		display: flex;
@@ -1704,12 +1754,46 @@
 		gap: 0.5rem;
 	}
 
+	.form-input, .form-textarea {
+		padding: 0.75rem;
+		border: 1px solid hsl(var(--input-border));
+		border-radius: 6px;
+		font-size: 1rem;
+		transition: all 0.2s ease;
+		width: 100%;
+	}
+
+	.form-input:focus, .form-textarea:focus {
+		outline: none;
+		border-color: hsl(var(--ring));
+		box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+	}
+
+	.enhanced-input {
+		border: 1px solid hsl(var(--input-border));
+		border-radius: 6px;
+		padding: 0.75rem;
+		font-size: 1rem;
+		background-color: hsl(var(--input));
+		color: hsl(var(--input-foreground));
+		transition: border-color 0.15s, background-color 0.3s, color 0.3s;
+	}
+
+	.enhanced-input:focus {
+		outline: none;
+		border-color: hsl(var(--ring));
+		box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
+	}
+
+	.enhanced-input::placeholder {
+		color: hsl(var(--muted-foreground));
+	}
 
 
-
-
-
-
+	.form-textarea {
+		resize: vertical;
+		min-height: 100px;
+	}
 
 	.form-actions {
 		margin-top: 1.5rem;
@@ -1718,7 +1802,18 @@
 		gap: 0.75rem;
 	}
 
+	.field-error {
+		color: hsl(var(--destructive));
+		font-size: 0.875rem;
+		padding: 0.25rem 0.5rem;
+		background: hsl(var(--destructive) / 0.2);
+		border-radius: 4px;
+		border: 1px solid hsl(var(--destructive));
+	}
 
+	.required {
+		color: hsl(var(--destructive));
+	}
 
 	.primary-btn {
 		background: hsl(var(--primary));

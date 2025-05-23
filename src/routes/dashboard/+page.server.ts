@@ -159,29 +159,19 @@ export const load: PageServerLoad = async (event) => {
         userManufacturers = [];
     }
 
-    // 9. Fetch user-created suppliers
+    // 9. Fetch user-created suppliers with custom fields
     let userSuppliers: Supplier[] = [];
     try {
-        // The Supplier component expects snake_case field names
-        userSuppliers = await sql`
-            SELECT 
-                supplier_id,
-                supplier_name,
-                supplier_description,
-                website_url,
-                contact_info,
-                logo_url,
-                created_at,
-                updated_at,
-                created_by,
-                updated_by
-            FROM "Supplier"
-            WHERE created_by = ${user.user_id}
-            ORDER BY supplier_name ASC
-        `;
+        // Import the core function to list suppliers by user, matching manufacturer pattern
+        const { listSuppliers } = await import('$lib/core/supplier');
+        
+        // Use the core function to get all suppliers created by this user
+        userSuppliers = await listSuppliers({ userId: user.user_id });
+        
         // Log the first supplier for debugging
         if (userSuppliers.length > 0) {
             console.log('First supplier retrieved:', userSuppliers[0]);
+            console.log('Custom fields from first supplier:', userSuppliers[0].custom_fields);
         }
     } catch (error) {
         console.error('Error fetching user suppliers:', error);

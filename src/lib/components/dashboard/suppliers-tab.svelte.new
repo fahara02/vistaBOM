@@ -53,12 +53,9 @@
         // Extract supplier data from the event
         const supplierData = event.detail.supplier;
         
-        // Format the supplier data for the form with required fields for supplier implementation
+        // Format the supplier data for the form
         const formattedSupplier = {
             ...supplierData,
-            // Ensure all ID formats are available for compatibility
-            supplier_id: supplierData.supplier_id,
-            supplierId: supplierData.supplier_id,
             // Ensure contact_info is a string for the form
             contact_info: typeof supplierData.contact_info === 'object' 
                 ? JSON.stringify(supplierData.contact_info) 
@@ -66,14 +63,8 @@
             // Ensure custom_fields is a string for the form
             custom_fields: typeof supplierData.custom_fields === 'object'
                 ? JSON.stringify(supplierData.custom_fields)
-                : supplierData.custom_fields || '{}',
-            // Keep custom_fields_json which is needed by the supplier implementation
-            custom_fields_json: typeof supplierData.custom_fields === 'object'
-                ? JSON.stringify(supplierData.custom_fields)
                 : supplierData.custom_fields || '{}'
         };
-        
-        console.log('Formatted supplier for edit form:', formattedSupplier);
         
         // Forward the edit event to the parent component with properly formatted data
         dispatch('editSupplier', { supplier: formattedSupplier });

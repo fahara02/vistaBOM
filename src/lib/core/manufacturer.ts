@@ -465,13 +465,7 @@ export async function getManufacturerCustomFields(manufacturerId: string): Promi
     }
 }
 
-/**
- * Update manufacturer custom fields
- * @param manufacturerId - Manufacturer UUID
- * @param customFields - Object containing custom field name/value pairs
- * @returns Updated manufacturer with custom fields
- * @throws Error if manufacturer doesn't exist or another error occurs
- */
+
 /**
  * Update an existing manufacturer
  * @param manufacturerId - ID of the manufacturer to update

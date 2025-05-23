@@ -1886,6 +1886,24 @@ export const supplierSchema = z.object({
     custom_fields: jsonSchema.optional().nullable() // Add support for custom fields
 });
 
+export const supplierActionSchema = z.object({
+  supplier_id: z.preprocess(
+      // Pre-process to handle empty strings and validate UUID format
+      (val) => val === '' || val === undefined || val === null ? undefined : val,
+      z.string().uuid({ message: "Invalid UUID format" }).optional()
+  ),
+  supplier_name: z.string().min(1, { message: "Manufacturer name is required" }),
+  supplier_description: z.string().optional().nullable(),
+  website_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
+      message: "Website URL must start with http:// or https://"
+  }).optional().nullable(),
+  logo_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
+      message: "Logo URL must start with http:// or https://"
+  }).optional().nullable(),
+  contact_info: z.any().optional().nullable(),
+  custom_fields: z.any().optional().nullable()
+});
+
 // ### SupplierPart Schema
 export const supplierPartSchema = z.object({
     supplier_part_id: z.string().uuid({ message: "Invalid UUID format" }), // UUID PRIMARY KEY
