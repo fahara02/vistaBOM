@@ -1,3 +1,5 @@
+
+//src/lib/core/supplier.ts
 /**
  * Core functionality for supplier management
  */

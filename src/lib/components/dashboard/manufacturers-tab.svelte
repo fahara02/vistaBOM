@@ -8,7 +8,7 @@
     import { superForm } from 'sveltekit-superforms/client';
     import type { SuperForm, SuperValidated } from 'sveltekit-superforms';
     import { z } from 'zod';
-    
+ 
     // Import types from types and formTypes
     import type { Manufacturer, JsonValue } from '$lib/types/types';
     import type { DashboardManufacturer, ManufacturerFormData } from '$lib/types/formTypes';
@@ -69,7 +69,7 @@
     export let manufacturerErrors: Record<string, string | string[]> = {};
 
     // Additional props for SuperForm integration
-    export let formId: string = 'manufacturer-form';
+    export let formId: string = "manufacturer-dashboard-form-" + crypto.randomUUID().substring(0, 8);
     export let formAction: string = '?/manufacturer';
     export let superFormData: SuperValidated<ManufacturerFormSchema> | undefined = undefined;
     export let useInternalForm: boolean = false;
@@ -82,6 +82,12 @@
     // Create a proper SuperForm instance only when conditions are met
     let superFormInstance: ReturnType<typeof superForm<ManufacturerFormSchema>> | undefined;
     
+    // Track current form data for reactivity
+    let currentFormData: Partial<ManufacturerFormSchema> = manufacturerForm;
+
+    // Add a debug watch for manufacturer form changes
+    $: console.log('ManufacturersTab received manufacturerForm prop:', manufacturerForm);
+
     // Default values for internal form to avoid undefined errors
     const defaultFormValues: ManufacturerFormSchema = {
         manufacturer_id: '',
@@ -99,7 +105,7 @@
     // Prepare for SuperForm state tracking
     let internalForm: ManufacturerFormSchema = defaultFormValues;
     let internalErrors: Record<string, string[]> = {};
-    
+       
     // Local form data that will be used in the ManufacturerForm component
     $: localFormData = editMode && manufacturerForm ? manufacturerForm : defaultFormValues;
     
@@ -116,6 +122,7 @@
         
         superFormInstance = superForm<ManufacturerFormSchema>(superFormData || initialData, {
             id: formId,
+            warnings: { duplicateId: false }, // Suppress duplicate ID warnings
             dataType: 'json',
             resetForm: true,
             validationMethod: 'submit-only',
@@ -147,12 +154,13 @@
         });
         
         // Clean up subscriptions when component is destroyed
-        onMount(() => {
-            return () => {
-                unsubscribeForm && unsubscribeForm();
-                unsubscribeErrors && unsubscribeErrors();
-            };
-        });
+        const cleanup = () => {
+          unsubscribeForm && unsubscribeForm();
+          unsubscribeErrors && unsubscribeErrors();
+         };
+
+       // Return cleanup function for onDestroy
+       return cleanup;
     }
    
     // Methods
@@ -176,16 +184,86 @@
             initializeSuperForm();
         }
     });
-    
     // Re-initialize when dependencies change
     $: if (useInternalForm && (superFormData || currentUserId)) {
         initializeSuperForm();
     }
     
-    // Derived values from internal or external form
-    $: currentFormData = useInternalForm && superFormInstance 
-        ? internalForm 
-        : manufacturerForm;
+    // This is critical: Update the SuperForm data when a manufacturer is selected for editing
+    $: if (useInternalForm && superFormInstance && editMode && selectedManufacturer) {
+        console.log('Updating SuperForm data with selected manufacturer:', selectedManufacturer);
+        
+        // TypeScript safety: Create a non-null reference to satisfy the type checker
+        const manufacturer = selectedManufacturer;
+        
+        // Update the SuperForm data with the selected manufacturer's data
+        superFormInstance.form.update(() => {
+            return {
+                // Basic fields with proper type handling
+                manufacturer_id: manufacturer.manufacturer_id || '',
+                manufacturer_name: manufacturer.manufacturer_name || '',
+                manufacturer_description: manufacturer.manufacturer_description || null,
+                website_url: manufacturer.website_url || null,
+                logo_url: manufacturer.logo_url || null,
+                
+                // Handle custom_fields with proper type safety
+                custom_fields: typeof manufacturer.custom_fields === 'object'
+                    ? JSON.stringify(manufacturer.custom_fields)
+                    : (typeof manufacturer.custom_fields === 'string'
+                        ? manufacturer.custom_fields 
+                        : '{}'),
+                        
+                // Handle contact_info with proper type safety
+                contact_info: typeof manufacturer.contact_info === 'object'
+                    ? JSON.stringify(manufacturer.contact_info)
+                    : (typeof manufacturer.contact_info === 'string'
+                        ? manufacturer.contact_info
+                        : '{}'),
+                        
+                // User fields
+                created_by: manufacturer.created_by || currentUserId,
+                updated_by: currentUserId
+            };
+        });
+    }
+    
+    // Direct binding with improved reactive handling
+    // We bypass currentFormData and directly use the manufacturerForm prop
+    // This ensures data flows correctly without intermediate transformations
+    
+    
+    // Handle edit mode by directly reflecting the incoming data
+    $: if (editMode && manufacturerForm && manufacturerForm.manufacturer_id) {
+        console.log('Edit mode active with manufacturer data:', manufacturerForm);
+        // Ensure we have all required fields for ManufacturerData type based on the schema
+        // The schema defines specific field requirements we need to follow
+        const typedManufacturer: ManufacturerData = {
+            manufacturer_id: manufacturerForm.manufacturer_id,
+            manufacturer_name: manufacturerForm.manufacturer_name || '',
+            // Using undefined for optional fields instead of null to match the expected type
+            manufacturer_description: manufacturerForm.manufacturer_description || undefined,
+            website_url: manufacturerForm.website_url || undefined,
+            logo_url: manufacturerForm.logo_url || undefined,
+            // JSON fields need to be properly parsed/stringified
+            contact_info: typeof manufacturerForm.contact_info === 'string' 
+                ? JSON.parse(manufacturerForm.contact_info || '{}') 
+                : manufacturerForm.contact_info || {},
+            custom_fields: typeof manufacturerForm.custom_fields === 'string'
+                ? JSON.parse(manufacturerForm.custom_fields || '{}')
+                : manufacturerForm.custom_fields || {},
+            // Required timestamp fields
+            created_at: manufacturerForm.created_at instanceof Date
+                ? manufacturerForm.created_at
+                : new Date(),
+            updated_at: manufacturerForm.updated_at instanceof Date
+                ? manufacturerForm.updated_at
+                : new Date(),
+            // Optional user fields
+            created_by: manufacturerForm.created_by || '',
+            updated_by: manufacturerForm.updated_by || ''
+        };
+        selectedManufacturer = typedManufacturer;
+    }
         
     $: formErrors = useInternalForm && superFormInstance 
         ? internalErrors 
@@ -203,6 +281,39 @@
         
         // Extract manufacturer data from the event
         const manufacturerData = event.detail.manufacturer;
+        selectedManufacturer = manufacturerData;
+        
+        // Debug the incoming data
+        console.log('Original manufacturer data:', JSON.stringify(manufacturerData, null, 2));
+        
+        // Update the form data with the selected manufacturer
+        // CRITICAL: Ensure all fields are properly typed and JSON fields are correctly stringified
+        manufacturerForm = {
+            manufacturer_id: manufacturerData.manufacturer_id || '',
+            manufacturer_name: manufacturerData.manufacturer_name || '',
+            manufacturer_description: manufacturerData.manufacturer_description || null,
+            website_url: manufacturerData.website_url || null,
+            logo_url: manufacturerData.logo_url || null,
+            
+            // Ensure JSON fields are properly stringified
+            contact_info: typeof manufacturerData.contact_info === 'object' 
+                ? JSON.stringify(manufacturerData.contact_info) 
+                : (typeof manufacturerData.contact_info === 'string'
+                    ? manufacturerData.contact_info
+                    : '{}'),
+                    
+            custom_fields: typeof manufacturerData.custom_fields === 'object'
+                ? JSON.stringify(manufacturerData.custom_fields)
+                : (typeof manufacturerData.custom_fields === 'string'
+                    ? manufacturerData.custom_fields
+                    : '{}'),
+                    
+            created_by: manufacturerData.created_by || currentUserId,
+            updated_by: currentUserId
+        };
+        
+        // Debug the transformed data
+        console.log('Processed form data:', JSON.stringify(manufacturerForm, null, 2));
         
         // Forward the edit event to the parent component with raw manufacturer data
         dispatch('editManufacturer', { manufacturer: manufacturerData });
@@ -217,11 +328,43 @@
         const manufacturer = event.detail.item as Manufacturer;
         selectedManufacturer = manufacturer;
         
+        // Debug the incoming grid data
+        console.log('Original grid manufacturer data:', JSON.stringify(manufacturer, null, 2));
+        
+        // Update the form data with the selected manufacturer
+        // CRITICAL: Ensure all fields are properly typed and JSON fields are correctly stringified
+        manufacturerForm = {
+            manufacturer_id: manufacturer.manufacturer_id || '',
+            manufacturer_name: manufacturer.manufacturer_name || '',
+            manufacturer_description: manufacturer.manufacturer_description || null,
+            website_url: manufacturer.website_url || null,
+            logo_url: manufacturer.logo_url || null,
+            
+            // Ensure JSON fields are properly stringified
+            contact_info: typeof manufacturer.contact_info === 'object' 
+                ? JSON.stringify(manufacturer.contact_info) 
+                : (typeof manufacturer.contact_info === 'string'
+                    ? manufacturer.contact_info
+                    : '{}'),
+                    
+            custom_fields: typeof manufacturer.custom_fields === 'object'
+                ? JSON.stringify(manufacturer.custom_fields)
+                : (typeof manufacturer.custom_fields === 'string'
+                    ? manufacturer.custom_fields
+                    : '{}'),
+                    
+            created_by: manufacturer.created_by || currentUserId,
+            updated_by: currentUserId
+        };
+        
+        // Debug the transformed data
+        console.log('Processed grid form data:', JSON.stringify(manufacturerForm, null, 2));
+        
         // Forward to the parent component using the same format as card edit
         // This ensures proper data flow within the dashboard
         dispatch('editManufacturer', { manufacturer });
         
-        // Simply update UI state to show edit form within dashboard
+        // Update UI state to show edit form within dashboard
         editMode = true;
         showForm = true;
     }
@@ -330,7 +473,7 @@
             return; // Don't proceed if name is empty
         }
 
-        if (useInternalForm && superFormInstance && hiddenFormElement) {
+        if (useInternalForm && superFormInstance) {
             // Using internal SuperForm - update the form data with captured values
             superFormInstance.form.update(currentForm => {
                 // Create a complete form object with all required fields
@@ -360,17 +503,17 @@
             // Log the data being submitted
             console.log('Submitting form data through internal SuperForm instance');
             
-            // Submit the form using SuperForm's enhance functionality
-            const submitButton = hiddenFormElement.querySelector('#manufacturer-submit') as HTMLButtonElement;
-            if (submitButton) {
-                submitButton.click();
-            } else if (hiddenFormElement.requestSubmit) {
-                hiddenFormElement.requestSubmit();
-            } else {
-                // Fallback for older browsers
-                const anySubmitButton = hiddenFormElement.querySelector('button[type="submit"]');
-                if (anySubmitButton) {
-                    (anySubmitButton as HTMLButtonElement).click();
+            // Submit the form programmatically by triggering the form submission
+            const formElement = document.getElementById(formId) as HTMLFormElement;
+            if (formElement) {
+                if (formElement.requestSubmit) {
+                    formElement.requestSubmit();
+                } else {
+                    // Fallback for older browsers
+                    const submitButton = formElement.querySelector('button[type="submit"]');
+                    if (submitButton) {
+                        (submitButton as HTMLButtonElement).click();
+                    }
                 }
             }
         } else {
@@ -492,89 +635,67 @@ function cancelForm(): void {
             <a href="/manufacturer" class="secondary-btn">View All Manufacturers</a>
         </div>
     {/if}
-    
-    <!-- Manufacturer form -->
     {#if showForm}
-        <div class="form-container enhanced-form" transition:slide={{ duration: 300 }}>
-            <h2 class="form-title">{editMode ? 'Edit Manufacturer' : 'Create New Manufacturer'}</h2>
-            
+    <div class="form-container enhanced-form" transition:slide={{ duration: 300 }}>
+        <h2 class="form-title">{editMode ? 'Edit Manufacturer' : 'Create New Manufacturer'}</h2>
+        
+        {#if useInternalForm && superFormInstance}
+            <!-- Use direct SuperForm integration when available -->
+            <form method="POST" action={formAction} id={formId} use:superFormInstance.enhance>
+                <ManufacturerForm 
+                    data={internalForm}
+                    errors={internalErrors}
+                    isEditMode={editMode}
+                    hideButtons={true}
+                    currentUserId={currentUserId}
+                    on:formUpdate={(event: CustomEvent) => {
+                        if (event.detail && event.detail.data && superFormInstance) {
+                            // Update the SuperForm directly with the new values
+                            superFormInstance.form.update(($form) => {
+                                return {...$form, ...event.detail.data};
+                            });
+                            
+                            // Also dispatch to parent
+                            dispatch('formUpdate', event.detail);
+                        }
+                    }}
+                />
+                
+                <div class="form-actions">
+                    <button type="button" class="secondary-btn" on:click={cancelForm}>
+                        Cancel
+                    </button>
+                    
+                    <button type="submit" class="primary-btn">
+                        {editMode ? 'Save Changes' : 'Create Manufacturer'}
+                    </button>
+                </div>
+            </form>
+        {:else}
+            <!-- Standard form handling without SuperForm - Direct data binding -->
             <ManufacturerForm 
-                data={currentFormData}
+                data={{...manufacturerForm}}
                 errors={formErrors}
                 submitText={editMode ? 'Save Changes' : 'Create Manufacturer'}
                 isEditMode={editMode}
-                hideButtons={useInternalForm}
+                hideButtons={false}
                 currentUserId={currentUserId}
                 on:submit={handleFormSubmit}
                 on:cancel={cancelForm}
                 on:formUpdate={(event: CustomEvent) => {
-                    // Capture the form data from the ManufacturerForm component
                     if (event.detail && event.detail.data) {
-                        // Store the captured form values
                         capturedFormValues = {
                             ...capturedFormValues,
                             ...event.detail.data
                         };
-                        
-                        console.log('Captured form values:', capturedFormValues);
-                        
-                        // Also update the SuperForm if it exists
-                        if (useInternalForm && superFormInstance) {
-                            superFormInstance.form.update(($form) => {
-                                return {...$form, ...event.detail.data};
-                            });
-                        }
                     }
-                    
-                    // Also dispatch to parent
                     dispatch('formUpdate', event.detail);
                 }}
             />
-            
-            <!-- Add custom form buttons when using internal form -->
-            {#if useInternalForm}
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" on:click={cancelForm}>
-                        Cancel
-                    </button>
-                    
-                    <button type="button" class="btn-primary" on:click={submitForm}>
-                        {editMode ? 'Save Changes' : 'Create Manufacturer'}
-                    </button>
-                </div>
-            {/if}
-        </div>
-    {/if}
-</div>
-
-<!-- Hidden form for SuperForm submissions with proper validation -->
-{#if useInternalForm && superFormInstance}
-    <div class="hidden-form-container" style="display: none;" aria-hidden="true">
-        <form method="POST" action={formAction} use:superFormInstance.enhance bind:this={hiddenFormElement} id={formId}>
-            <!-- Always include required fields to ensure they're present -->
-            <input type="hidden" name="manufacturer_id" value={capturedFormValues.manufacturer_id || ''} />
-            <input type="hidden" name="manufacturer_name" value={capturedFormValues.manufacturer_name || ''} />
-            <input type="hidden" name="manufacturer_description" value={capturedFormValues.manufacturer_description || ''} />
-            <input type="hidden" name="website_url" value={capturedFormValues.website_url || ''} />
-            <input type="hidden" name="logo_url" value={capturedFormValues.logo_url || ''} />
-            
-            <!-- Complex fields with special handling -->
-            <input type="hidden" name="contact_info" value={typeof capturedFormValues.contact_info === 'object' 
-                ? JSON.stringify(capturedFormValues.contact_info || {}) 
-                : capturedFormValues.contact_info || '{}'} />
-            <input type="hidden" name="custom_fields" value={typeof capturedFormValues.custom_fields === 'object' 
-                ? JSON.stringify(capturedFormValues.custom_fields || {}) 
-                : capturedFormValues.custom_fields || '{}'} />
-            
-            <!-- User tracking fields always include these -->
-            <input type="hidden" name="created_by" value={currentUserId} />
-            <input type="hidden" name="updated_by" value={currentUserId} />
-            
-            <!-- Hidden submit button for form submission -->
-            <button type="submit" id="manufacturer-hidden-submit" style="display: none;">Submit</button>
-        </form>
+        {/if}
     </div>
 {/if}
+</div>
 
 <style>
     .tab-container {
@@ -673,40 +794,7 @@ function cancelForm(): void {
         border-top: 1px solid hsl(var(--border));
     }
     
-    .btn-primary {
-        padding: 8px 16px;
-        background: hsl(var(--primary));
-        color: hsl(var(--primary-foreground));
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 500;
-    }
-    
-    .btn-secondary {
-        padding: 8px 16px;
-        background: transparent;
-        color: hsl(var(--primary));
-        border: 1px solid hsl(var(--primary));
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 500;
-    }
-    
-    .btn-primary:hover {
-        background: hsl(var(--primary-dark, var(--primary) / 0.8));
-    }
-    
-    .btn-secondary:hover {
-        background: hsl(var(--primary) / 0.1);
-        cursor: pointer;
-        transition: all 0.2s ease;
-        font-weight: 600;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
+
     
     .secondary-btn:hover {
         background: hsl(var(--primary) / 0.1);

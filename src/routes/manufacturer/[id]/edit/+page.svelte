@@ -107,15 +107,20 @@
           <pre style="display: none;">Form type: {typeof form}, Has subscribe: {'subscribe' in form ? 'yes' : 'no'}</pre>
           <pre style="display: none;">Form data: {JSON.stringify($form, null, 2)}</pre>
           
-          <!-- Pass the SuperForm object, not just the form data -->
+          <!-- Pass only the props that the component actually accepts -->
           <ManufacturerForm
-            form={form}
+            data={$form}
             errors={$errors}
-            submitting={$submitting}
-            delayed={$delayed}
             isEditMode={true}
-            onCancel={goBack}
+            hideButtons={false}
+            submitText="Save Changes"
+            isDashboardContext={false}
           />
+          
+          <!-- Cancel button outside the form -->
+          <div class="form-actions">
+            <button type="button" class="secondary-btn" on:click={goBack}>Cancel</button>
+          </div>
         {/if}
         
         <div class="form-actions delete-action">

@@ -1892,7 +1892,7 @@ export const supplierActionSchema = z.object({
       (val) => val === '' || val === undefined || val === null ? undefined : val,
       z.string().uuid({ message: "Invalid UUID format" }).optional()
   ),
-  supplier_name: z.string().min(1, { message: "Manufacturer name is required" }),
+  supplier_name: z.string().min(1, { message: "Supplier name is required" }),
   supplier_description: z.string().optional().nullable(),
   website_url: z.string().refine(val => !val || /^https?:\/\/.+/.test(val), {
       message: "Website URL must start with http:// or https://"

@@ -1,7 +1,7 @@
 //src/routes/supplier/+page.server.ts
 import type { PageServerLoad, Actions } from './$types';
 import sql from '$lib/server/db/index';
-import { listSuppliers, createSupplier } from '@/core/supplier';
+import { listSuppliers, createSupplier, deleteSupplier } from '@/core/supplier';
 import { supplierSchema } from '@/schema/schema';
 import { parseContactInfo } from '$lib/utils/util';
 import { superValidate } from 'sveltekit-superforms';
@@ -24,7 +24,7 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-  default: async (event) => {
+  createSupplier: async (event) => {
     const { request, locals } = event;
     const user = locals.user;
     const form = await superValidate(request, zod(supplierSchema), { 
@@ -43,8 +43,8 @@ export const actions: Actions = {
       // Call createSupplier without the client parameter
       // Use the standardized field names from the centralized schema
       await createSupplier({
-        supplier_name: form.data.supplier_name,
-        supplier_description: form.data.supplier_description,
+        name: form.data.supplier_name,
+        description: form.data.supplier_description,
         websiteUrl: form.data.website_url ?? undefined,
         contactInfo: processedContactInfo,
         logoUrl: form.data.logo_url ?? undefined,
@@ -54,5 +54,48 @@ export const actions: Actions = {
       return fail(500, { form, message: err.message });
     }
     throw redirect(303, '/supplier');
+  },
+  
+  // Named action for supplier deletion
+  deleteSupplier: async (event) => {
+    const { request, locals } = event;
+    const user = locals.user;
+    
+    if (!user) {
+      return fail(401, { message: 'Unauthorized' });
+    }
+    
+    try {
+      const formData = await request.formData();
+      const supplierId = formData.get('supplierId') as string;
+      
+      if (!supplierId) {
+        return fail(400, { message: 'Supplier ID is required' });
+      }
+      
+      // Call the core deleteSupplier function
+      await deleteSupplier(supplierId);
+      
+      // Return success message and updated suppliers list
+      const suppliers = await listSuppliers();
+      return { success: true, message: 'Supplier deleted successfully', suppliers };
+    } catch (error) {
+      console.error('Error deleting supplier:', error);
+      
+      // Return appropriate error message based on error type
+      if (error instanceof Error) {
+        if (error.message.includes('referenced by existing parts')) {
+          return fail(409, { 
+            message: 'This supplier cannot be deleted because it is referenced by existing parts' 
+          });
+        }
+        if (error.message.includes('not found')) {
+          return fail(404, { message: 'Supplier not found' });
+        }
+        return fail(500, { message: error.message });
+      }
+      
+      return fail(500, { message: 'An unexpected error occurred' });
+    }
   }
 };

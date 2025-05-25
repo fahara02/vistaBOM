@@ -61,40 +61,41 @@
     // Track if the form has been initialized
     let formInitialized = false;
     
-    // Update form data when props change - use consistent field names from schema
-    $: if (data && (!formInitialized )) {
-        console.log('Initializing form with data:', data);
-        // Create a new object to ensure reactivity
-        const newFormData = {
-            manufacturer_id: data.manufacturer_id || '',
-            manufacturer_name: data.manufacturer_name || '',
-            manufacturer_description: data.manufacturer_description || null,
-            website_url: data.website_url || '',
-            logo_url: data.logo_url || '',
-            custom_fields: typeof data.custom_fields === 'object' 
-                ? JSON.stringify(data.custom_fields, null, 2) 
-                : data.custom_fields || '{}',
-            contact_info: typeof data.contact_info === 'object' 
-                ? JSON.stringify(data.contact_info, null, 2) 
-                : data.contact_info || '{}'
-        };
-        
-        console.log('Processed custom fields for form:', newFormData.custom_fields);
-        
-        // Update the form data
-        formData = newFormData;
-        formInitialized = true;
-        console.log('Initialized form data:', formData);
-        
-        // Initialize JSON field strings
-        initializeJsonFields();
-    }
+  
 
-    // Reactively update JSON fields when data changes
-    $: if (data) {
-        initializeJsonFields();
-    }
-
+    // // Reactively update JSON fields when data changes
+    // $: if (data) {
+    //     initializeJsonFields();
+    // }
+// Enhanced reactive data handling with proper JSON field updates
+$: if (data) {
+    console.log('ManufacturerForm received data prop update:', data);
+    
+    // Explicitly create a new object to trigger reactivity in Svelte
+    formData = {
+        manufacturer_id: data.manufacturer_id ?? '',
+        manufacturer_name: data.manufacturer_name ?? '',
+        manufacturer_description: data.manufacturer_description ?? null,
+        website_url: data.website_url ?? '',
+        logo_url: data.logo_url ?? '',
+        custom_fields: data.custom_fields ?? '{}',
+        contact_info: data.contact_info ?? '{}'
+    };
+    
+    // Update JSON string fields explicitly for the textarea inputs
+    customFieldsString = typeof data.custom_fields === 'string' 
+        ? data.custom_fields 
+        : JSON.stringify(data.custom_fields || {}, null, 2);
+        
+    contactInfoString = typeof data.contact_info === 'string'
+        ? data.contact_info
+        : JSON.stringify(data.contact_info || {}, null, 2);
+    
+    console.log('Updated customFieldsString:', customFieldsString);
+    console.log('Updated contactInfoString:', contactInfoString);
+    
+    formInitialized = true;
+}
     let formErrors: Record<string, string | string[]> = { ...errors };
     let isSubmitting: boolean = false;
     let customFieldsString: string = '{}';
@@ -111,6 +112,9 @@
 
     // Methods
     function initializeJsonFields(): void {
+        console.log('DEBUGGING INIT: Current data object received:', data);
+        console.log('DEBUGGING INIT: Current formData state:', formData);
+        
         // Initialize custom fields from the data
         if (data.custom_fields) {
             try {
@@ -228,12 +232,26 @@
         const target = event.target as HTMLTextAreaElement;
         const value = target.value;
         
+        console.log(`Updating ${field} with value:`, value);
+        
         if (field === 'custom_fields') {
+            // First update the string value directly
             customFieldsString = value;
-            formData.custom_fields = value; // Update formData directly to capture changes
+            
+            // Then update the formData by creating a new object (important for reactivity)
+            formData = {
+                ...formData,
+                custom_fields: value
+            };
         } else if (field === 'contact_info') {
+            // First update the string value directly
             contactInfoString = value;
-            formData.contact_info = value; // Update formData directly to capture changes
+            
+            // Then update the formData by creating a new object (important for reactivity)
+            formData = {
+                ...formData,
+                contact_info: value
+            };
         }
         
         // Notify parent of form changes
@@ -423,15 +441,7 @@
         alert('Form data logged to console');
     }
 
-    // Initialize JSON fields when data changes
-    $: if (data) {
-        if (data.custom_fields) {
-            customFieldsString = typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields, null, 2);
-        }
-        if (data.contact_info) {
-            contactInfoString = typeof data.contact_info === 'string' ? data.contact_info : JSON.stringify(data.contact_info, null, 2);
-        }
-    }
+    // Update submitText when edit mode changes
     
     // Update submitText when edit mode changes
     $: submitText = isEditMode ? 'Save Changes' : 'Create Manufacturer';
@@ -448,6 +458,7 @@
                 type="text" 
                 id="manufacturer_name" 
                 bind:value={formData.manufacturer_name} 
+                class="enhanced-input"
                 class:error={formErrors.manufacturer_name}
                 on:input={handleFormChange}
                 required
@@ -462,6 +473,7 @@
             <textarea 
                 id="manufacturer_description" 
                 bind:value={formData.manufacturer_description} 
+                class="enhanced-input form-textarea"
                 class:error={formErrors.manufacturer_description}
                 on:input={handleFormChange}
                 rows="3"
@@ -477,6 +489,7 @@
                 type="url" 
                 id="website_url" 
                 bind:value={formData.website_url} 
+                class="enhanced-input"
                 class:error={formErrors.website_url}
                 on:input={handleFormChange}
                 placeholder="https://example.com"
@@ -492,6 +505,7 @@
                 type="url" 
                 id="logo_url" 
                 bind:value={formData.logo_url} 
+                class="enhanced-input"
                 class:error={formErrors.logo_url}
                 on:input={handleFormChange}
                 placeholder="https://example.com/logo.png"
@@ -523,8 +537,9 @@
             <textarea
                 id="contact_info"
                 rows="5"
-                bind:value={contactInfoString}
+                value={contactInfoString}
                 on:input={(e) => handleTextareaChange(e, 'contact_info')}
+                class="enhanced-input form-textarea"
                 class:error={contactInfoError}
                 placeholder="Enter contact information in JSON format"
             ></textarea>
@@ -609,15 +624,12 @@ address: 123 Main St, City, Country</code></pre>
             </div>
             <textarea 
                 id="custom_fields" 
-                bind:value={customFieldsString} 
+                value={customFieldsString} 
+                class="enhanced-input form-textarea"
                 class:error={customFieldsError}
                 rows="5"
                 placeholder="Enter custom fields in JSON format"
-                on:input={(e) => {
-                    // Update the form data on input
-                    formData.custom_fields = customFieldsString;
-                    handleFormChange();
-                }}
+                on:input={(e) => handleTextareaChange(e, 'custom_fields')}
             ></textarea>
             {#if customFieldsError}
                 <div class="error-message">{customFieldsError}</div>
@@ -654,8 +666,8 @@ address: 123 Main St, City, Country</code></pre>
         
         {#if !hideButtons}
             <div class="form-actions">
-                <button type="button" class="btn cancel-btn" on:click={handleCancel}>Cancel</button>
-                <button type="submit" class="btn submit-btn" disabled={isSubmitting}>
+                <button type="button" class="secondary-btn" on:click={handleCancel}>Cancel</button>
+                <button type="submit" class="primary-btn" disabled={isSubmitting}>
                     {isSubmitting ? 'Processing...' : submitText}
                 </button>
             </div>
@@ -743,46 +755,6 @@ address: 123 Main St, City, Country</code></pre>
         border-radius: 0.25rem;
         cursor: pointer;
         color: hsl(var(--muted-foreground));
-    }
-    
-    .btn {
-        padding: 0.625rem 1.25rem;
-        font-size: 0.875rem;
-        font-weight: 600;
-        border-radius: 6px;
-        transition: all 0.15s ease;
-        cursor: pointer;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        border: 1px solid transparent;
-    }
-    
-    .cancel-btn {
-        background-color: hsl(var(--background));
-        color: hsl(var(--foreground));
-        border-color: hsl(var(--border));
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-    }
-    
-    .cancel-btn:hover {
-        background-color: hsl(var(--muted));
-        border-color: hsl(var(--muted-foreground));
-    }
-    
-    .submit-btn {
-        background-color: hsl(var(--primary));
-        color: hsl(var(--primary-foreground));
-        border-color: hsl(var(--primary-dark));
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-    }
-    
-    .submit-btn:hover {
-        background-color: hsl(var(--primary-dark));
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    }
-    
-    .submit-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
     }
     
     .required {

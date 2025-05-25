@@ -212,7 +212,15 @@ export const actions: Actions = {
         return fail(404, { message: 'Manufacturer not found or you do not have permission to delete it' });
       }
       
-      // Delete the manufacturer directly
+      // IMPORTANT: First delete any custom fields to avoid foreign key constraint violations
+      console.log('Deleting custom fields for manufacturer:', manufacturerId);
+      await sql`
+        DELETE FROM "ManufacturerCustomField"
+        WHERE manufacturer_id = ${manufacturerId}
+      `;
+      
+      // Then delete the manufacturer itself
+      console.log('Deleting manufacturer:', manufacturerId);
       await sql`
         DELETE FROM "Manufacturer"
         WHERE manufacturer_id = ${manufacturerId}

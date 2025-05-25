@@ -48,8 +48,9 @@
     let formInitialized = false;
     
     // Update form data when props change - use consistent field names from schema
-    $: if (data && (!formInitialized)) {
-        console.log('Initializing form with data:', data);
+    // FIXED: Always update when data changes, not just on first initialization
+    $: if (data) {
+        console.log('Updating form with data:', data);
         
         // Create a new object to ensure reactivity
         const newFormData = {
@@ -473,8 +474,7 @@
     }
 </script>
 
-<div class="form-container">
-    <form class="enhanced-form" on:submit={handleSubmit}>
+<form on:submit={handleSubmit}>
         <!-- Hidden field for supplier_id -->
         <input type="hidden" name="supplier_id" value={formData.supplier_id || ''} />
         
@@ -677,35 +677,24 @@
             <div class="form-actions">
                 <button 
                     type="button" 
-                    class="btn cancel-btn" 
+                    class="secondary-btn" 
                     on:click={handleCancel}
                 >
                     Cancel
                 </button>
                 <button 
                     type="submit" 
-                    class="btn submit-btn" 
+                    class="primary-btn" 
                     disabled={isSubmitting}
                 >
-                    {isSubmitting ? 'Saving...' : submitText}
+                    {isSubmitting ? 'Processing...' : submitText}
                 </button>
             </div>
         {/if}
     </form>
-</div>
 
 <style>
-    .form-container {
-        width: 100%;
-        max-width: 800px;
-        margin: 0 auto;
-    }
-    
-    .enhanced-form {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
+    /* Form field styling */
     
     .form-field {
         display: flex;
@@ -764,45 +753,7 @@
     
    
     
-    .btn {
-        padding: 0.625rem 1.25rem;
-        font-size: 0.875rem;
-        font-weight: 600;
-        border-radius: 6px;
-        transition: all 0.15s ease;
-        cursor: pointer;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        border: 1px solid transparent;
-    }
-    
-    .cancel-btn {
-        background-color: hsl(var(--background));
-        color: hsl(var(--foreground));
-        border-color: hsl(var(--border));
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-    }
-    
-    .cancel-btn:hover {
-        background-color: hsl(var(--muted));
-        border-color: hsl(var(--muted-foreground));
-    }
-    
-    .submit-btn {
-        background-color: hsl(var(--primary));
-        color: hsl(var(--primary-foreground));
-        border-color: hsl(var(--primary-dark));
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-    }
-    
-    .submit-btn:hover {
-        background-color: hsl(var(--primary-dark));
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    }
-    
-    .submit-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
+    /* Button styling is now handled by global styles */
     
     .required {
         color: hsl(var(--destructive));
