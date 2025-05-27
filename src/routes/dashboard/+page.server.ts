@@ -151,8 +151,7 @@ export const load: PageServerLoad = async (event) => {
         
         // Log the first manufacturer for debugging
         if (userManufacturers.length > 0) {
-            console.log('First manufacturer retrieved:', userManufacturers[0]);
-            console.log('Custom fields from first manufacturer:', userManufacturers[0].custom_fields);
+           
         }
     } catch (error) {
         console.error('Error fetching user manufacturers:', error);
@@ -170,8 +169,7 @@ export const load: PageServerLoad = async (event) => {
         
         // Log the first supplier for debugging
         if (userSuppliers.length > 0) {
-            console.log('First supplier retrieved:', userSuppliers[0]);
-            console.log('Custom fields from first supplier:', userSuppliers[0].custom_fields);
+           
         }
     } catch (error) {
         console.error('Error fetching user suppliers:', error);
@@ -207,12 +205,7 @@ export const load: PageServerLoad = async (event) => {
         if (userCategories.length > 0) {
             // Type-safe way to access the SQL result properties
             const firstCategory = userCategories[0] as any;
-            console.log('Debug - First category with parent info:', {
-                category_id: firstCategory.category_id,
-                category_name: firstCategory.category_name,
-                parent_id: firstCategory.parent_id,
-                parent_name: firstCategory.parent_name
-            });
+          
         }
     } catch (error) {
         console.error('Error fetching user categories:', error);

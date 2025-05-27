@@ -191,7 +191,7 @@
     {required} 
     data-testid="category-combobox-input"
     on:input={(e) => {
-      console.log(`Input event on hidden input (${name})`, e.currentTarget.value);
+    
     }}
   />
 </div>

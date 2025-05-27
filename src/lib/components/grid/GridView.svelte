@@ -871,10 +871,8 @@
                     title="Delete {entityType}"
                     onclick={(e) => {
                       e.stopPropagation();
-                      // Immediate delete without confirmation
-                      const itemId = getItemId(item);
-                      console.log('Deleting item:', itemId);
-                      dispatch('delete', { itemId });
+                      // Use the handleDeleteItem function to ensure proper context is provided
+                      handleDeleteItem(item);
                     }}
                   >
                     <Trash2 size={14} />
@@ -904,7 +902,7 @@
                 {/if}
                 
               
-                <!-- Logo display for suppliers and manufacturers -->
+               
                 {#if entityType === 'supplier' && 'logo_url' in item && item.logo_url}
                   <div class="entity-logo-container">
                     <div class="entity-logo" title="{getItemName(item)} logo">
@@ -912,7 +910,7 @@
                     </div>
                   </div>
                 {:else if entityType === 'manufacturer'}
-                  <!-- Handle both camelCase and snake_case logo properties for manufacturers -->
+                 
                   {#if 'manufacturer_id' in item}
                     {@const manufacturer = prepareManufacturerData(item)}
                     {@const logoSrc = 'logoUrl' in item && typeof item.logoUrl === 'string' ? 
@@ -949,7 +947,7 @@
           <div class="modal-content" transition:slide={{ duration: 200 }}>
             <div class="modal-header">
               <h2 class="modal-title">{getItemName(item)}</h2>
-              <!-- Parent info now only shown in the card itself, not in modal header -->
+             
               <button 
                 class="close-button" 
                 onclick={() => expandedItemId = null}

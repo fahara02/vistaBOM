@@ -1,3 +1,5 @@
+//src/routes/category/[id]/edit/+page.server.ts
+
 import sql from '$lib/server/db';
 import { categorySchema } from '$lib/schema/schema';
 import type { Category } from '$lib/types/types';

@@ -442,8 +442,7 @@ export async function getSupplierById(supplierId: string): Promise<Supplier | nu
         
         // Return normalized result or null if not found
         if (result.length > 0) {
-            // Log the raw result for debugging
-            console.log('Raw supplier result:', JSON.stringify(result[0], null, 2));
+           
             
             // Normalize the supplier data
             const supplier = normalizeSupplier(result[0]);
@@ -454,10 +453,7 @@ export async function getSupplierById(supplierId: string): Promise<Supplier | nu
             // Convert to schema-compatible format
             const schemaSupplier = toSchemaSupplier(supplier);
             
-            // Log the final supplier object
-            console.log('Supplier by ID:', 
-                schemaSupplier.supplier_name, 
-                '- custom fields loaded from database');
+        
             
             return schemaSupplier;
         } else {
@@ -513,7 +509,7 @@ export async function listSuppliers(options?: {
         }
         
         const result = await query;
-        console.log(`Found ${result.length} suppliers matching criteria`);
+     
         
         // Process each supplier and add custom fields
         const suppliers = [];
@@ -532,8 +528,7 @@ export async function listSuppliers(options?: {
         
         // Log the first supplier for debugging
         if (suppliers.length > 0) {
-            console.log(`First supplier (${suppliers[0].supplier_name}) details:`, 
-                JSON.stringify(suppliers[0], null, 2));
+        
         }
 
         // Convert to schema-compatible type
@@ -552,7 +547,7 @@ export async function listSuppliers(options?: {
  */
 export async function getSupplierCustomFields(supplierId: string): Promise<Record<string, JsonValue>> {
     try {
-        console.log(`Fetching custom fields for supplier ${supplierId}`);
+       
         const result = await sql`
             SELECT cf.field_name, scf.custom_field_value
             FROM "SupplierCustomField" scf
@@ -560,13 +555,13 @@ export async function getSupplierCustomFields(supplierId: string): Promise<Recor
             WHERE scf.supplier_id = ${supplierId}
         `;
         
-        console.log(`Found ${result.length} custom fields for supplier ${supplierId}`);
+       
         
         // Build the custom fields object
         const customFields: Record<string, JsonValue> = {};
         for (const row of result) {
             customFields[row.field_name] = row.custom_field_value;
-            console.log(`- Custom field: ${row.field_name} = ${JSON.stringify(row.custom_field_value)}`);
+           
         }
         
         return customFields;
@@ -730,8 +725,6 @@ export async function updateSupplierCustomFields(
             throw new Error(SUPPLIER_ERRORS.NOT_FOUND);
         }
         
-        console.log('Updating custom fields for supplier:', supplierId);
-        console.log('Custom fields to update:', JSON.stringify(customFields, null, 2));
         
         // Start a transaction to ensure atomicity
         await sql.begin(async (sql) => {
@@ -743,7 +736,7 @@ export async function updateSupplierCustomFields(
             
             // Skip further processing if no custom fields to add
             if (Object.keys(customFields).length === 0) {
-                console.log('No custom fields to add, skipping insertion');
+               
                 return;
             }
             
@@ -767,8 +760,7 @@ export async function updateSupplierCustomFields(
                 
                 let fieldId;
                 if (customFieldResult.length === 0) {
-                    // Create the custom field definition
-                    console.log(`Creating new custom field: ${fieldName}, type: ${dataType}`);
+                   
                     const newFieldResult = await sql`
                         INSERT INTO "CustomField" (
                             field_name,
@@ -791,8 +783,6 @@ export async function updateSupplierCustomFields(
                     fieldId = customFieldResult[0].custom_field_id;
                 }
                 
-                // Now insert the supplier custom field value
-                console.log(`Adding custom field ${fieldName} to supplier ${supplierId}`);
                 await sql`
                     INSERT INTO "SupplierCustomField" (
                         supplier_id,
@@ -883,16 +873,14 @@ export async function createSupplierWithCustomFields(data: SupplierFormData): Pr
                     }
                     
                     // Now insert the custom field value
-                    // Make sure we're using the correct format for JSONB values
-                    console.log(`Creating custom field: ${fieldName} with value:`, fieldValue);
-                    
+                   
                     // For primitive values, wrap them in an object with a 'value' property
                     // This ensures consistent extraction later
                     const jsonValue = typeof fieldValue === 'object' && fieldValue !== null
                         ? fieldValue
                         : { value: fieldValue };
                     
-                    console.log(`Formatted JSONB value:`, jsonValue);
+                
                     
                     await sql`
                         INSERT INTO "SupplierCustomField" (supplier_id, field_id, custom_field_value)

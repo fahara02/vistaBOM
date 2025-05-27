@@ -135,15 +135,7 @@ export async function createCategory(params: {
     isPublic?: boolean;
     customFields?: Record<string, JsonValue> | null;
 }): Promise<CategoryWithId> {
-    // Log incoming parameters for debugging
-    console.log('createCategory called with params:', {
-        name: params.name,
-        parentId: params.parentId,
-        parentIdType: typeof params.parentId,
-        description: params.description,
-        isPublic: params.isPublic,
-        createdBy: params.createdBy
-    });
+ 
     const { 
         name, 
         createdBy, 

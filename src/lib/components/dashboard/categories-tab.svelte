@@ -146,9 +146,40 @@
         dispatch('refreshData');
     }
     
-    function handleCategoryDeleted(): void {
-        // Notify parent to refresh the data
-        dispatch('refreshData');
+    async function handleCategoryDeleted(event: CustomEvent<{itemId: string}>): Promise<void> {
+        const categoryId = event.detail.itemId;
+        if (!categoryId) return;
+        
+        try {
+            // Use the proper REST API endpoint for category deletion
+            const response = await fetch(`/category/${categoryId}`, {
+                method: 'DELETE',  // Use DELETE method for REST API
+                credentials: 'same-origin'
+            });
+            
+            if (!response.ok) {
+                // Try to parse error response
+                let errorData: { message?: string } = {};
+                try {
+                    const responseText = await response.text();
+                    try {
+                        errorData = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.error('Failed to parse error as JSON:', parseError);
+                    }
+                } catch (textError) {
+                    console.error('Failed to get response text:', textError);
+                }
+                
+                throw new Error(errorData?.message || `Delete failed with status ${response.status}`);
+            }
+            
+            // Successful deletion, refresh the data
+            dispatch('refreshData');
+        } catch (error) {
+            console.error('Error deleting category:', error);
+            alert(`Failed to delete category: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     }
     
     // Initialize on component mount

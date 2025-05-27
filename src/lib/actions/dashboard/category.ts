@@ -27,8 +27,16 @@ export async function categoryAction(event: RequestEvent) {
     // Debug all incoming request data
     const formData = await event.request.formData();
     console.log('\nFORM DATA RECEIVED:');
+    
+    // Store the original category_id before form processing
+    let originalCategoryId: string | null = null;
+    
     for (const [key, value] of formData.entries()) {
         console.log(`${key}: ${value}`);
+        // Capture the category_id explicitly to preserve it
+        if (key === 'category_id') {
+            originalCategoryId = value.toString();
+        }
     }
     
     // Check for delete operation with extensive debugging
@@ -131,8 +139,14 @@ export async function categoryAction(event: RequestEvent) {
         return message(form, `Invalid form data: ${JSON.stringify(form.errors)}`, { status: 400 });
     }
     
-    // Check if we're in edit mode
-    const isEditMode = form.data.category_id ? true : false;
+    // Check if we're in edit mode - prioritize the original category_id if it was lost during validation
+    const isEditMode = originalCategoryId || form.data.category_id ? true : false;
+    
+    // CRITICAL FIX: If we have originalCategoryId but it was lost in form.data, restore it
+    if (originalCategoryId && !form.data.category_id) {
+        console.log('Restoring lost category_id:', originalCategoryId);
+        form.data.category_id = originalCategoryId;
+    }
     
     try {
         if (isEditMode) {
