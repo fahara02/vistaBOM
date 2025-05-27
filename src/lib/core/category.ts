@@ -171,60 +171,7 @@ export async function createCategory(params: {
         // Sanitize name for ltree path
         const sanitizedLabel = sanitizeLtreeLabel(name);
 
-        /**
- * Helper function to normalize a category record from the database
- * This ensures we have consistent property names in both snake_case (DB) and camelCase (UI) formats
- * @param category Raw category data from database
- * @returns Normalized CategoryWithId with consistent property access
- */
-function normalizeCategory(category: any): CategoryWithId {
-    // Helper to convert null to undefined for optional string fields
-    const nullToUndefined = (val: string | null | undefined): string | undefined => {
-        return val === null ? undefined : val;
-    };
-    
-    return {
-        // Original DB fields - snake_case
-        ...category,
-        
-        // UI fields - camelCase (normalize from DB fields if not present)
-        id: category.id || category.category_id,
-        name: category.name || category.category_name,
-        // Convert null to undefined for parentId to satisfy TypeScript
-        parentId: nullToUndefined(category.parentId || category.parent_id),
-        description: nullToUndefined(category.description || category.category_description),
-        path: category.path || category.category_path,
-        isPublic: category.isPublic !== undefined ? category.isPublic : category.is_public,
-        createdBy: category.createdBy || category.created_by,
-        createdAt: category.createdAt || category.created_at,
-        updatedBy: nullToUndefined(category.updatedBy || category.updated_by),
-        updatedAt: category.updatedAt || category.updated_at,
-        isDeleted: category.isDeleted !== undefined ? category.isDeleted : category.is_deleted,
-        deletedAt: category.deletedAt || category.deleted_at,
-        deletedBy: nullToUndefined(category.deletedBy || category.deleted_by),
-        customFields: category.customFields || category.custom_fields,
-        parentName: nullToUndefined(category.parentName || category.parent_name),
-        childCount: category.childCount || category.child_count || 0,
-        partsCount: category.partsCount || category.parts_count || 0,
-        
-        // Make sure all DB fields are also present
-        category_id: category.category_id || category.id,
-        category_name: category.category_name || category.name,
-        parent_id: category.parent_id || category.parentId,
-        category_description: category.category_description || category.description,
-        category_path: category.category_path || category.path,
-        is_public: category.is_public !== undefined ? category.is_public : category.isPublic,
-        created_by: category.created_by || category.createdBy,
-        created_at: category.created_at || category.createdAt,
-        updated_by: category.updated_by || category.updatedBy,
-        updated_at: category.updated_at || category.updatedAt,
-        is_deleted: category.is_deleted !== undefined ? category.is_deleted : category.isDeleted,
-        deleted_at: category.deleted_at || category.deletedAt,
-        deleted_by: category.deleted_by || category.deletedBy,
-        custom_fields: category.custom_fields || category.customFields,
-        parent_name: category.parent_name || category.parentName
-    };
-}
+
 
 // Determine path based on parent
         let path;
@@ -246,6 +193,7 @@ function normalizeCategory(category: any): CategoryWithId {
         }
 
         // Perform the insert in a transaction to ensure atomicity with any custom fields
+        // Type assertion to ensure TypeScript recognizes category fields
         const result = await sql.begin(async sql => {
             // Insert the main category record
             const categoryResult = await sql`
@@ -323,6 +271,13 @@ function normalizeCategory(category: any): CategoryWithId {
             };
         });
 
+        // Make sure result has valid category fields
+        // Use a proper type assertion to fix TypeScript errors
+        const typedResult = result as Record<string, unknown>;
+        if (typedResult && (typedResult.category_name === null || typedResult.category_name === undefined)) {
+            typedResult.category_name = name;
+        }
+        
         return normalizeCategory(result);
     } catch (error) {
         // Handle specific error cases
@@ -401,16 +356,6 @@ function normalizeCategory(row: DbRow): CategoryWithId {
     // Process custom fields with type safety
     const customFields = deserializeCustomFields(row.custom_fields);
     
-    // Helper function to safely convert string numbers to number type
-    function safeParseInt(value: unknown): number | undefined {
-        if (typeof value === 'number') return value;
-        if (typeof value === 'string') {
-            const parsed = parseInt(value, 10);
-            return isNaN(parsed) ? undefined : parsed;
-        }
-        return undefined;
-    }
-    
     // Create a normalized category object with both styles of property names
     const category: CategoryWithId = {
         // Standard API properties (camelCase)
@@ -430,9 +375,9 @@ function normalizeCategory(row: DbRow): CategoryWithId {
         
         // UI helper properties from joins with safer parsing
         parentName: (row.parent_name as string) || undefined,
-        childCount: safeParseInt(row.child_count),
-        partsCount: safeParseInt(row.parts_count),
-        depth: safeParseInt(row.depth),
+        childCount: parseInt(row.child_count as string) || undefined,
+        partsCount: parseInt(row.parts_count as string) || undefined,
+        depth: parseInt(row.depth as string) || undefined,
         customFields: customFields,
         
         // Database column names (snake_case) with proper typing
@@ -453,8 +398,8 @@ function normalizeCategory(row: DbRow): CategoryWithId {
         
         // Database join fields with safer parsing
         parent_name: (row.parent_name as string) || undefined,
-        child_count: safeParseInt(row.child_count),
-        parts_count: safeParseInt(row.parts_count)
+        child_count: parseInt(row.child_count as string) || undefined,
+        parts_count: parseInt(row.parts_count as string) || undefined
     };
 
     return category;

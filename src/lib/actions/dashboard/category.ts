@@ -197,14 +197,15 @@ export async function categoryAction(event: RequestEvent) {
             // Begin transaction to update category and its children
             await sql.begin(async (sql) => {
                 // Attempt to update category with explicitly typed parameters
+                // CRITICAL FIX: Use original category_name, NOT sanitizedLabel which is only for paths
                 const updatedCategory = await sql`
                     UPDATE "Category"
                     SET 
-                        category_name = ${sanitizedLabel},
+                        category_name = ${form.data.category_name}, 
                         parent_id = ${parentId || null},
                         category_description = ${form.data.category_description || null},
                         is_public = ${Boolean(form.data.is_public)},
-                        category_path = ${path},
+                        category_path = ${path}, -- Only path uses sanitized value
                         updated_at = NOW()::timestamptz,
                         updated_by = ${user.user_id}
                     WHERE category_id = ${form.data.category_id || null}

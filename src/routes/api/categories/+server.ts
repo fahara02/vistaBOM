@@ -1,3 +1,5 @@
+//src/routes/api/categories/+server.ts
+
 import sql from '$lib/server/db';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';

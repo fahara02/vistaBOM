@@ -8,9 +8,17 @@
   import Check from "lucide-svelte/icons/check";
   import ChevronsUpDown from "lucide-svelte/icons/chevrons-up-down";
   import { tick } from "svelte";
+  import { createEventDispatcher } from 'svelte';
   
-  // Props
-  export let categories: any[] = [];
+  // Props - accept categories with either value/label or category_id/category_name structure
+  export let categories: Array<{
+    category_id?: string;
+    category_name?: string;
+    value?: string;
+    label?: string;
+    parent_id?: string | null;
+    parent_name?: string;
+  }> = [];
   export let value: string | null | undefined = ""; // Selected category ID
   export let placeholder: string = "Select parent category...";
   export let name: string = "parent_id"; // Form field name
@@ -21,50 +29,63 @@
   export let initialValue: string | undefined = undefined;
   export let initialLabel: string | undefined = undefined;
   
+  // Create event dispatcher for communicating with parent components
+  const dispatch = createEventDispatcher<{
+    change: { value: string | null; label: string; source: string };
+    categorySelected: { value: string | null; label: string; source: string };
+  }>();
+  
   let open = false;
 
-  // Create formatted options for the combobox with a "None" option
+  // Convert categories to the format needed for the combobox
+  // Handle both structures: {category_id, category_name} and {value, label}
   $: options = [
     { value: "", label: "None (Top-level)" },
-    ...categories.map(category => ({
-      value: category.category_id,
-      label: category.category_name,
-      parent_id: category.parent_id,
-      // Use the parent_name directly from the API response
-      parentName: category.parent_name || ''
-    }))
+    ...categories.map(category => {
+      // Ensure we have non-undefined string values
+      const categoryValue: string = (category.category_id || category.value || "");
+      const categoryLabel: string = (category.category_name || category.label || "");
+      
+      return {
+        value: categoryValue,
+        label: categoryLabel,
+        parent_id: category.parent_id || null,
+        // Use the parent_name directly from the API response
+        parentName: category.parent_name || ''
+      };
+    })
   ];
 
   // Initialize the value if we have initialValue provided (for edit mode)
-  $: if (initialValue && value === "" && options.length > 0) {
+  $: if (initialValue && options.length > 0) {
     // Find the option with matching value to set it
     const foundOption = options.find(opt => opt.value === initialValue);
     if (foundOption) {
-      console.log('Setting initial parent category:', foundOption.label);
+      
       value = initialValue;
     } else if (initialValue && initialLabel) {
-      // If we can't find the option but have both values, add a temporary option
-      console.log('Adding initial parent option:', initialLabel);
+     
+      // Create options array with the initial parent at the top for better visibility
       options = [
         { value: "", label: "None (Top-level)" },
         { value: initialValue, label: initialLabel },
-        ...categories.map(cat => ({
-          value: cat.category_id,
-          label: cat.category_name,
-          parent_id: cat.parent_id,
-          parentName: cat.parent_name || ''
-        }))
+        ...categories.map(cat => {
+          // Apply the same type safety as in the main options mapping
+          const categoryValue: string = (cat.category_id || cat.value || "");
+          const categoryLabel: string = (cat.category_name || cat.label || "");
+          
+          return {
+            value: categoryValue,
+            label: categoryLabel,
+            parent_id: cat.parent_id || null,
+            parentName: cat.parent_name || ''
+          };
+        })
       ];
       value = initialValue;
     }
-  };
-  
-  // Add console debug to understand what's coming from the API
-  $: {
-    if (categories.length > 0) {
-      console.log('CategoryComboBox categories:', categories);
-    }
   }
+
   
   // Display the selected category name or placeholder
   $: selectedLabel = options.find((opt) => opt.value === value)?.label ?? placeholder;
@@ -109,7 +130,39 @@
             <Command.Item
               value={option.label}
               onSelect={(selectedValue: string) => {
+                // Store the selected value
                 value = option.value;
+                
+                // CRITICAL FIX: Make sure the parent_id field is set correctly in the SuperForm
+                // Instead of complex event handling, use a direct form element update
+                // Find the hidden input and update its value directly
+                const hiddenInput = document.querySelector(`input[name="${name}"]`);
+                if (hiddenInput) {
+                  (hiddenInput as HTMLInputElement).value = option.value;
+                  
+                  // Also dispatch an input event to ensure the form recognizes the change
+                  hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                  console.log(`Updated hidden input for ${name} with value:`, option.value);
+                }
+                
+                // CRITICAL FIX: Directly dispatch a properly formatted event to the parent component
+                // We use the Svelte event dispatcher which is more reliable than DOM events
+                dispatch('categorySelected', {
+                  value: option.value,
+                  label: option.label,
+                  source: 'CategoryComboBox'
+                });
+                
+                // Also dispatch standard change event for backward compatibility
+                dispatch('change', {
+                  value: option.value,
+                  label: option.label,
+                  source: 'CategoryComboBox'
+                });
+                
+                // Log the dispatched event for debugging
+                console.log('CategoryComboBox dispatched events with value:', option.value);
+                
                 closeAndFocusTrigger(ids.trigger);
               }}
               style="background-color: hsl(var(--background)) !important; color: hsl(var(--foreground)) !important; padding: 0.5rem 1rem !important;"
@@ -129,7 +182,18 @@
   </Popover.Root>
   
   <!-- Hidden input to work with standard form submission -->
-  <input type="hidden" {name} bind:value {required} />
+  <!-- Critical fix for SuperForm serialization: Keep actual value including UUIDs intact -->
+  <input 
+    type="hidden" 
+    id="parent-id-{name}"
+    {name} 
+    value={value === null ? '' : value} 
+    {required} 
+    data-testid="category-combobox-input"
+    on:input={(e) => {
+      console.log(`Input event on hidden input (${name})`, e.currentTarget.value);
+    }}
+  />
 </div>
 
 <style>

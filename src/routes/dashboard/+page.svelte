@@ -9,6 +9,7 @@
 	import { PartForm } from '$lib/components/forms';
 	import CategoryComboBox from '$lib/components/forms/CategoryComboBox.svelte';
 	import CategoryComponent from '$lib/components/cards/category.svelte';
+	import CategoriesTab from '$lib/components/dashboard/categories-tab.svelte';
 	import ManufacturersTab from '$lib/components/dashboard/manufacturers-tab.svelte';
 	import SuppliersTab from '$lib/components/dashboard/suppliers-tab.svelte';
 	import { categoryFormSchema } from '$lib/schema/schema';
@@ -48,10 +49,7 @@
 	 * Ensuring proper handling of null values to match expected component types
 	 */
 	function transformManufacturerData(manufacturers: any[]): DashboardManufacturer[] {
-		// Log the first raw manufacturer data to debug structure
-		if (manufacturers.length > 0) {
-			console.log('Raw manufacturer data from server:', manufacturers[0]);
-		}
+	
 		
 		// Create a Set to track used IDs and avoid duplicates
 		const usedIds = new Set<string>();
@@ -97,9 +95,7 @@
 	 * Ensuring proper handling of null values and consistent data types
 	 */
 	function transformSupplierData(suppliers: any[]): DashboardSupplier[] {
-		if (suppliers.length > 0) {
-			console.log('Raw supplier data from server:', suppliers[0]);
-		}
+		
 		
 		// Create a Set to track used IDs and avoid duplicates
 		const usedIds = new Set<string>();
@@ -177,8 +173,7 @@
 	// Create a reactive binding for the manufacturer form data to directly pass to the component
 	$: manufacturerFormData = $manufacturerForm;
 	
-	// Transform server-side camelCase userCategories to component's snake_case format
-	// Initialize transformedCategories using the transformCategoryData function defined below
+	// Create a reactive binding for the manufacturer form data to directly pass to the component
 	$: transformedCategories = transformCategoryData(data?.userCategories || []);
 
 	// Reference to form element
@@ -218,8 +213,7 @@
 		// Properly handle form validation before submission
 		validationMethod: 'submit-only',
 		onSubmit: ({ formData, cancel }) => {
-			// Log the submission data for debugging
-			console.log('Submitting manufacturer form with data:', Object.fromEntries(formData.entries()));
+			
 			
 			// Ensure manufacturer_name is present
 			if (!formData.get('manufacturer_name') || String(formData.get('manufacturer_name')).trim() === '') {
@@ -230,7 +224,7 @@
 			}
 		},
 		onResult: ({ result }) => {
-			console.log('Manufacturer form submission result:', result);
+			
 			
 			// Handle the result of form submission
 			if (result.type === 'success') {
@@ -250,7 +244,7 @@
 	
 	// Function to directly set form values to bypass store subscription issues
 	function updateManufacturerForm(formData: any) {
-		console.log('Updating manufacturer form with data:', formData);
+	
 		
 		// Create a complete form object first to ensure all fields are properly set
 		const updatedForm = {
@@ -279,7 +273,6 @@
 		// Update the form with the complete object
 		$manufacturerForm = updatedForm;
 		
-		console.log('Updated manufacturer form:', $manufacturerForm);
 	}
 	
 	// Helper function to process JSON fields consistently
@@ -389,7 +382,7 @@
 	function editSupplier(event: CustomEvent<any>) {
 		// Get supplier data from event - handle different event formats
 		const supplier = event.detail.supplier || event.detail.item || event.detail;
-		console.log('Editing supplier - raw data:', supplier);
+		
 		
 		// Store the original contact_info and custom_fields as they are
 		// This prevents double stringification which causes issues with input
@@ -420,12 +413,12 @@
 			updated_at: new Date()
 		};
 		
-		console.log('Updated supplier form:', $supplierForm);
+	
 	}
 	
 	// Function to cancel supplier edit and reset the form
 	function cancelSupplierEdit() {
-		console.log('Canceling supplier edit');
+		
 		
 		// Reset the supplier form to default values
 		$supplierForm = {
@@ -476,6 +469,7 @@
 	let showCategoryForm = false;
 	let showSupplierForm = false;
 
+// Function was moved to line ~550
 
 	
 	// Data refresh function to handle updates without page reload
@@ -484,8 +478,7 @@
 			// Store current tab
 			const currentTab = activeTab;
 			
-			// Log initial counts for debugging
-			console.log('Before refresh - Manufacturers:', data.userManufacturers?.length || 0);
+		
 			
 			// Force a more aggressive cache invalidation
 			await Promise.all([
@@ -494,13 +487,21 @@
 				new Promise(resolve => setTimeout(resolve, 300)) // Slightly longer delay
 			]);
 			
-			// Log data state after invalidation
-			console.log('After invalidation - Manufacturers:', data.userManufacturers?.length || 0);
+		
 			
-			// Force a complete refresh by creating entirely new arrays
-			categories = [...(data.categories || [])];
-			allCategories = [...(data.categories || [])];
-			transformedCategories = transformCategoryData(data.userCategories || []);
+			// Create new array with corrected field naming for grid component
+			// Ensure category names are never null or undefined (direct fix for the unnamed bug)
+			categories = (data.categories || []).map((cat: Category) => {
+				// Ensure we're returning a category with a valid name
+				return {
+					...cat,
+					// Explicitly set category_name to a non-null value
+					category_name: cat.category_name || cat.category_path || 'Category ' + cat.category_id.substring(0, 8) || ''
+				};
+			});
+			allCategories = [...categories];
+			
+			
 			userParts = [...(data.userParts || [])];
 			
 			// Create a completely new array for manufacturers to ensure reactivity
@@ -508,7 +509,7 @@
 			userManufacturers = [...freshManufacturers]; // Explicit new array reference
 			userSuppliers = transformSupplierData(data.userSuppliers || []);
 			
-			console.log('Updated manufacturers count:', userManufacturers.length);
+			
 			
 			// Restore tab state from localStorage or use current tab as fallback
 			if (typeof window !== 'undefined') {
@@ -516,7 +517,7 @@
 			} else {
 				activeTab = currentTab;
 			}
-			console.log('Dashboard data refresh complete.');
+			
 		} catch (error) {
 			console.error('Error refreshing dashboard data:', error);
 		}
@@ -528,35 +529,57 @@
 	}
 
 	/**
-	 * Helper function to transform categories from server's camelCase format to snake_case
-	 * The server returns objects with camelCase properties but we need snake_case for our components
-	 */
-	/**
 	 * Transform category data from server format to the Category interface
 	 * Ensuring proper handling of null values and consistent data types
 	 */
 	function transformCategoryData(categories: any[]): (Category & { parent_name?: string | undefined })[] {
-		if (categories.length > 0) {
-			console.log('Raw category data from server:', categories[0]);
-		}
 		
+		
+		// First pass: Create a map of category_id to category_name for parent lookups
+		const categoryIdToNameMap = new Map<string, string>();
+		for (const category of categories) {
+			const id = category.categoryId || category.category_id || '';
+			const name = category.categoryName || category.category_name || '';
+			if (id && name) {
+				categoryIdToNameMap.set(id, name);
+			}
+		}
+
+
+		// Second pass: Create the transformed categories with parent_name lookups
 		return categories.map(category => {
+			// Get parent_id from either camelCase or snake_case property
+			const parentId = category.parentId || category.parent_id || null;
+
+			// Get parent_name directly from the database result
+			// The SQL JOIN in +page.server.ts provides this
+			let parentName = category.parent_name;
+			
+			// If not available, look up in our map as a fallback
+			if ((!parentName || parentName === '') && parentId) {
+				// Use the map we built in the first pass for lookups
+				parentName = categoryIdToNameMap.get(parentId) || 'Unknown Parent';
+			}
+			// Clean up debug logs
+			
 			// Create properly typed Category object from the camelCase data
 			const transformedCategory: Category & { parent_name?: string | undefined } = {
 				category_id: category.categoryId || category.category_id || '',
 				category_name: category.categoryName || category.category_name || '',
 				category_description: category.categoryDescription || category.category_description || null,
 				category_path: category.categoryPath || category.category_path || '',
-				parent_id: category.parentId || category.parent_id || null,
+				parent_id: parentId,
 				is_public: Boolean(category.isPublic || category.is_public),
 				created_at: category.createdAt ? new Date(category.createdAt) : (category.created_at ? new Date(category.created_at) : new Date()), 
 				updated_at: category.updatedAt ? new Date(category.updatedAt) : (category.updated_at ? new Date(category.updated_at) : new Date()),
 				created_by: category.createdBy || category.created_by || '',
 				updated_by: category.updatedBy || category.updated_by || null,
-				is_deleted: Boolean(category.isDeleted || category.is_deleted) || false, // We know this is false because the server filters deleted categories
+				is_deleted: Boolean(category.isDeleted || category.is_deleted) || false,
 				deleted_at: category.deletedAt || category.deleted_at || null,
 				deleted_by: category.deletedBy || category.deleted_by || null,
-				parent_name: category.parentName || category.parent_name || undefined // Add parent_name from the join, ensure it's string or undefined
+				// Use the parent_name from direct database value or lookup
+				// This ensures we display the correct parent category name
+				parent_name: parentName || (parentId ? categoryIdToNameMap.get(parentId) : undefined)
 			};
 			return transformedCategory;
 		});
@@ -586,7 +609,7 @@
 			
 			// Apply the complete reset by assigning the entire object
 			$supplierForm = emptyForm;
-			console.log('RESET: New supplier form with EMPTY supplier_id:', $supplierForm.supplier_id);
+			
 			
 			// Force a DOM refresh to ensure the form is truly reset
 			setTimeout(() => {
@@ -624,7 +647,7 @@
 	
 	// Function to handle supplier deletion event
 	function handleSupplierDeleted(event: CustomEvent<{ supplierId: string }>) {
-		console.log('Supplier deleted:', event.detail.supplierId);
+		
 		refreshData();
 	}
 
@@ -632,7 +655,6 @@
 	function editManufacturer(event: CustomEvent<any>) {
 		// Get manufacturer data from event - handle different event formats
 		const manufacturer = event.detail.manufacturer || event.detail.item || event.detail;
-		console.log('Editing manufacturer - raw data:', manufacturer);
 		
 		// Store the original contact_info and custom_fields as they are
 		// This prevents double stringification which causes issues with input
@@ -656,7 +678,7 @@
 			updated_at: new Date()
 		};
 		
-		console.log('Form data set to:', $manufacturerForm);
+		
 		
 		// Scroll to the form
 		setTimeout(() => {
@@ -693,7 +715,7 @@
 	// Function to handle category edit event
 	function handleCategoryEdit(event: CustomEvent<{ category: Category }>) {
 		const categoryToEdit = event.detail.category;
-		console.log('Editing category:', categoryToEdit);
+		
 		
 		// Set edit mode and current category ID
 		editCategoryMode = true;
@@ -721,7 +743,7 @@
 	function updateFormData(event: CustomEvent<Record<string, any>>) {
 		// Update the part form data with the values from the PartForm component
 		if (event.detail) {
-			console.log('Updating part form data:', event.detail);
+			
 			// Update the reactive store
 			$partForm = {
 				...$partForm,
@@ -996,7 +1018,7 @@
 						}
 					}}
 					on:edit={(event) => {
-						console.log('Edit manufacturer event received:', event.detail);
+						
 						// Set edit mode and show form
 						editManufacturerMode = true;
 						showManufacturerForm = true;
@@ -1005,14 +1027,14 @@
 						editManufacturer(event);
 					}}
 					on:editManufacturer={(event) => {
-						console.log('Edit manufacturer event received (editManufacturer):', event.detail);
+						
 						// Set edit mode and show form
 						editManufacturerMode = true;
 						showManufacturerForm = true;
 						
 						// Get manufacturer data directly from the event
 						const manufacturer = event.detail.manufacturer || event.detail.item || event.detail;
-						console.log('Direct manufacturer data for edit:', manufacturer);
+					
 						
 						// Process the manufacturer data to ensure proper formats for all fields
 						// Following strict type safety with explicit handling for all field types
@@ -1040,30 +1062,29 @@
 							updated_by: user.user_id
 						};
 						
-						console.log('Processed manufacturer data for form:', processedData);
+						
 						
 						// Set form data in the store - this is the canonical source of truth
 						$manufacturerForm = processedData;
 						
 						// Important: Force component update by creating a timing gap
 						setTimeout(() => {
-							console.log('Form data after timeout:', $manufacturerForm);
+							
 						}, 50);
 					}}
 					on:formUpdate={(event) => {
 						// Update the store with the form data from the component
-						console.log('Form update from ManufacturersTab:', event.detail.data);
+						
 						$manufacturerForm = {
 							...$manufacturerForm,
 							...event.detail.data
 						};
 					}}
 					on:submit={(event) => {
-						console.log('Manufacturer form submitted via SuperForm with event:', event);
+						
 					}}
 					on:delete={(event) => {
-						// Handle manufacturer deletion
-						console.log('Manufacturer deleted:', event.detail);
+						
 						refreshData();
 					}}
 				/>
@@ -1132,7 +1153,7 @@
 						}
 					}}
 					on:edit={(event) => {
-						console.log('Edit supplier event received:', event.detail);
+						
 						// Set edit mode and show form
 						editSupplierMode = true;
 						showSupplierForm = true;
@@ -1141,7 +1162,7 @@
 						editSupplier(event);
 					}}
 					on:editSupplier={(event) => {
-						console.log('Edit supplier event received (editSupplier):', event.detail);
+						
 						// Set edit mode and show form
 						editSupplierMode = true;
 						showSupplierForm = true;
@@ -1150,19 +1171,18 @@
 						editSupplier(event);
 					}}
 					on:formUpdate={(event) => {
-						// Update the store with the form data from the component
-						console.log('Form update from SuppliersTab:', event.detail.data);
+						
 						$supplierForm = {
 							...$supplierForm,
 							...event.detail.data
 						};
 					}}
 					on:submit={(event) => {
-						console.log('Supplier form submitted via SuperForm with event:', event);
+					
 					}}
 					on:delete={(event) => {
 						// Handle supplier deletion
-						console.log('Supplier deleted:', event.detail);
+						
 						refreshData();
 					}}
 				/>
@@ -1174,94 +1194,74 @@
 		<!-- Categories Tab -->
 		{#if activeTab === 'categories'}
 			<div class="tab-content">
-				<h2>Your Categories</h2>
-				
-				<!-- No duplicate form here -->
-
-				<!-- User's categories list -->
-				{#if transformedCategories.length > 0}
-						<div class="user-items-grid">
-							{#each transformedCategories as category}
-								<CategoryComponent 
-									category={category} 
-									allowEdit={user.user_id === category.created_by} 
-									allowDelete={user.user_id === category.created_by}
-									on:deleted={handleCategoryDeleted}
-									on:edit={handleCategoryEdit}
-							/>
-						{/each}
-					</div>
-				{:else}
-					<p class="no-items">You haven't created any categories yet.</p>
-				{/if}
-				
-				<div class="action-buttons">
-					<button type="button" class="primary-btn" on:click={toggleCategoryForm}>
-						{showCategoryForm ? 'Hide Form' : 'Add New Category'}
-					</button>
+				<CategoriesTab
+					categories={transformedCategories} 
+					currentUserId={user.user_id}
+					showForm={showCategoryForm}
+					editMode={editCategoryMode}
+					formAction="?/category"
+					categoryForm={{
+						// Create a properly typed object that matches the expected schema
+						category_id: $categoryForm.category_id || '',
+						category_name: $categoryForm.category_name || '',
+						category_description: $categoryForm.category_description || null,
+						parent_id: $categoryForm.parent_id || null,
+						is_public: $categoryForm.is_public ?? true
+					}}
+					parentCategoryName={$categoryForm.parent_id ? 
+						transformedCategories.find((c) => c.category_id === $categoryForm.parent_id)?.category_name || null : null}
+					on:editCategory={(event: CustomEvent<{category?: any, item?: {originalEntity?: any}}>) => {
+						
+						// Set edit mode and show form
+						editCategoryMode = true;
+						showCategoryForm = true;
+						
+						// Get category data from event
+						const categoryToEdit = event.detail.category || event.detail.item?.originalEntity;
+						if (categoryToEdit) {
+							currentCategoryId = categoryToEdit.category_id;
+							// Update form data
+							$categoryForm = {
+								category_id: categoryToEdit.category_id || '',
+								category_name: categoryToEdit.category_name || '',
+								category_description: categoryToEdit.category_description || null,
+								parent_id: categoryToEdit.parent_id || null,
+								is_public: categoryToEdit.is_public ?? true
+							};
+						}
+					}}
+					on:formUpdate={(event: CustomEvent<{data: any}>) => {
+						// Update the store with the form data from the component
+						
+						$categoryForm = {
+							category_id: event.detail.data.category_id || '',
+							category_name: event.detail.data.category_name || '',
+							category_description: event.detail.data.category_description || null,
+							parent_id: event.detail.data.parent_id || null,
+							is_public: event.detail.data.is_public ?? true
+						};
+					}}
+					on:submit={(event: CustomEvent) => {
+						
+					}}
+					on:deleteCategory={(event: CustomEvent<{category_id: string}>) => {
+						// Handle category deletion
+						
+						refreshData();
+					}}
+					on:toggleForm={(event: CustomEvent) => {
+						showCategoryForm = !showCategoryForm;
+						if (!showCategoryForm) {
+							editCategoryMode = false;
+							currentCategoryId = null;
+							resetCategoryForm();
+						}
+					}}
+					on:refreshData={(event: CustomEvent) => refreshData()}
+				/>
+				<div class="view-all-link">
 					<a href="/category" class="secondary-btn">View All Categories</a>
 				</div>
-				
-				{#if showCategoryForm}
-					<div class="form-container">
-						<h2>{editCategoryMode ? 'Edit' : 'Create New'} Category</h2>
-						
-						{#if $categoryMessage}
-							<div class="form-message {$categoryMessage.includes('Failed') ? 'error' : 'success'}">
-								{$categoryMessage}
-							</div>
-						{/if}
-						
-						<div class="embedded-form">
-							<form method="POST" action="?/category" use:categoryEnhance enctype="application/x-www-form-urlencoded">
-								<!-- We need to conditionally add category_id only when in edit mode -->
-								{#if editCategoryMode}
-									<input type="hidden" name="category_id" value={currentCategoryId} />
-								{/if}
-								<div class="form-group">
-									<label for="category_name">Name*</label>
-									<input id="category_name" name="category_name" bind:value={$categoryForm.category_name} required />
-									{#if $categoryErrors.category_name}<span class="error">{$categoryErrors.category_name}</span>{/if}
-								</div>
-								
-								<div class="form-group">
-									<label for="parent_id">Parent Category</label>
-									<CategoryComboBox 
-										categories={categories} 
-										bind:value={$categoryForm.parent_id} 
-										name="parent_id" 
-										placeholder="Select parent category..." 
-									/>
-									{#if $categoryErrors.parent_id}<span class="error">{$categoryErrors.parent_id}</span>{/if}
-								</div>
-								
-								<div class="form-group">
-									<label for="category_description">Description</label>
-									<textarea id="category_description" name="category_description" bind:value={$categoryForm.category_description}></textarea>
-									{#if $categoryErrors.category_description}<span class="error">{$categoryErrors.category_description}</span>{/if}
-								</div>
-								
-								<div class="form-group checkbox-group">
-									<label>
-										<input type="checkbox" name="is_public" bind:checked={$categoryForm.is_public} /> 
-										Public
-									</label>
-									{#if $categoryErrors.is_public}<span class="error">{$categoryErrors.is_public}</span>{/if}
-								</div>
-								
-								<div class="form-button-group">
-									<button type="submit" class="primary-btn" disabled={$categorySubmitting}>
-										{$categorySubmitting ? (editCategoryMode ? 'Saving...' : 'Creating...') : (editCategoryMode ? 'Save Changes' : 'Create Category')}
-									</button>
-									<button type="button" class="secondary-btn" on:click={() => {
-									resetCategoryForm();
-									showCategoryForm = false;
-								}}>Cancel</button>
-								</div>
-							</form>
-						</div>
-					</div>
-				{/if}
 			</div>
 		{/if}
 	</section>
@@ -1557,12 +1557,6 @@
 		margin-top: 1.5rem;
 	}
 
-
-	.form-group {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
 
 
 

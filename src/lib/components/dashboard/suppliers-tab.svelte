@@ -52,7 +52,7 @@
     let currentSuppliers: SupplierData[] = [];
     $: if (suppliers !== currentSuppliers) {
         // Only update if the reference changed (reactivity trigger)
-        console.log('Suppliers list reference changed, updating local state');
+       
         currentSuppliers = suppliers;
     }
 
@@ -127,7 +127,7 @@
             // We'll use the default form validation
             // No custom validators needed
             onResult: ({ result }) => {
-                console.log('Supplier form submission result:', result);
+            
                 if (result.type === 'success') {
                     // Reset form state
                     showForm = false;
@@ -188,8 +188,7 @@
     
     // This is critical: Update the SuperForm data when a supplier is selected for editing
     $: if (useInternalForm && superFormInstance && editMode && selectedSupplier) {
-        console.log('Updating SuperForm data with selected supplier:', selectedSupplier);
-        
+      
         // TypeScript safety: Create a non-null reference to satisfy the type checker
         const supplier = selectedSupplier;
         
@@ -248,8 +247,7 @@
     
     // Handle edit event from supplier card
     function handleSupplierEdit(event: CustomEvent<{ supplier: SupplierData }>): void {
-        console.log('Received edit event in suppliers-tab:', event);
-        
+       
         // Extract supplier data from the event
         const supplierData = event.detail.supplier;
         
@@ -277,7 +275,7 @@
     
     // Handle supplier deleted from grid view - type-safe implementation
     async function handleSupplierDelete(event: CustomEvent<{ itemId: string }>) {
-        console.log('Delete request received for:', event.detail.itemId);
+       
         const supplierId = event.detail.itemId;
         
         try {
@@ -322,7 +320,7 @@
 
     // Handle form submission from supplierForm
     function handleFormSubmit(event: CustomEvent<{ success: boolean; formData: any }>) {
-        console.log('Form submitted:', event.detail);
+       
         
         if (event.detail.success) {
             const newSupplier = event.detail.formData;
@@ -341,7 +339,7 @@
                     suppliers[index] = { ...suppliers[index], ...newSupplier };
                     // Force reactivity with array reassignment
                     suppliers = [...suppliers];
-                    console.log('Updated supplier in list:', suppliers[index]);
+                    
                 }
             } else {
                 // This is a new supplier - add to the beginning of the list
@@ -352,7 +350,7 @@
                 
                 // Add to the beginning of the list to show it first
                 suppliers = [newSupplier, ...suppliers];
-                console.log('Added new supplier to list:', newSupplier);
+                
             }
             
             // Reset form state after successful submission
@@ -370,7 +368,7 @@
     function submitForm(): void {
         // Validate data before submission
         if (!capturedFormValues.supplier_name || capturedFormValues.supplier_name.trim() === '') {
-            console.error('Supplier name is required');
+           
             if (useInternalForm && superFormInstance && superFormInstance.errors) {
                 superFormInstance.errors.update(errors => {
                     return { ...errors, supplier_name: ['Supplier name is required'] };
@@ -406,8 +404,7 @@
                 };
             });
             
-            // Log the data being submitted
-            console.log('Submitting form data through internal SuperForm instance');
+          
             
             // Submit the form programmatically by triggering the form submission
             const formElement = document.getElementById(formId) as HTMLFormElement;
@@ -424,7 +421,7 @@
             }
         } else {
             // Using parent form - dispatch event to parent component
-            console.log('Dispatching submit event to parent with data:', capturedFormValues);
+          
             dispatch('submit', { formData: capturedFormValues });
         }
     }

@@ -38,7 +38,7 @@
     // Process the custom fields whenever the manufacturer data changes
     $: {
         if (manufacturer && manufacturer.custom_fields) {
-            console.log('Processing custom fields:', manufacturer.custom_fields);
+           
             
             try {
                 if (typeof manufacturer.custom_fields === 'string') {
@@ -46,7 +46,7 @@
                     try {
                         const parsed = JSON.parse(manufacturer.custom_fields);
                         processedCustomFields = parsed;
-                        console.log('Successfully parsed custom fields from string:', processedCustomFields);
+                       
                     } catch (e) {
                         console.error('Error parsing custom fields string:', e);
                         processedCustomFields = {};
@@ -64,14 +64,14 @@
                             processedCustomFields[key] = value;
                         }
                     }
-                    console.log('Processed object custom fields:', processedCustomFields);
+                   
                 }
             } catch (e) {
                 console.error('Error processing custom fields:', e);
                 processedCustomFields = {};
             }
             
-            console.log('Final processed custom fields:', processedCustomFields);
+            
         } else {
             processedCustomFields = {};
         }
@@ -95,20 +95,19 @@
     const deleteManufacturer = async () => {
         // First step is just to show the confirmation dialog
         if (showConfirmation && !showDeleteConfirm) {
-            console.log('Opening delete confirmation dialog for manufacturer:', manufacturer.manufacturer_id);
+           
             showDeleteConfirm = true;
             return;
         }
         
         // This is the actual delete action after confirmation
-        console.log('Delete confirmed for manufacturer:', manufacturer.manufacturer_id);
-        showDeleteConfirm = false;
+       
         
         error = null;
         isDeleting = true;
         
         try {
-            console.log('Attempting to delete manufacturer:', manufacturer.manufacturer_id);
+         
             
             // First abort any pending request
             if (abortController) abortController.abort();
@@ -123,7 +122,7 @@
             
             // If the API returns 404, try the alternative endpoint structure
             if (response.status === 404) {
-                console.log('API endpoint not found, trying alternative endpoint');
+               
                 abortController = new AbortController();
                 
                 // Try the manufacturer/[id] endpoint
@@ -134,13 +133,12 @@
                 });
                 
                 if (altResponse.ok) {
-                    console.log('Alternative endpoint successful');
+                  
                     return altResponse;
                 }
             }
             
-            // Log response for debugging
-            console.log('Delete response status:', response.status);
+            
             
             if (!response.ok) {
                 // Try to parse error response
@@ -164,7 +162,7 @@
             dispatch('deleted', { manufacturerId: manufacturer.manufacturer_id });
             
             success = 'Manufacturer deleted successfully';
-            console.log('Manufacturer deleted successfully:', manufacturer.manufacturer_id);
+         
             
             // Refresh the page to show the updated list
             setTimeout(() => {
@@ -186,8 +184,7 @@
 
     const startEdit = () => {
         // Prepare to edit this manufacturer
-        console.log('Starting edit for manufacturer:', manufacturer);
-        console.log('Custom fields before edit:', manufacturer.custom_fields);
+        
         
         // Use Svelte's dispatch to send the event to the parent component
         dispatch('edit', { 
@@ -199,7 +196,7 @@
             }
         });
         
-        console.log('Dispatched edit event with manufacturer data');
+        
     };
 
     const cancelEdit = () => {

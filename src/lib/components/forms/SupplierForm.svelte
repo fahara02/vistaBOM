@@ -50,7 +50,7 @@
     // Update form data when props change - use consistent field names from schema
     // FIXED: Always update when data changes, not just on first initialization
     $: if (data) {
-        console.log('Updating form with data:', data);
+        
         
         // Create a new object to ensure reactivity
         const newFormData = {
@@ -75,15 +75,12 @@
                 : data.contact_info || '{}'
         };
         
-        console.log('Using custom_fields:', newFormData.custom_fields);
-        console.log('Using custom_fields_json:', newFormData.custom_fields_json);
-        
-        console.log('Processed custom fields for form:', newFormData.custom_fields);
+    
         
         // Update the form data
         formData = newFormData;
         formInitialized = true;
-        console.log('Initialized form data:', formData);
+      
         
         // Initialize JSON field strings
         initializeJsonFields();
@@ -115,14 +112,13 @@
         
         // Always ensure we're working with a non-null value
         if (customFieldsSource === null || customFieldsSource === undefined) {
-            console.log('Custom fields source is null or undefined, using empty object');
+           
             customFieldsString = '{}';
             return;
         }
         
         try {
-            console.log('Initializing custom fields from:', customFieldsSource);
-            console.log('Type of custom fields source:', typeof customFieldsSource);
+           
             
             if (typeof customFieldsSource === 'string') {
                 // Try to parse it as JSON
@@ -131,11 +127,11 @@
                     if (customFieldsSource.trim().startsWith('{')) {
                         const parsed = JSON.parse(customFieldsSource);
                         customFieldsString = JSON.stringify(parsed, null, 2);
-                        console.log('Successfully parsed custom fields string');
+                        
                     } else if (customFieldsSource.trim() === '') {
                         // Empty string case
                         customFieldsString = '{}';
-                        console.log('Empty custom fields string, using empty object');
+                        
                     } else {
                         // Not JSON but not empty - use empty object and log warning
                         customFieldsString = '{}';
@@ -149,11 +145,11 @@
             } else if (typeof customFieldsSource === 'object') {
                 // Direct object - stringify it
                 customFieldsString = JSON.stringify(customFieldsSource, null, 2);
-                console.log('Custom fields provided as object, stringified for editing');
+              
             } else {
                 // Default to empty object for any other type
                 customFieldsString = '{}';
-                console.log('Unknown custom fields type, defaulting to empty object');
+                
             }
             customFieldsError = ''; // Clear any errors
         } catch (e) {
@@ -165,26 +161,25 @@
         // Initialize contact info from the data
         if (data.contact_info) {
             try {
-                console.log('Initializing contact info from:', data.contact_info);
-                console.log('Type of contact info:', typeof data.contact_info);
+                
                 
                 if (typeof data.contact_info === 'string') {
                     // First check if it's empty
                     if (data.contact_info.trim() === '') {
                         contactInfoString = '{}';
-                        console.log('Contact info is empty string, using empty object');
+                       
                     }
                     // Try to parse it as JSON if it looks like JSON
                     else if (data.contact_info.trim().startsWith('{')) {
                         try {
                             const parsed = JSON.parse(data.contact_info);
                             contactInfoString = JSON.stringify(parsed, null, 2);
-                            console.log('Successfully parsed contact info as JSON');
+                           
                         } catch (parseError) {
                             console.error('Failed to parse contact info JSON:', parseError);
                             // Use as plain text if not valid JSON
                             contactInfoString = JSON.stringify({ notes: data.contact_info }, null, 2);
-                            console.log('Contact info was not valid JSON, wrapped as notes');
+                            
                         }
                     }
                     // Check if it's in key-value format
@@ -243,7 +238,7 @@
 
     // Notify parent component of form changes
     function handleFormChange(): void {
-        console.log('Form data changed:', formData);
+       
         dispatch('formUpdate', { data: formData });
     }
 
@@ -369,9 +364,7 @@
                 custom_fields_json: customFieldsString // Ensure both versions are set
             };
             
-            // Log the data being prepared for submission
-            console.log('Prepared form data for submission:', formData);
-            console.log('Custom fields being submitted:', customFieldsString);
+          
             
             return true;
         } catch (e) {
@@ -402,7 +395,7 @@
                 throw new Error('Failed to prepare form data');
             }
             
-            console.log('Submitting form with data:', formData);
+           
             dispatch('submit', { success: true, formData });
         } catch (e) {
             formError = `Error submitting form: ${e instanceof Error ? e.message : 'Unknown error'}`;
@@ -436,7 +429,7 @@
                 throw new Error('Failed to prepare form data');
             }
             
-            console.log('Submitting form with data:', formData);
+            
             dispatch('submit', { success: true, formData });
         } catch (e) {
             formError = `Error submitting form: ${e instanceof Error ? e.message : 'Unknown error'}`;

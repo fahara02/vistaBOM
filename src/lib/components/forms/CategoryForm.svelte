@@ -1,24 +1,34 @@
 <!-- src/lib/components/forms/CategoryForm.svelte -->
 <script lang="ts">
-    import { superForm } from 'sveltekit-superforms/client';
+    // Import SuperForm dependencies
+    import { superForm, superValidate } from 'sveltekit-superforms/client';
+    import { zod } from 'sveltekit-superforms/adapters';
     import { categoryFormSchema } from '$lib/schema/schema';
     import { z } from 'zod';
     import CategoryComboBox from '$lib/components/forms/CategoryComboBox.svelte';
-    import { onMount } from 'svelte';
+    import { onMount, createEventDispatcher } from 'svelte';
     
+    // Import types from centralized type definitions
+    import type { Category } from '$lib/types/types';
+    
+    // Define extended Category type with parent_name field
+    interface CategoryWithParent extends Category {
+        parent_name?: string;
+    }
+
     // Define the type based on the schema for type safety
     type CategoryFormType = z.infer<typeof categoryFormSchema>;
 
     // Props - follow Props → Derived → Methods pattern
-    export let form: any = undefined; // Allow passing in a form directly
+    export let form; // The form data from the server - must be a SuperForm validated form
     export let currentUserId: string = ''; // User ID is used in form submission
     export let editMode: boolean = false;
     export let categoryId: string | null = null;
-    export let onComplete: () => void = () => {};
-    export let categories: any[] = []; // Categories can be passed directly or via store
-    export let submitting: boolean = false; // For use outside superForm
+    export let onComplete = () => {
+        dispatch('formComplete');
+    };
+    export let categories: CategoryWithParent[] = []; // Categories can be passed directly or via store
     export let hideButtons: boolean = false; // Option to hide buttons
-    export const isStandalone: boolean = false; // Whether this is used standalone or in dashboard
     
     import { derived, type Readable } from 'svelte/store';
     import type { Writable } from 'svelte/store';
@@ -28,7 +38,7 @@
         showCategoryForm?: Writable<boolean>,
         editCategoryMode?: Writable<boolean>,
         currentCategoryId?: Writable<string | null>,
-        allCategories?: Readable<any[]>
+        allCategories?: Readable<CategoryWithParent[]>
     } = {}; 
 
     // Top level store subscriptions to make Svelte happy
@@ -38,7 +48,7 @@
     $: currentCategoryIdStore = storeRefs.currentCategoryId;
     
     // Handle categories from different sources
-    let categoriesArray: any[] = [];
+    let categoriesArray: CategoryWithParent[] = [];
     
     // Update categoriesArray when store changes or direct categories change
     $: {
@@ -51,100 +61,135 @@
         }
     }
     
-    // Generate parent category options
+    // Generate parent category options that match the expected format
     $: parentOptions = categoriesArray.map(cat => ({
-        value: cat.category_id,
-        label: cat.category_name
+        category_id: cat.category_id,
+        category_name: cat.category_name,
+        parent_id: cat.parent_id,
+        parent_name: cat.parent_name
     }));
     
+    // Create event dispatcher for component communication
+    const dispatch = createEventDispatcher();
+    
     // Store for found category to edit
-    let categoryToEdit: any = null;
+    let categoryToEdit: CategoryWithParent | null = null;
+    
+    // Reference to the form element for direct DOM access if needed
+    let formElement: HTMLFormElement;
 
-    // Initialize superForm or use passed form
-    const { form: formStore, errors, enhance: superEnhance, submitting: superSubmitting, message } = superForm(
-        // We'll initialize with form or null and update in onMount
-        form !== undefined ? form : null as any,
-        {
-            dataType: 'json',
-            resetForm: true,
-            onResult: ({ result }) => {
-                console.log('CategoryForm submission result:', result);
-                if (result.type === 'success') {
-                    console.log('Category submission successful, refreshing data...');
-                    
-                    // First trigger the refresh to get fresh data
-                    onComplete();
-                    
-                    // Small delay before resetting UI state to ensure data has been refreshed
-                    setTimeout(() => {
-                        console.log('Resetting form state...');
-                        
-                        // Close the form and reset states
-                        if (showCategoryFormStore) {
-                            showCategoryFormStore.set(false);
-                        }
-                        
-                        if (editCategoryModeStore) {
-                            editCategoryModeStore.set(false);
-                        }
-                        
-                        if (currentCategoryIdStore) {
-                            currentCategoryIdStore.set(null);
-                        }
-                    }, 500);
-                }
-                // Let superForm handle the rest
-                return result;
+    // Use the categoryFormSchema for validation
+    
+    // Reference to store parent_id value for form submission separate from SuperForm's store
+    // This is crucial as it allows us to track the value independently of SuperForm's serialization
+    let parentIdValue: string | null = null;
+    
+    // Track parent ID changes to ensure it's available during form submission
+    function updateParentId(newParentId: string | null): void {
+        
+        parentIdValue = newParentId;
+    }
+   
+    
+    // Get the current form data value outside of callbacks for reference
+    let storedFormDataParentId: string | null = null;
+    
+    // Track formData changes to have a stable reference for submission
+    $: if ($formData) {
+        storedFormDataParentId = $formData.parent_id;
+    }
+    
+    // Initialize the form with proper SuperForm validation using Zod schema
+    const { form: formData, errors, enhance, submitting } = superForm(form, {
+        validators: zod(categoryFormSchema),
+        resetForm: true,
+        taintedMessage: null, // No warning on navigation
+        dataType: 'json', // Required for client-side only to handle the form submission with union types
+        onSubmit: ({ formData, cancel }) => {
+            // Add user ID for tracking who created/updated the category
+            if (currentUserId) {
+                formData.append('created_by', currentUserId);
+            }
+            
+            // For edit mode, ensure category_id is included
+            if (editMode && categoryId) {
+                formData.append('category_id', categoryId);
+            }
+            
+            
+
+            // Check both tracking systems - use stored value instead of $formData to avoid store subscriptions
+            const parentIdToSubmit = parentIdValue || storedFormDataParentId;
+            
+            
+            
+            
+            // This bypasses SuperForm's JSON serialization and ensures the value is submitted correctly
+            if (parentIdToSubmit) {
+                // Force the parent_id to be a direct form field
+                formData.set('parent_id', parentIdToSubmit);
+              
+            }
+        },
+        onResult: ({ result }) => {
+           
+            if (result.type === 'success') {
+                onComplete();
             }
         }
-    );
-    
-    // Use the correct enhance function
-    let enhance = superEnhance;
+    });
     
     // Initialize the form when component mounts
     onMount(() => {
-        if (form === undefined) { // Only do this if form wasn't passed in directly
-            // Import is inside onMount to prevent SSR issues
-            import('$app/stores').then(({ page }) => {
-                // Initialize the form with data from the page store
-                const pageStore = page;
-                // Use type assertion to access data property safely
-                const pageData = (pageStore as unknown as { data: any }).data;
+        // Initialize form with data from categories if in edit mode
+        if (editMode && categoryId) {
+            const editCategory = categoriesArray.find(cat => cat.category_id === categoryId);
+            if (editCategory) {
+                // Set values from found category
+                categoryToEdit = editCategory;
+                // Get parent_id from the category
+                const initialParentId = editCategory.parent_id || null;
                 
-                if (editMode && categoryId) {
-                    // Find the category to edit from the categoriesArray
-                    categoryToEdit = categoriesArray.find(cat => cat.category_id === categoryId);
-                    
-                    if (categoryToEdit) {
-                        // Initialize form with the category data
-                        $formStore = {
-                            category_id: categoryToEdit.category_id,
-                            category_name: categoryToEdit.category_name,
-                            category_description: categoryToEdit.category_description || '',
-                            parent_id: categoryToEdit.parent_id || undefined,
-                            is_public: categoryToEdit.is_public || false
-                        } as CategoryFormType;
-                    }
-                } else if (pageData?.categoryForm) {
-                    // Initialize with the default form data
-                    $formStore = pageData.categoryForm.data as CategoryFormType;
-                } else {
-                    // Initialize with empty values if no form data is available
-                    $formStore = {
-                        category_name: '',
-                        category_description: '',
-                        parent_id: undefined,
-                        is_public: true
-                    } as CategoryFormType;
-                }
-            });
+                // Update form data with type-safe values that match the schema
+                $formData = {
+                    category_name: editCategory.category_name,
+                    parent_id: initialParentId,
+                    category_description: editCategory.category_description || null,
+                    is_public: editCategory.is_public === undefined ? true : editCategory.is_public
+                };
+                
+                // Initialize tracking variables
+                updateParentId(initialParentId);
+                
+                
+            }
+        } else {
+            // Reset form for new category with default values that match the schema
+            $formData = {
+                category_name: '',
+                parent_id: null,
+                category_description: null,
+                is_public: true
+            };
+            
+            // Initialize tracking variables
+            updateParentId(null);
+            
+           
         }
     });
     
     // Methods
     function cancelForm() {
-        // Reset and close the form
+        // Reset form data
+        $formData = {
+            category_name: '',
+            parent_id: null,
+            category_description: null,
+            is_public: true
+        };
+        
+        // Reset stores if provided
         if (showCategoryFormStore) {
             showCategoryFormStore.set(false);
         }
@@ -157,12 +202,34 @@
             currentCategoryIdStore.set(null);
         }
         
-        onComplete();
+        // Dispatch event for parent component
+        dispatch('cancel');
+    }
+
+    // Handle category selection from the CategoryComboBox component
+    function handleParentChange(event: CustomEvent<{value: string | null, label?: string, source?: string}>) {
+        // Extract the selected parent ID from the event
+        const selectedParentId = event.detail.value;
+        
+       
+        
+        // Validate and normalize the parent_id value
+        // - Convert empty strings to null for the database
+        // - Keep valid UUIDs as-is
+        const validatedParentId = selectedParentId === '' ? null : selectedParentId;
+        
+        // CRITICAL FIX: Update all tracking systems to ensure form submission works
+        // 1. Update SuperForm's data store for validation and UI consistency
+        $formData.parent_id = validatedParentId;
+        
+        // 2. Update our separate tracking variable for form submission
+        updateParentId(validatedParentId);
+        
+    
     }
     
-    function handleParentChange(event: CustomEvent) {
-        $formStore.parent_id = event.detail.value;
-    }
+    // Using standard SuperForm handling for validation and submission
+    // This ensures we don't bypass any validation and follow the schema
 </script>
 
 <div class="form-container">
@@ -172,17 +239,12 @@
     
     <form
         method="POST"
-        action={editMode ? `?/editCategory&id=${categoryId}` : '?/createCategory'}
+        action="?/category"
         use:enhance
+        bind:this={formElement}
     >
-        <!-- Hidden fields -->
-        {#if editMode && categoryId}
-            <input type="hidden" name="category_id" bind:value={$formStore.category_id} />
-        {/if}
-        <!-- Include currentUserId as hidden field for form submission -->
-        {#if currentUserId}
-            <input type="hidden" name="created_by" value={currentUserId} />
-        {/if}
+        <!-- No hidden input needed - we're handling parent_id via SuperForm -->
+        <!-- No user ID shown in form for security reasons - it's added during submission -->
         
         <div class="form-field">
             <label for="category_name">
@@ -191,9 +253,10 @@
             <input
                 id="category_name"
                 name="category_name"
-                bind:value={$formStore.category_name}
-                required
+                bind:value={$formData.category_name}
                 class="enhanced-input"
+                placeholder="Enter category name"
+                required
             />
             {#if $errors.category_name}
                 <div class="field-error">{$errors.category_name}</div>
@@ -205,7 +268,9 @@
             <textarea
                 id="category_description"
                 name="category_description"
-                bind:value={$formStore.category_description}
+                bind:value={$formData.category_description}
+                placeholder="Enter category description"
+                rows="3"
                 class="enhanced-input form-textarea"
             ></textarea>
             {#if $errors.category_description}
@@ -217,10 +282,11 @@
             <label for="parent_id">Parent Category</label>
             <CategoryComboBox
                 name="parent_id"
-                categories={parentOptions}
-                value={$formStore.parent_id}
-                placeholder="Select a parent category (optional)"
+                on:categorySelected={handleParentChange}
                 on:change={handleParentChange}
+                categories={parentOptions}
+                value={$formData.parent_id || null}
+                placeholder="Select a parent category (optional)"
             />
             {#if $errors.parent_id}
                 <div class="field-error">{$errors.parent_id}</div>
@@ -232,7 +298,7 @@
                 type="checkbox"
                 id="is_public"
                 name="is_public"
-                bind:checked={$formStore.is_public}
+                bind:checked={$formData.is_public}
                 class="checkbox-input"
             />
             <label for="is_public" class="checkbox-label">
@@ -243,27 +309,18 @@
             {/if}
         </div>
         
-        {#if !hideButtons}
-            <div class="form-actions">
-                <button type="button" class="cancel-btn enhanced-btn" on:click={cancelForm}>
-                    Cancel
-                </button>
-                <button
-                    type="submit"
-                    class="submit-btn enhanced-btn"
-                    disabled={$superSubmitting || submitting}
-                >
-                    {$superSubmitting || submitting ? 'Saving...' : editMode ? 'Update Category' : 'Create Category'}
-                </button>
-            </div>
-        {/if}
+        <div class="form-actions">
+            {#if !hideButtons}
+                <button type="button" class="cancel-btn enhanced-btn" on:click={cancelForm}>Cancel</button>
+            {/if}
+            <button type="submit" class="submit-btn enhanced-btn" disabled={$submitting}>
+                {$submitting ? 'Submitting...' : (editMode ? 'Update' : 'Create') + ' Category'}
+            </button>
+        </div>
     </form>
     
-    {#if $message}
-        <div class="form-message" class:success={$message.type === 'success'} class:error={$message.type === 'error'}>
-            {$message.text}
-        </div>
-    {/if}
+    <!-- Success/error message would go here -->
+
 </div>
 
 <style>
@@ -331,14 +388,7 @@
         gap: 0.5rem;
     }
     
-    .checkbox-input {
-        width: 1rem;
-        height: 1rem;
-    }
-    
-    .checkbox-label {
-        margin-bottom: 0;
-    }
+   
     
     .field-error {
         color: hsl(var(--destructive));
@@ -405,23 +455,5 @@
         color: hsl(var(--destructive));
     }
     
-    .form-message {
-        margin-top: 1rem;
-        padding: 0.75rem;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-    }
-    
-    .success {
-        background-color: hsl(var(--success) / 0.2);
-        color: hsl(var(--success));
-        border: 1px solid hsl(var(--success));
-    }
-    
-    .error {
-        background-color: hsl(var(--destructive) / 0.2);
-        color: hsl(var(--destructive));
-        border: 1px solid hsl(var(--destructive));
-    }
+   
 </style>

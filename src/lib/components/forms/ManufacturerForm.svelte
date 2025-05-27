@@ -69,7 +69,7 @@
     // }
 // Enhanced reactive data handling with proper JSON field updates
 $: if (data) {
-    console.log('ManufacturerForm received data prop update:', data);
+   
     
     // Explicitly create a new object to trigger reactivity in Svelte
     formData = {
@@ -91,8 +91,7 @@ $: if (data) {
         ? data.contact_info
         : JSON.stringify(data.contact_info || {}, null, 2);
     
-    console.log('Updated customFieldsString:', customFieldsString);
-    console.log('Updated contactInfoString:', contactInfoString);
+
     
     formInitialized = true;
 }
@@ -112,14 +111,11 @@ $: if (data) {
 
     // Methods
     function initializeJsonFields(): void {
-        console.log('DEBUGGING INIT: Current data object received:', data);
-        console.log('DEBUGGING INIT: Current formData state:', formData);
-        
+      
         // Initialize custom fields from the data
         if (data.custom_fields) {
             try {
-                console.log('Initializing custom fields from:', data.custom_fields);
-                console.log('Type of custom_fields:', typeof data.custom_fields);
+               
                 
                 if (typeof data.custom_fields === 'string') {
                     // If it's already a string, try to validate and format it
@@ -128,7 +124,7 @@ $: if (data) {
                         const parsed = JSON.parse(data.custom_fields);
                         // Format it nicely for editing
                         customFieldsString = JSON.stringify(parsed, null, 2);
-                        console.log('Formatted custom fields string:', customFieldsString);
+                      
                     } catch (parseError) {
                         console.error('Error parsing custom fields JSON:', parseError);
                         // If it's not valid JSON, use empty object to prevent form errors
@@ -137,7 +133,7 @@ $: if (data) {
                 } else if (data.custom_fields && typeof data.custom_fields === 'object') {
                     // If it's an object, stringify it for the form
                     customFieldsString = JSON.stringify(data.custom_fields, null, 2);
-                    console.log('Converted object custom fields to string:', customFieldsString);
+                    
                 } else {
                     // Default to empty object
                     customFieldsString = '{}';
@@ -199,7 +195,7 @@ $: if (data) {
 
     // Notify parent component of form changes
     function handleFormChange(): void {
-        console.log('Form data changed:', formData);
+       
         dispatch('formUpdate', { data: formData });
     }
 
@@ -232,8 +228,7 @@ $: if (data) {
         const target = event.target as HTMLTextAreaElement;
         const value = target.value;
         
-        console.log(`Updating ${field} with value:`, value);
-        
+       
         if (field === 'custom_fields') {
             // First update the string value directly
             customFieldsString = value;
@@ -281,7 +276,7 @@ $: if (data) {
                                 }
                             }
                             
-                            console.log('Converted key-value pairs to object:', contactObj);
+                          
                             formData.contact_info = JSON.stringify(contactObj);
                             contactInfoError = '';
                             return true;
@@ -320,7 +315,7 @@ $: if (data) {
                 const parsed = JSON.parse(customFieldsString);
                 
                 // Log the parsed custom fields for debugging
-                console.log('Parsed custom fields:', parsed);
+               
                 
                 // Store the properly formatted JSON string - important for consistency
                 formData.custom_fields = JSON.stringify(parsed);
@@ -383,7 +378,7 @@ $: if (data) {
                 : JSON.stringify(formData.custom_fields || {})
         };
 
-        console.log('Submitting manufacturer form with data:', submissionData);
+    
         
         // Dispatch submit event with validated form data
         dispatch('submit', { success: true, formData: submissionData });

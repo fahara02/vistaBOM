@@ -181,26 +181,39 @@ export const load: PageServerLoad = async (event) => {
     // 10. Fetch user-created categories
     let userCategories: Category[] = [];
     try {
-        // Categories query with parent name included
+        // Get user categories with parent info included via JOIN
+        // FIX: Use explicit column aliases and casts to ensure parent_name is properly included
         userCategories = await sql`
             SELECT 
-                c.category_id AS "categoryId",
-                c.category_name AS "categoryName",
-                c.category_description AS "categoryDescription",
-                c.category_path AS "categoryPath",
-                c.parent_id AS "parentId",
-                p.category_name AS "parentName",
-                c.is_public AS "isPublic",
-                c.created_at AS "createdAt",
-                c.updated_at AS "updatedAt",
-                c.created_by AS "createdBy",
-                c.updated_by AS "updatedBy"
+                c.category_id,
+                c.category_name,
+                c.category_description,
+                c.category_path,
+                c.parent_id,
+                p.category_name::text AS parent_name, -- Explicit cast to text type
+                c.is_public,
+                c.created_at,
+                c.updated_at,
+                c.created_by,
+                c.updated_by
             FROM "Category" c
             LEFT JOIN "Category" p ON c.parent_id = p.category_id
             WHERE c.created_by = ${user.user_id}
             AND c.is_deleted = false
             ORDER BY c.category_name ASC
         `;
+        
+        // Log the first category to debug parent_name inclusion
+        if (userCategories.length > 0) {
+            // Type-safe way to access the SQL result properties
+            const firstCategory = userCategories[0] as any;
+            console.log('Debug - First category with parent info:', {
+                category_id: firstCategory.category_id,
+                category_name: firstCategory.category_name,
+                parent_id: firstCategory.parent_id,
+                parent_name: firstCategory.parent_name
+            });
+        }
     } catch (error) {
         console.error('Error fetching user categories:', error);
         userCategories = [];

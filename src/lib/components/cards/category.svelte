@@ -74,9 +74,7 @@
     let editHandledByParent = false;
     
     const startEdit = async () => {
-        // First check if we're in dashboard context by dispatching an edit event
-        // If the parent handles it, we don't need to show the inline edit form
-        console.log('Dispatching edit event for category:', category.category_id);
+       
         
         // Create a promise to track if the event was handled
         const eventPromise = new Promise<boolean>((resolve) => {
@@ -214,8 +212,7 @@
             return;
         }
         
-        // This is the actual delete action after confirmation
-        console.log('Delete confirmed for category:', category.category_id);
+       
         showDeleteConfirm = false;
         
         error = null;
@@ -235,9 +232,7 @@
                 signal: abortController.signal
             });
             
-            // Log response for debugging
-            console.log('Delete response status:', response.status);
-            
+           
             if (!response.ok) {
                 // Try to parse error response
                 let errorData: { message?: string } = {};
@@ -260,7 +255,7 @@
             dispatch('deleted', { categoryId: category.category_id });
             
             success = 'Category deleted successfully';
-            console.log('Category deleted successfully:', category.category_id);
+          
             
             // Need to trigger a refresh - both CategoryItem and we need this
             window.location.reload();
@@ -326,17 +321,11 @@
                 {/if}
                 
                 <div class="category-meta">
-                    {#if category.parent_id}
-                        <p class="parent">Parent Category: {category?.parent_name || category.parent_id}</p>
+                    <!-- Always show parent name when available, regardless of parent_id -->
+                    {#if category.parent_name}
+                        <p class="parent"><strong>Parent:</strong> {category.parent_name}</p>
                     {/if}
-                    <p class="public-status">Public: {category.is_public ? 'Yes' : 'No'}</p>
-                </div>
-                
-                <div class="meta">
-                    <small>Created: {new Date(category.created_at).toLocaleDateString()}</small>
-                    {#if category.updated_at}
-                        <small>Updated: {new Date(category.updated_at).toLocaleDateString()}</small>
-                    {/if}
+                    <p class="public-status"><strong>Public:</strong> {category.is_public ? 'Yes' : 'No'}</p>
                 </div>
             </div>
             
@@ -450,6 +439,16 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         color: hsl(var(--card-foreground));
         transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+    }
+    
+    /* Enhanced styling for parent category info */
+    .parent {
+        color: hsl(var(--primary));
+        font-weight: 500;
+        margin-bottom: 8px;
+        padding: 4px 0;
+        border-left: 3px solid hsl(var(--primary));
+        padding-left: 8px;
     }
 
     .alert {

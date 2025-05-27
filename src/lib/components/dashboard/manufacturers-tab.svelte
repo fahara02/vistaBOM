@@ -49,7 +49,7 @@
     let currentManufacturers: ManufacturerData[] = [];
     $: if (manufacturers !== currentManufacturers) {
         // Only update if the reference changed (reactivity trigger)
-        console.log('Manufacturers list reference changed, updating local state');
+       
         currentManufacturers = manufacturers;
     }
 
@@ -85,9 +85,7 @@
     // Track current form data for reactivity
     let currentFormData: Partial<ManufacturerFormSchema> = manufacturerForm;
 
-    // Add a debug watch for manufacturer form changes
-    $: console.log('ManufacturersTab received manufacturerForm prop:', manufacturerForm);
-
+   
     // Default values for internal form to avoid undefined errors
     const defaultFormValues: ManufacturerFormSchema = {
         manufacturer_id: '',
@@ -130,7 +128,7 @@
             // We'll use the default form validation
             // No custom validators needed
             onResult: ({ result }) => {
-                console.log('Manufacturer form submission result:', result);
+              
                 if (result.type === 'success') {
                     // Reset form state
                     showForm = false;
@@ -191,7 +189,6 @@
     
     // This is critical: Update the SuperForm data when a manufacturer is selected for editing
     $: if (useInternalForm && superFormInstance && editMode && selectedManufacturer) {
-        console.log('Updating SuperForm data with selected manufacturer:', selectedManufacturer);
         
         // TypeScript safety: Create a non-null reference to satisfy the type checker
         const manufacturer = selectedManufacturer;
@@ -227,15 +224,11 @@
         });
     }
     
-    // Direct binding with improved reactive handling
-    // We bypass currentFormData and directly use the manufacturerForm prop
-    // This ensures data flows correctly without intermediate transformations
-    
+  
     
     // Handle edit mode by directly reflecting the incoming data
     $: if (editMode && manufacturerForm && manufacturerForm.manufacturer_id) {
-        console.log('Edit mode active with manufacturer data:', manufacturerForm);
-        // Ensure we have all required fields for ManufacturerData type based on the schema
+        
         // The schema defines specific field requirements we need to follow
         const typedManufacturer: ManufacturerData = {
             manufacturer_id: manufacturerForm.manufacturer_id,
@@ -277,14 +270,12 @@
     
     // Handle edit event from manufacturer card
     function handleManufacturerEdit(event: CustomEvent<{ manufacturer: ManufacturerData }>): void {
-        console.log('Received edit event in manufacturers-tab:', event);
-        
+      
         // Extract manufacturer data from the event
         const manufacturerData = event.detail.manufacturer;
         selectedManufacturer = manufacturerData;
         
-        // Debug the incoming data
-        console.log('Original manufacturer data:', JSON.stringify(manufacturerData, null, 2));
+        
         
         // Update the form data with the selected manufacturer
         // CRITICAL: Ensure all fields are properly typed and JSON fields are correctly stringified
@@ -312,8 +303,7 @@
             updated_by: currentUserId
         };
         
-        // Debug the transformed data
-        console.log('Processed form data:', JSON.stringify(manufacturerForm, null, 2));
+      
         
         // Forward the edit event to the parent component with raw manufacturer data
         dispatch('editManufacturer', { manufacturer: manufacturerData });
@@ -328,11 +318,9 @@
         const manufacturer = event.detail.item as Manufacturer;
         selectedManufacturer = manufacturer;
         
-        // Debug the incoming grid data
-        console.log('Original grid manufacturer data:', JSON.stringify(manufacturer, null, 2));
-        
+       
         // Update the form data with the selected manufacturer
-        // CRITICAL: Ensure all fields are properly typed and JSON fields are correctly stringified
+        // Ensure all fields are properly typed and JSON fields are correctly stringified
         manufacturerForm = {
             manufacturer_id: manufacturer.manufacturer_id || '',
             manufacturer_name: manufacturer.manufacturer_name || '',
@@ -357,9 +345,7 @@
             updated_by: currentUserId
         };
         
-        // Debug the transformed data
-        console.log('Processed grid form data:', JSON.stringify(manufacturerForm, null, 2));
-        
+       
         // Forward to the parent component using the same format as card edit
         // This ensures proper data flow within the dashboard
         dispatch('editManufacturer', { manufacturer });
@@ -371,7 +357,7 @@
     
     // Handle manufacturer deleted from grid view - type-safe implementation
     async function handleManufacturerDelete(event: CustomEvent<{ itemId: string }>) {
-        console.log('Delete request received for:', event.detail.itemId);
+       
         const manufacturerId = event.detail.itemId;
         
         try {
@@ -386,7 +372,7 @@
                 }).toString()
             });
             
-            console.log('Delete response status:', response.status);
+          
             
             if (!response.ok) {
                 const errorText = await response.text();
@@ -435,7 +421,7 @@
                     manufacturers[index] = { ...manufacturers[index], ...newManufacturer };
                     // Force reactivity with array reassignment
                     manufacturers = [...manufacturers];
-                    console.log('Updated manufacturer in list:', manufacturers[index]);
+                   
                 }
             } else {
                 // This is a new manufacturer - add to the beginning of the list
@@ -446,7 +432,7 @@
                 
                 // Add to the beginning of the list to show it first
                 manufacturers = [newManufacturer, ...manufacturers];
-                console.log('Added new manufacturer to list:', newManufacturer);
+              
             }
             
             // Reset form state after successful submission
@@ -500,8 +486,7 @@
                 };
             });
             
-            // Log the data being submitted
-            console.log('Submitting form data through internal SuperForm instance');
+           
             
             // Submit the form programmatically by triggering the form submission
             const formElement = document.getElementById(formId) as HTMLFormElement;
@@ -518,7 +503,7 @@
             }
         } else {
             // Using parent form - dispatch event to parent component
-            console.log('Dispatching submit event to parent with data:', capturedFormValues);
+           
             dispatch('submit', { formData: capturedFormValues });
         }
     }

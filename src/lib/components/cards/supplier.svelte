@@ -37,7 +37,7 @@
     // Process the custom fields whenever the supplier data changes
     $: {
         if (supplier && supplier.custom_fields) {
-            console.log('Processing custom fields:', supplier.custom_fields);
+           
             
             try {
                 if (typeof supplier.custom_fields === 'string') {
@@ -45,7 +45,7 @@
                     try {
                         const parsed = JSON.parse(supplier.custom_fields);
                         processedCustomFields = parsed;
-                        console.log('Successfully parsed custom fields from string:', processedCustomFields);
+                       
                     } catch (e) {
                         console.error('Error parsing custom fields string:', e);
                         processedCustomFields = {};
@@ -63,14 +63,14 @@
                             processedCustomFields[key] = value;
                         }
                     }
-                    console.log('Processed object custom fields:', processedCustomFields);
+                   
                 }
             } catch (e) {
                 console.error('Error processing custom fields:', e);
                 processedCustomFields = {};
             }
             
-            console.log('Final processed custom fields:', processedCustomFields);
+          
         } else {
             processedCustomFields = {};
         }
@@ -93,20 +93,19 @@
     const deleteSupplier = async () => {
         // First step is just to show the confirmation dialog
         if (showConfirmation && !showDeleteConfirm) {
-            console.log('Opening delete confirmation dialog for supplier:', supplier.supplier_id);
+           
             showDeleteConfirm = true;
             return;
         }
         
-        // This is the actual delete action after confirmation
-        console.log('Delete confirmed for supplier:', supplier.supplier_id);
+      
         showDeleteConfirm = false;
         
         error = null;
         isDeleting = true;
         
         try {
-            console.log('Attempting to delete supplier:', supplier.supplier_id);
+           
             
             // First abort any pending request
             if (abortController) abortController.abort();
@@ -114,7 +113,7 @@
             
             // Make DELETE request to API endpoint
             const url = `/api/supplier/${supplier.supplier_id}`;
-            console.log('DELETE request to:', url);
+           
             
             // Attempt to delete the supplier
             let response = await fetch(url, {
@@ -127,11 +126,11 @@
             
             // Fallback for different endpoint format if first attempt fails
             if (!response.ok && response.status === 404) {
-                console.log('First endpoint not found, trying alternative...');
+             
                 
                 // Try alternative endpoint format
                 const altUrl = `/api/suppliers/${supplier.supplier_id}`;
-                console.log('Trying alternative endpoint:', altUrl);
+               
                 
                 const altResponse = await fetch(altUrl, {
                     method: 'DELETE',
@@ -142,13 +141,12 @@
                 });
                 
                 if (altResponse.ok) {
-                    console.log('Alternative endpoint successful');
+                   
                     return altResponse;
                 }
             }
             
-            // Log response for debugging
-            console.log('Delete response status:', response.status);
+          
             
             if (!response.ok) {
                 // Try to parse error response
@@ -167,7 +165,7 @@
                 throw new Error(errorText);
             }
             
-            console.log('Supplier deleted successfully');
+           
             success = 'Supplier deleted successfully';
             
             // Notify parent component about the deletion
@@ -180,7 +178,7 @@
         } catch (e) {
             if (e instanceof Error && e.name !== 'AbortError') {
                 error = e.message;
-                console.error('Delete supplier error:', e);
+               
             }
         } finally {
             isDeleting = false;
@@ -192,13 +190,10 @@
     });
 
     const startEdit = () => {
-        // Prepare to edit this supplier
-        console.log('Starting edit for supplier:', supplier);
-        console.log('Custom fields before edit:', supplier.custom_fields);
-        
+      
         // Ensure custom_fields is never null - use empty object if it is
         const customFields = supplier.custom_fields || {};
-        console.log('Custom fields after normalization:', customFields);
+       
         
         // Use Svelte's dispatch to send the event to the parent component
         dispatch('edit', { 
@@ -213,7 +208,7 @@
             }
         });
         
-        console.log('Dispatched edit event with supplier data');
+        
     };
 
     const cancelEdit = () => {

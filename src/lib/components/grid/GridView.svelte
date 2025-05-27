@@ -68,11 +68,7 @@
       };
     }
     
-    console.log('Preparing manufacturer data:', item);
-    // Log to debug if logo_url exists in the raw data
-    if ('logo_url' in item) {
-      console.log('Logo URL found in manufacturer:', item.logo_url);
-    }
+    
     
     // Process contact_info - the schema supports string | object | undefined
     let contactInfoValue: string | undefined = undefined;
@@ -184,7 +180,7 @@
   }
   
   // Functions for Category and Part with correct types
-  function prepareCategoryData(item: GridEntity): Category {
+  function prepareCategoryData(item: GridEntity): Category & { parent_name?: string } {
     // Check if the item is a Category
     if (!('category_id' in item) || !('category_name' in item)) {
       // Return placeholder data with correct type compatibility
@@ -192,6 +188,7 @@
         category_id: '',
         category_name: '',
         category_path: '',
+        parent_id: null, // Include parent_id in placeholder
         is_public: false,
         is_deleted: false,
         created_at: new Date(),
@@ -199,16 +196,34 @@
         created_by: '',
         deleted_at: undefined,
         deleted_by: undefined,
-        updated_by: undefined
-        // No parent_category_id in Category type
+        updated_by: undefined,
+        parent_name: undefined // Include parent_name in placeholder
       };
     }
     
-    // Create a properly typed object instead of using unsafe cast
-    const category: Category = {
+    // Get parent name either from item directly or by resolving it
+    let parentName: string | undefined = undefined;
+    
+    // First try to get parent_name directly from the item if it exists
+    if ('parent_name' in item && typeof item.parent_name === 'string') {
+      parentName = item.parent_name;
+    }
+    // If parent_name is not available but parent_id is, try to find the parent in items
+    else if ('parent_id' in item && item.parent_id && items && Array.isArray(items)) {
+      const parentItem = items.find(parent => 
+        'category_id' in parent && parent.category_id === item.parent_id
+      );
+      if (parentItem && 'category_name' in parentItem) {
+        parentName = parentItem.category_name;
+      }
+    }
+    
+    // Create a properly typed object with parent_name included
+    const category: Category & { parent_name?: string } = {
       category_id: item.category_id,
-      category_name: item.category_name,
+      category_name: item.category_name || 'Unnamed', // Fallback name if missing
       category_path: item.category_path,
+      parent_id: item.parent_id,
       is_public: item.is_public,
       is_deleted: item.is_deleted,
       created_at: item.created_at,
@@ -216,8 +231,8 @@
       created_by: item.created_by,
       deleted_at: item.deleted_at,
       deleted_by: item.deleted_by,
-      updated_by: item.updated_by
-      // No parent_category_id in Category type
+      updated_by: item.updated_by,
+      parent_name: parentName // Add the resolved parent name
     };
     
     return category;
@@ -535,7 +550,7 @@
       }
     }
     
-    console.log('Sending edit event with item:', itemCopy);
+    
     dispatch('edit', { item: itemCopy });
   }
 
@@ -543,6 +558,50 @@
   function handleItemDeleted(): void {
     expandedItemId = null;
     dispatch('refresh');
+  }
+
+  /**
+   * Function to get parent category name with proper fallbacks
+   * @param item The category item to find parent name for
+   * @returns The resolved parent name or a fallback string
+   */
+  function getParentCategoryName(item: GridEntity): string {
+    // Handle cases where we have the UUID instead of the name
+    if ('parent_id' in item && item.parent_id) {
+      // First try to find the parent category in our items array
+      if (items && Array.isArray(items)) {
+        for (const potentialParent of items) {
+          if ('category_id' in potentialParent && potentialParent.category_id === item.parent_id) {
+            return potentialParent.category_name;
+          }
+        }
+      }
+      
+      // Next check if we have a parent_name property that's usable
+      if ('parent_name' in item && item.parent_name && typeof item.parent_name === 'string') {
+        return item.parent_name;
+      }
+    }
+    
+    // Default fallback
+    return 'Unknown Category';
+  }
+
+  /**
+   * Function to handle item deletion (emits delete event)
+   * @param event The DOM event
+   * @param item The grid entity to delete
+   */
+  function handleDelete(event: Event, item: GridEntity) {
+    // Prevent event bubbling
+    event.stopPropagation();
+    
+    // Get the item ID using the getter function
+    const itemId = getItemId(item);
+    
+    // Dispatch delete event with the correct payload structure
+    // The GridViewEvents interface expects { itemId: string }
+    dispatch('delete', { itemId });
   }
 
   // Handle delete button click
@@ -589,7 +648,31 @@
 
   // Helper function to get item name based on entity type
   function getItemName(item: GridEntity): string {
-    return (item[fieldMappings.name as keyof GridEntity] as string) || 'Unnamed';
+    // For category type, we need special handling
+    if (entityType === 'category') {
+      // First try the direct property access
+      if ('category_name' in item && item.category_name) {
+        return item.category_name as string;
+      }
+      
+      // For debugging, log the category item
+      console.log('Grid category item:', item);
+      
+      // For categories, explicitly check for the category_name property
+      // even if fieldMappings doesn't work correctly
+      if (item && typeof item === 'object') {
+        // Check if the item has direct category_name property
+        const catName = (item as any).category_name;
+        if (catName) return catName;
+      }
+    }
+    
+    // For other entity types, consistently use the field mappings to get the name
+    const fieldName = fieldMappings.name as keyof GridEntity;
+    const itemName = item[fieldName];
+    
+    // Only show 'Unnamed' if all fallbacks have failed
+    return (itemName as string) || 'Unnamed';
   }
 
   // Helper function to get item description based on entity type
@@ -741,7 +824,21 @@
                       <Box size={16} />
                     {/if}
                   </span>
-                  <h3 class="card-title">{getItemName(item) || 'Unnamed ' + entityType}</h3>
+                  <h3 class="card-title">
+                    {#if entityType === 'category'}
+                      {#if item && typeof item === 'object' && 'category_name' in item && item.category_name}
+                        {item.category_name}
+                        <!-- Display parent category directly in the grid card -->
+                        {#if 'parent_id' in item && item.parent_id && 'parent_name' in item && item.parent_name}
+                          <span class="parent-cat-label">Parent: {item.parent_name}</span>
+                        {/if}
+                      {:else}
+                        Unnamed Category
+                      {/if}
+                    {:else}
+                      {getItemName(item) || 'Unnamed ' + entityType}
+                    {/if}
+                  </h3>
                 </div>
                 <div class="card-actions">
                   <button 
@@ -806,7 +903,7 @@
                   </div>
                 {/if}
                 
-                <!-- Logo display in bottom right corner for suppliers and manufacturers -->
+              
                 <!-- Logo display for suppliers and manufacturers -->
                 {#if entityType === 'supplier' && 'logo_url' in item && item.logo_url}
                   <div class="entity-logo-container">
@@ -852,16 +949,7 @@
           <div class="modal-content" transition:slide={{ duration: 200 }}>
             <div class="modal-header">
               <h2 class="modal-title">{getItemName(item)}</h2>
-              <button 
-                class="close-button" 
-                onclick={() => expandedItemId = null}
-                aria-label="Close details"
-              >
-                <span>×</span>
-              </button>
-            </div>
-            <div class="modal-header">
-              <h2 class="modal-title">{getItemName(item)}</h2>
+              <!-- Parent info now only shown in the card itself, not in modal header -->
               <button 
                 class="close-button" 
                 onclick={() => expandedItemId = null}
@@ -1100,6 +1188,8 @@
     border-bottom: 1px solid hsl(var(--border) / 0.5);
     overflow: hidden;
     background: hsl(var(--entity-color) / 0.05);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
   }
 
   .card-title-container {
@@ -1326,6 +1416,17 @@
     padding-left: 12px;
     line-height: 1.4;
   }
+  
+  .parent-cat-label {
+    display: block;
+    font-size: 0.8rem;
+    color: hsl(var(--primary));
+    margin-top: 0.25rem;
+    font-weight: 500;
+    padding: 2px 0;
+  }
+  
+  /* Parent category styling moved to individual card components */
   
   .modal-body {
     padding: 24px;
