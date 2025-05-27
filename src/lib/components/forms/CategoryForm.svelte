@@ -62,12 +62,19 @@
     }
     
     // Generate parent category options that match the expected format
-    $: parentOptions = categoriesArray.map(cat => ({
-        category_id: cat.category_id,
-        category_name: cat.category_name,
-        parent_id: cat.parent_id,
-        parent_name: cat.parent_name
-    }));
+    // Include all categories that are either public or created by the current user
+    $: parentOptions = categoriesArray
+        .filter(cat => {
+            // Always include public categories OR categories created by the current user
+            // This ensures all public categories are available as parent options
+            return cat.is_public === true || cat.created_by === currentUserId;
+        })
+        .map(cat => ({
+            category_id: cat.category_id,
+            category_name: cat.category_name,
+            parent_id: cat.parent_id,
+            parent_name: cat.parent_name
+        }));
     
     // Create event dispatcher for component communication
     const dispatch = createEventDispatcher();
@@ -120,10 +127,7 @@
 
             // Check both tracking systems - use stored value instead of $formData to avoid store subscriptions
             const parentIdToSubmit = parentIdValue || storedFormDataParentId;
-            
-            
-            
-            
+      
             // This bypasses SuperForm's JSON serialization and ensures the value is submitted correctly
             if (parentIdToSubmit) {
                 // Force the parent_id to be a direct form field
@@ -174,7 +178,6 @@
             
             // Initialize tracking variables
             updateParentId(null);
-            
            
         }
     });
@@ -214,11 +217,10 @@
        
         
         // Validate and normalize the parent_id value
-        // - Convert empty strings to null for the database
-        // - Keep valid UUIDs as-is
+       
         const validatedParentId = selectedParentId === '' ? null : selectedParentId;
         
-        // CRITICAL FIX: Update all tracking systems to ensure form submission works
+       
         // 1. Update SuperForm's data store for validation and UI consistency
         $formData.parent_id = validatedParentId;
         
@@ -243,8 +245,7 @@
         use:enhance
         bind:this={formElement}
     >
-        <!-- No hidden input needed - we're handling parent_id via SuperForm -->
-        <!-- No user ID shown in form for security reasons - it's added during submission -->
+       
         
         <div class="form-field">
             <label for="category_name">
@@ -319,7 +320,7 @@
         </div>
     </form>
     
-    <!-- Success/error message would go here -->
+
 
 </div>
 

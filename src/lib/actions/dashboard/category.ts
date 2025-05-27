@@ -286,6 +286,30 @@ export async function categoryAction(event: RequestEvent) {
                     if (parentCheck.length === 0) {
                         return message(form, 'Parent category not found', { status: 400 });
                     }
+                    
+                    // Check if a category with the same name already exists under this parent
+                    const duplicateCheck = await sql`
+                        SELECT category_id FROM "Category"
+                        WHERE parent_id = ${parentId}
+                        AND category_name = ${categoryName}
+                        AND is_deleted = false
+                    `;
+                    
+                    if (duplicateCheck.length > 0) {
+                        return message(form, 'A category with this name already exists under the selected parent', { status: 400 });
+                    }
+                } else {
+                    // For root categories (null parent_id), check for unique name at root level
+                    const rootDuplicateCheck = await sql`
+                        SELECT category_id FROM "Category"
+                        WHERE parent_id IS NULL
+                        AND category_name = ${categoryName}
+                        AND is_deleted = false
+                    `;
+                    
+                    if (rootDuplicateCheck.length > 0) {
+                        return message(form, 'A root category with this name already exists', { status: 400 });
+                    }
                 }
                 
                 // Use the sanitizeLtreeLabel function for consistent path formatting

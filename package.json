@@ -18,6 +18,8 @@
 		"db:start": "podman compose up",
 		"db:stop": "podman-compose down",
 		"db:init": "node scripts/init-db-porsager.js",
+		"db:fix-duplicates": "node scripts/fix-duplicate-categories.js",
+		"db:update": "node scripts/update-category-constraints.js",
 		"storybook": "storybook dev -p 6006",
 		"build-storybook": "storybook build"
 	},

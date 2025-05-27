@@ -90,9 +90,7 @@
   // Display the selected category name or placeholder
   $: selectedLabel = options.find((opt) => opt.value === value)?.label ?? placeholder;
   
-  // We want to refocus the trigger button when the user selects
-  // an item from the list so users can continue navigating the
-  // rest of the form with the keyboard.
+
   function closeAndFocusTrigger(triggerId: string) {
     open = false;
     tick().then(() => {
@@ -133,19 +131,15 @@
                 // Store the selected value
                 value = option.value;
                 
-                // CRITICAL FIX: Make sure the parent_id field is set correctly in the SuperForm
-                // Instead of complex event handling, use a direct form element update
-                // Find the hidden input and update its value directly
                 const hiddenInput = document.querySelector(`input[name="${name}"]`);
                 if (hiddenInput) {
                   (hiddenInput as HTMLInputElement).value = option.value;
                   
                   // Also dispatch an input event to ensure the form recognizes the change
                   hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
-                  console.log(`Updated hidden input for ${name} with value:`, option.value);
+                
                 }
                 
-                // CRITICAL FIX: Directly dispatch a properly formatted event to the parent component
                 // We use the Svelte event dispatcher which is more reliable than DOM events
                 dispatch('categorySelected', {
                   value: option.value,
@@ -160,8 +154,7 @@
                   source: 'CategoryComboBox'
                 });
                 
-                // Log the dispatched event for debugging
-                console.log('CategoryComboBox dispatched events with value:', option.value);
+             
                 
                 closeAndFocusTrigger(ids.trigger);
               }}
@@ -181,8 +174,7 @@
     </Popover.Content>
   </Popover.Root>
   
-  <!-- Hidden input to work with standard form submission -->
-  <!-- Critical fix for SuperForm serialization: Keep actual value including UUIDs intact -->
+ 
   <input 
     type="hidden" 
     id="parent-id-{name}"

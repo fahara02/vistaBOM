@@ -92,7 +92,10 @@ CREATE TABLE IF NOT EXISTS "Category" (
     is_deleted BOOLEAN DEFAULT FALSE NOT NULL,
     deleted_at TIMESTAMPTZ,
     deleted_by UUID REFERENCES "User"(user_id),
-    UNIQUE (parent_id, category_name),
+    -- Standard UNIQUE constraint doesn't handle NULL values properly for parent_id
+    -- Using two separate constraints to cover both cases
+    CONSTRAINT unique_category_with_parent UNIQUE (parent_id, category_name),
+    CONSTRAINT unique_root_category UNIQUE (category_name) WHERE parent_id IS NULL,
     CONSTRAINT chk_category_self_parent CHECK (category_id <> parent_id)
 );
 
@@ -308,7 +311,7 @@ CREATE TABLE IF NOT EXISTS "ManufacturerPart" (
     updated_by UUID REFERENCES "User"(user_id),
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     UNIQUE (manufacturer_id, manufacturer_part_number),
-    UNIQUE (part_version_id, manufacturer_id) -- Prevent duplicate manufacturers for same part version
+    UNIQUE (part_version_id, manufacturer_id) 
 );
 
 -- Represents a company that sells parts

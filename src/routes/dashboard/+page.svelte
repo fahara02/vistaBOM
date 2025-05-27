@@ -173,8 +173,14 @@
 	// Create a reactive binding for the manufacturer form data to directly pass to the component
 	$: manufacturerFormData = $manufacturerForm;
 	
-	// Create a reactive binding for the manufacturer form data to directly pass to the component
+	// Create a reactive binding for user categories (used for display in grid)
 	$: transformedCategories = transformCategoryData(data?.userCategories || []);
+	
+	// Also transform all categories (including public ones) for parent selection
+	$: allCategoriesTransformed = transformCategoryData(data?.categories || []);
+	
+	// Store all categories for use in stores
+	$: allCategories = allCategoriesTransformed;
 
 	// Reference to form element
 	let partFormElement: HTMLFormElement;
@@ -1195,11 +1201,11 @@
 		{#if activeTab === 'categories'}
 			<div class="tab-content">
 				<CategoriesTab
-					categories={transformedCategories} 
+					categories={transformedCategories}
+					allCategories={allCategoriesTransformed}
 					currentUserId={user.user_id}
 					showForm={showCategoryForm}
 					editMode={editCategoryMode}
-					formAction="?/category"
 					categoryForm={{
 						// Create a properly typed object that matches the expected schema
 						category_id: $categoryForm.category_id || '',

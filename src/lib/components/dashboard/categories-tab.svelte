@@ -45,6 +45,8 @@
     
     // Props
     export let categories: CategoryWithParent[] = [];
+    // All categories (including public ones from other users) for parent selection
+    export let allCategories: CategoryWithParent[] = [];
     export let currentUserId: string;
     export let showForm: boolean = false;
     export let editMode: boolean = false;
@@ -72,8 +74,8 @@
     export let parentCategoryName: string | null = null;
     export let categoryErrors: Record<string, string | string[]> = {};
 
-    // Form action for submission
-    export let formAction: string = '';
+    // Form action for submission (defined as const since it's only for reference)
+    export const formAction = '?/category';
     
     // Local state
     let selectedCategory: CategoryWithParent | null = null;
@@ -146,8 +148,10 @@
         dispatch('refreshData');
     }
     
-    async function handleCategoryDeleted(event: CustomEvent<{itemId: string}>): Promise<void> {
-        const categoryId = event.detail.itemId;
+    // Handles category deletion from both grid view (itemId) and category card (categoryId)
+    async function handleCategoryDeleted(event: CustomEvent<{itemId?: string; categoryId?: string}>): Promise<void> {
+        // Get the ID from either itemId (GridView) or categoryId (CategoryCard)
+        const categoryId = event.detail.itemId || event.detail.categoryId;
         if (!categoryId) return;
         
         try {
@@ -431,7 +435,7 @@
                 currentUserId={currentUserId}
                 editMode={editMode}
                 categoryId={editMode ? selectedCategory?.category_id || null : null}
-                categories={categories}
+                categories={allCategories}
                 onComplete={() => {
                     // Reset form state and refresh data
                     showForm = false;
