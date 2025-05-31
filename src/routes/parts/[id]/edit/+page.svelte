@@ -119,23 +119,24 @@
 	<h1>Edit Part - {data.currentVersion?.part_name}</h1>
 	<!-- Pass all relationship data explicitly to ensure it's available for display -->
 	<PartForm 
-		form={form} 
-		enhance={enhance} 
-		errors={errors} 
-		partData={data.part as any} 
-		versionData={{
-			...data.currentVersion, 
-			// Handle all JSON fields with proper typing
-			dimensions: typeof data.currentVersion?.dimensions === 'string' 
-				? JSON.parse(data.currentVersion.dimensions as string) 
-				: data.currentVersion?.dimensions,
-			properties: {},
-			technical_specifications: {}, 
-			electrical_properties: {},
-			mechanical_properties: {},
-			thermal_properties: {},
-			material_composition: {},
-			environmental_data: {}
+		data={{ 
+			form: $form, 
+			errors: $errors,
+			partData: data.part,
+			versionData: {
+				...data.currentVersion, 
+				// Handle all JSON fields with proper typing
+				dimensions: typeof data.currentVersion?.dimensions === 'string' 
+					? JSON.parse(data.currentVersion.dimensions as string) 
+					: data.currentVersion?.dimensions,
+				properties: {},
+				technical_specifications: {}, 
+				electrical_properties: {},
+				mechanical_properties: {},
+				thermal_properties: {},
+				material_composition: {},
+				environmental_data: {}
+			}
 		}} 
 		isEditMode={true} 
 		manufacturers={manufacturers.map((m: Manufacturer) => ({
@@ -146,13 +147,6 @@
 		})) as any} 
 		categories={categories as any}
 		selectedCategoryIds={currentVersionAny?.category_links?.map((cat: any) => cat.category_id) || []}
-		selectedManufacturerParts={currentVersionAny?.manufacturer_parts?.map((mp: any) => ({
-			id: mp.id,
-			manufacturer_id: mp.manufacturerId,
-			manufacturer_part_number: mp.partNumber,
-			manufacturer_name: manufacturers.find((m: any) => m.id === mp.manufacturerId)?.name || 'Unknown',
-			is_recommended: true
-		})) || []}
 		serverFormData={data.form} 
 	/>
 </div>

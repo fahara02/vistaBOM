@@ -6,27 +6,8 @@
 
 import sql from "@/server/db";
 import { PART_ERRORS } from "./partErrors";
+import type { PartRevision } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartRevision table tracking changes to parts
- */
-interface PartRevision {
-    part_revision_id: string;
-    part_version_id: string;
-    revision_number: string;
-    revision_date: Date;
-    revised_by: string;
-    change_type: string; // e.g., 'INITIAL', 'MINOR', 'MAJOR', 'OBSOLETE'
-    change_description: string;
-    change_justification?: string | null;
-    affected_fields?: string[] | null; 
-    previous_values?: Record<string, any> | null;
-    new_values?: Record<string, any> | null;
-    approval_status: string; // e.g., 'PENDING', 'APPROVED', 'REJECTED'
-    approved_by?: string | null;
-    approved_at?: Date | null;
-    comments?: string | null;
-}
 
 /**
  * Converts a database row to a PartRevision object

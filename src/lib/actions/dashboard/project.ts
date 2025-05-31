@@ -56,10 +56,8 @@ export async function projectAction(event: RequestEvent) {
             )
         `;
         
-        return message(form, 'Project created successfully', {
-            status: 201,
-            data: { projectId }
-        });
+        // Success messages don't support status codes or data property
+        return message(form, `Project created successfully with ID: ${projectId}`);
     } catch (error) {
         console.error('Error creating project:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

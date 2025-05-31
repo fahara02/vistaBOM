@@ -7,22 +7,8 @@
 import sql from "@/server/db";
 import { PART_ERRORS } from "./partErrors";
 import { sanitizeSqlString } from "@/utils/util";
+import type { PartAttachment } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartAttachment table representing files attached to parts
- */
-export interface PartAttachment {
-    part_attachment_id: string;
-    part_version_id: string;
-    file_name: string;
-    file_size_bytes: number;
-    file_type: string;
-    file_path: string;
-    description?: string | null;
-    upload_date: Date;
-    uploaded_by: string;
-    is_primary: boolean;
-}
 
 /**
  * Converts a database row to a PartAttachment object

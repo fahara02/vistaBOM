@@ -282,31 +282,9 @@
 		color: hsl(var(--nav-hover-foreground));
 	}
 	
-	/* Dashboard link styling */
-	.dashboard-link {
-		font-weight: 600 !important;
-		color: #1e40af !important; /* Dark blue visible in light mode */
-		background-color: transparent;
-		border-color: #1e40af !important;
-		border-width: 1px;
-		border-style: solid;
-	}
 	
-	:global(.dark) .dashboard-link {
-		color: #60a5fa !important; /* Light blue visible in dark mode */
-		background-color: transparent;
-		border-color: #60a5fa !important;
-	}
 	
-	.dashboard-link:hover {
-		background-color: hsl(var(--accent) / 0.1) !important;
-		border-color: hsl(var(--accent) / 0.3) !important;
-	}
-	
-	:global(.dark) .dashboard-link:hover {
-		background-color: hsl(var(--accent) / 0.1) !important;
-		border-color: hsl(var(--accent) / 0.3) !important;
-	}
+
 	
 	/* Actions section styling */
 	.actions-section {

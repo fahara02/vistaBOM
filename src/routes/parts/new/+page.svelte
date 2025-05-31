@@ -39,8 +39,7 @@
   <h1>Create New Part</h1>
   
   <PartForm
-    {form}
-    {errors}
+    data={{ form: $form, errors: $errors }}
     {enhance}
     manufacturers={clientManufacturers}
     categories={data.categories || []}

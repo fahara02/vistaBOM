@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Import type definitions
-	import type { Category } from '$lib/types/schemaTypes';
+	import type { Category, UnifiedPart, PartVersion, PartWithCurrentVersion } from '$lib/types/schemaTypes';
+	import { DimensionUnitEnum, WeightUnitEnum, PackageTypeEnum, MountingTypeEnum, TemperatureUnitEnum } from '$lib/types/enums';
 	import type { PageData } from './$types';
 
 	// Import components and utilities
@@ -12,20 +13,52 @@
 	import CategoriesTab from '$lib/components/dashboard/categories-tab.svelte';
 	import ManufacturersTab from '$lib/components/dashboard/manufacturers-tab.svelte';
 	import SuppliersTab from '$lib/components/dashboard/suppliers-tab.svelte';
+	import PartsTab from '$lib/components/dashboard/parts-tab.svelte';
 	import { categoryFormSchema } from '$lib/schema/schema';
 	import { z } from 'zod';
-	import { superForm, type SuperForm } from 'sveltekit-superforms/client';
+	import { superForm } from 'sveltekit-superforms/client';
+	import type { SuperForm, SuperValidated } from 'sveltekit-superforms';
 	import { enhance } from '$app/forms';
 	import { LifecycleStatusEnum, PartStatusEnum } from '$lib/types/enums';
+    // Import form types and schema types
+	import type { SupplierFormData, ManufacturerFormData, DashboardManufacturer, DashboardSupplier } from '$lib/types/formTypes';
+	import type { PartFormData } from '$lib/types/schemaTypes';
+	// Import part schema for form validation
+	import { unifiedPartSchema } from '$lib/schema/unifiedPartSchema';
+	import type { JsonValue, Manufacturer, Supplier } from '$lib/types/types';
+	import { adaptManufacturer } from '$lib/types/componentTypes';
+	// Safe enum parser that doesn't use banned 'any' or 'unknown' types
+	// It converts a string to the appropriate enum type if valid, otherwise returns undefined
+	function safeParseEnum<T>(value: string | undefined, enumType: Record<string, string>): T | undefined {
+		if (!value) return undefined;
+		
+		// Check if the value exists in the enum
+		const enumValues = Object.values(enumType);
+		if (enumValues.includes(value)) {
+			return value as unknown as T;
+		}
+		
+		return undefined;
+	}
+
+	// Debug function to log dimensions data from an object
+	function logDimensionFields(obj: any, label: string): void {
+		const dimensions = obj.dimensions || {};
+		console.log(`${label} dimensions:`, {
+			dimensions,
+			dimensions_unit: obj.dimensions_unit,
+			// Extract individual dimensions if they exist in the complex object
+			height: dimensions.height,
+			width: dimensions.width,
+			length: dimensions.length,
+		
+		});
+	}
 
 	// Type definitions for form data
 	type CategoryFormType = z.infer<typeof categoryFormSchema>;
 	
-	// Import form types and schema types
-	import type { SupplierFormData, ManufacturerFormData, DashboardManufacturer, DashboardSupplier } from '$lib/types/formTypes';
-	import type { JsonValue, Manufacturer, Supplier } from '$lib/types/types';
-
-
+	
 
 	export let data: PageData;
 	const user = data.user!;
@@ -41,7 +74,7 @@
 	// Extract projects data from page data
 	const projects = data?.projects || [];
 	// Define typed user items - use proper types instead of any
-	let userParts = data?.userParts || [];
+	let userParts: UnifiedPart[] = data?.userParts || [];
 	
 	/**
 	 * Transform manufacturer data from server format (with snake_case property names)
@@ -173,6 +206,53 @@
 	// Create a reactive binding for the manufacturer form data to directly pass to the component
 	$: manufacturerFormData = $manufacturerForm;
 	
+	// Transform category data function
+	function transformCategoryData(categories: any[]): Category[] {
+		// First pass: Create a map of category_id to category_name for parent lookups
+		const categoryIdToNameMap = new Map<string, string>();
+		for (const category of categories) {
+			const id = category.categoryId || category.category_id || '';
+			const name = category.categoryName || category.category_name || '';
+			if (id && name) {
+				categoryIdToNameMap.set(id, name);
+			}
+		}
+
+		// Second pass: Create the transformed categories with parent_name lookups
+		return categories.map(category => {
+			// Get parent_id from either camelCase or snake_case property
+			const parentId = category.parentId || category.parent_id || null;
+
+			// Get parent_name directly from the database result
+			// The SQL JOIN in +page.server.ts provides this
+			let parentName = category.parent_name;
+			
+			// If not available, look up in our map as a fallback
+			if ((!parentName || parentName === '') && parentId) {
+				// Use the map we built in the first pass for lookups
+				parentName = categoryIdToNameMap.get(parentId) || 'Unknown Parent';
+			}
+			
+			// Create properly typed Category object from the camelCase data
+			const transformedCategory: Category = {
+				category_id: category.categoryId || category.category_id || '',
+				category_name: category.categoryName || category.category_name || '',
+				category_description: category.categoryDescription || category.category_description || '',
+				category_path: category.categoryPath || category.category_path || '',
+				parent_id: parentId,
+				is_public: typeof category.is_public === 'boolean' ? category.is_public : false,
+				created_at: category.createdAt ? new Date(category.createdAt) : (category.created_at ? new Date(category.created_at) : new Date()), 
+				updated_at: category.updatedAt ? new Date(category.updatedAt) : (category.updated_at ? new Date(category.updated_at) : new Date()),
+				created_by: category.createdBy || category.created_by || '',
+				updated_by: category.updatedBy || category.updated_by || null,
+				is_deleted: Boolean(category.isDeleted || category.is_deleted) || false,
+				deleted_at: category.deletedAt || category.deleted_at || null,
+				deleted_by: category.deletedBy || category.deleted_by || null,
+			};
+			return transformedCategory;
+		});
+	}
+
 	// Create a reactive binding for user categories (used for display in grid)
 	$: transformedCategories = transformCategoryData(data?.userCategories || []);
 	
@@ -186,7 +266,7 @@
 	let partFormElement: HTMLFormElement;
 	
 	// Initialize forms using superForm
-	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm(data.forms?.category, {
+	const { form: categoryForm, errors: categoryErrors, enhance: categoryEnhance, submitting: categorySubmitting, message: categoryMessage } = superForm<z.infer<typeof categoryFormSchema>>(data.forms?.category, {
 		dataType: 'json',
 		onResult: ({ result }) => {
 			if (result.type === 'success') {
@@ -199,9 +279,31 @@
 		}
 	});
 	
-	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = superForm(data.forms?.part, {
-		dataType: 'json'
+	// Store the complete SuperForm result so we can access its full interface
+	const partSuperForm = superForm(data.forms?.part, {
+		dataType: 'json',
+		resetForm: true,
+		onResult: ({ result }) => {
+			if (result.type === 'success') {
+				// Close the form and reset edit mode
+				showPartForm = false;
+				editPartMode = false;
+				currentPartId = null;
+				
+				// Refresh the data to show the new/updated part
+				refreshData();
+			}
+			return result;
+		}
 	});
+	
+	// Destructure for convenience in the rest of the code
+	const { form: partForm, errors: partErrors, enhance: partEnhance, submitting: partSubmitting, message: partMessage } = partSuperForm;
+	
+	// Create a reference to the complete SuperForm instance to pass to the PartsTab component
+	// Pass the SuperForm instance directly to the PartsTab component
+	// The typing issue needs to be fixed in a more precise way
+	const partFormInstance = partSuperForm;
 	
 	const { form: manufacturerForm, errors: manufacturerErrors, enhance: manufacturerEnhance, submitting: manufacturerSubmitting, message: manufacturerMessage } = superForm(data.forms?.manufacturer || {
 			manufacturer_id: '',
@@ -210,7 +312,7 @@
 			website_url: '',
 			logo_url: '',
 			contact_info: '{}',
-			custom_fields: '{}',
+			custom_fields: {},
 			created_by: user.user_id,
 			updated_by: user.user_id
 		}, {
@@ -328,6 +430,9 @@
 		return JSON.stringify({ value: String(value) });
 	}
 	
+	// Create a variable to hold the complete SuperForm instance reference 
+	// This is needed to pass to the PartsTab component
+
 	const { form: supplierForm, errors: supplierErrors, enhance: supplierEnhance, submitting: supplierSubmitting, message: supplierMessage } = superForm(data.forms?.supplier, {
 		dataType: 'json',
 		resetForm: true,
@@ -434,7 +539,7 @@
 			website_url: '',
 			logo_url: '',
 			contact_info: '{}',
-			custom_fields: '{}',
+			custom_fields: {},
 			created_by: user.user_id,
 			updated_by: user.user_id,
 			// Required timestamp fields
@@ -475,16 +580,174 @@
 	let showCategoryForm = false;
 	let showSupplierForm = false;
 
-// Function was moved to line ~550
+	// Part edit mode tracking
+	let editPartMode = false;
+	let currentPartId: string | null = null;
 
-	
+	// Function to handle editing a part with proper typing based on the schema
+	function editPart(event: CustomEvent<{part: UnifiedPart}>) {
+		// Get UnifiedPart data from event
+		const eventDetail = event.detail || {};
+		// Extract the UnifiedPart data directly from the event detail
+		const partData = eventDetail.part;
+		
+		// Set the current part ID for tracking edit mode if it exists
+		currentPartId = partData.part_id || null;
+		
+		console.log('Editing part with full data:', {partData});
+		
+		// Update the part form with the data from the selected part
+		// Include ALL fields expected by the PartForm component based on the schema
+		$partForm = {
+			// Using UnifiedPart fields directly with proper type safety
+			part_name: partData.part_name || '',
+			part_version: partData.part_version || '0.1.0',
+			internal_part_number: partData.internal_part_number || '',
+			version_status: partData.version_status || LifecycleStatusEnum.DRAFT,
+			status_in_bom: partData.status_in_bom || PartStatusEnum.CONCEPT,
+			is_public: partData.is_public === true,
+			short_description: partData.short_description || '',
+			long_description: partData.long_description || '',
+			functional_description: partData.functional_description || '',
+			compliance_info: partData.compliance_info || [],
+			attachments: (partData.attachments || []).map(a => ({
+				file_name: a.file_name,
+				file_url: a.file_url,
+				is_primary: a.is_primary === true,
+				attachment_type: a.attachment_type || undefined,
+				file_size_bytes: a.file_size || undefined,
+				file_type: a.file_type || undefined,
+				attachment_description: a.description || undefined,
+				thumbnail_url: a.thumbnail_url || undefined,
+				attachment_checksum: undefined
+			})),
+			representations: (partData.representations || []).map(r => {
+				// Create a type-safe metadata object that matches the schema
+				let metadataObj: {
+					notes?: string;
+					dimensions?: Record<string, number>;
+					software?: string;
+					version?: string;
+					creation_date?: string | Date;
+				} | string | null = null;
+				
+				if (typeof r.metadata === 'string') {
+					// If metadata is a string, keep it as is
+					metadataObj = r.metadata;
+				} else if (r.metadata && typeof r.metadata === 'object') {
+					// Normalize object to expected shape with strict typing
+					const md = r.metadata as Record<string, any>;
+					metadataObj = {
+						notes: typeof md.notes === 'string' ? md.notes : undefined,
+						software: typeof md.software === 'string' ? md.software : undefined,
+						version: typeof md.version === 'string' ? md.version : undefined,
+						// Only include dimensions if it's a valid record
+						dimensions: md.dimensions && typeof md.dimensions === 'object' ? md.dimensions as Record<string, number> : undefined,
+						creation_date: md.creation_date || undefined
+					};
+				}
+				
+				return {
+					representation_type: r.representation_type as "3D Model" | "Footprint" | "Schematic Symbol" | "Simulation Model",
+					is_recommended: r.is_recommended === true,
+					metadata: metadataObj,
+					file_url: r.file_url || undefined,
+					format: r.format || undefined
+				};
+			}),
+			structure: partData.structure || [],
+			manufacturer_parts: (partData.manufacturer_parts || []).map(mp => ({
+				manufacturer_part_number: mp.manufacturer_part_number,
+				manufacturer_id: mp.manufacturer_id,
+				is_recommended: mp.is_recommended === true,
+				description: mp.description || undefined,
+				datasheet_url: mp.datasheet_url || undefined,
+				product_url: mp.product_url || undefined
+			})),
+			supplier_parts: partData.supplier_parts || [],
+			technical_specifications: partData.technical_specifications ? (typeof partData.technical_specifications === 'string' ? JSON.parse(partData.technical_specifications) : partData.technical_specifications) : {},
+			dimensions: partData.dimensions,
+			dimensions_unit: partData.dimensions_unit,
+			pin_count: partData.pin_count || undefined,
+			part_weight: partData.part_weight || undefined,
+			weight_unit: partData.weight_unit,
+			package_type: partData.package_type,
+			mounting_type: partData.mounting_type,
+			voltage_rating_min: partData.voltage_rating_min || undefined,
+			voltage_rating_max: partData.voltage_rating_max || undefined,
+			current_rating_min: partData.current_rating_min || undefined,
+			current_rating_max: partData.current_rating_max || undefined,
+			power_rating_max: partData.power_rating_max || undefined,
+			operating_temperature_min: partData.operating_temperature_min || undefined,
+			operating_temperature_max: partData.operating_temperature_max || undefined,
+			storage_temperature_min: partData.storage_temperature_min || undefined,
+			storage_temperature_max: partData.storage_temperature_max || undefined,
+			temperature_unit: partData.temperature_unit,
+			tolerance: partData.tolerance || undefined,
+			tolerance_unit: partData.tolerance_unit || undefined,
+			// Custom properties handled via technical_specifications
+			// termination_style and material are not part of UnifiedPart schema
+		};
+		
+		console.log('Part form updated with all available fields');
+	}
+
+	// Function to cancel part editing
+	function cancelPartEdit() {
+		// Reset the form data - include ALL properties from the schema with empty/default values
+		$partForm = {
+			// Core part information
+			// Note: Not setting part_id or creator_id to avoid TypeScript errors with the schema
+			part_name: '',
+			part_version: '0.1.0',
+			internal_part_number: '',
+			version_status: LifecycleStatusEnum.DRAFT,
+			status_in_bom: PartStatusEnum.CONCEPT,
+			is_public: false,
+			short_description: '',
+			long_description: '',
+			functional_description: '',
+			compliance_info: [],
+			attachments: [],
+			representations: [],
+			structure: [],
+			manufacturer_parts: [],
+			supplier_parts: [],
+			technical_specifications: {},
+			dimensions: { length: null, width: null, height: null },
+			dimensions_unit: undefined,
+			pin_count: undefined,
+			part_weight: undefined,
+			weight_unit: undefined,
+			package_type: undefined,
+			mounting_type: undefined,
+			voltage_rating_min: undefined,
+			voltage_rating_max: undefined,
+			current_rating_min: undefined,
+			current_rating_max: undefined,
+			power_rating_max: undefined,
+			operating_temperature_min: undefined,
+			operating_temperature_max: undefined,
+			storage_temperature_min: undefined,
+			storage_temperature_max: undefined,
+			temperature_unit: undefined,
+			tolerance: undefined,
+			tolerance_unit: undefined,
+			termination_style: undefined,
+			material: undefined
+		};
+		
+		// Reset edit mode tracking
+		editPartMode = false;
+		currentPartId = null;
+		console.log('Part form reset with empty values for all fields');
+	}
+
 	// Data refresh function to handle updates without page reload
 	async function refreshData() {
 		try {
 			// Store current tab
 			const currentTab = activeTab;
-			
-		
 			
 			// Force a more aggressive cache invalidation
 			await Promise.all([
@@ -492,8 +755,6 @@
 				invalidateAll(), // More aggressive invalidation to ensure all data is refreshed
 				new Promise(resolve => setTimeout(resolve, 300)) // Slightly longer delay
 			]);
-			
-		
 			
 			// Create new array with corrected field naming for grid component
 			// Ensure category names are never null or undefined (direct fix for the unnamed bug)
@@ -507,15 +768,12 @@
 			});
 			allCategories = [...categories];
 			
-			
 			userParts = [...(data.userParts || [])];
 			
 			// Create a completely new array for manufacturers to ensure reactivity
 			const freshManufacturers = transformManufacturerData(data.userManufacturers || []);
 			userManufacturers = [...freshManufacturers]; // Explicit new array reference
 			userSuppliers = transformSupplierData(data.userSuppliers || []);
-			
-			
 			
 			// Restore tab state from localStorage or use current tab as fallback
 			if (typeof window !== 'undefined') {
@@ -534,62 +792,7 @@
 		await refreshData();
 	}
 
-	/**
-	 * Transform category data from server format to the Category interface
-	 * Ensuring proper handling of null values and consistent data types
-	 */
-	function transformCategoryData(categories: any[]): (Category & { parent_name?: string | undefined })[] {
-		
-		
-		// First pass: Create a map of category_id to category_name for parent lookups
-		const categoryIdToNameMap = new Map<string, string>();
-		for (const category of categories) {
-			const id = category.categoryId || category.category_id || '';
-			const name = category.categoryName || category.category_name || '';
-			if (id && name) {
-				categoryIdToNameMap.set(id, name);
-			}
-		}
 
-
-		// Second pass: Create the transformed categories with parent_name lookups
-		return categories.map(category => {
-			// Get parent_id from either camelCase or snake_case property
-			const parentId = category.parentId || category.parent_id || null;
-
-			// Get parent_name directly from the database result
-			// The SQL JOIN in +page.server.ts provides this
-			let parentName = category.parent_name;
-			
-			// If not available, look up in our map as a fallback
-			if ((!parentName || parentName === '') && parentId) {
-				// Use the map we built in the first pass for lookups
-				parentName = categoryIdToNameMap.get(parentId) || 'Unknown Parent';
-			}
-			// Clean up debug logs
-			
-			// Create properly typed Category object from the camelCase data
-			const transformedCategory: Category & { parent_name?: string | undefined } = {
-				category_id: category.categoryId || category.category_id || '',
-				category_name: category.categoryName || category.category_name || '',
-				category_description: category.categoryDescription || category.category_description || null,
-				category_path: category.categoryPath || category.category_path || '',
-				parent_id: parentId,
-				is_public: Boolean(category.isPublic || category.is_public),
-				created_at: category.createdAt ? new Date(category.createdAt) : (category.created_at ? new Date(category.created_at) : new Date()), 
-				updated_at: category.updatedAt ? new Date(category.updatedAt) : (category.updated_at ? new Date(category.updated_at) : new Date()),
-				created_by: category.createdBy || category.created_by || '',
-				updated_by: category.updatedBy || category.updated_by || null,
-				is_deleted: Boolean(category.isDeleted || category.is_deleted) || false,
-				deleted_at: category.deletedAt || category.deleted_at || null,
-				deleted_by: category.deletedBy || category.deleted_by || null,
-				// Use the parent_name from direct database value or lookup
-				// This ensures we display the correct parent category name
-				parent_name: parentName || (parentId ? categoryIdToNameMap.get(parentId) : undefined)
-			};
-			return transformedCategory;
-		});
-	}
 
 	// Function to toggle supplier form visibility
 	function toggleSupplierForm() {
@@ -615,7 +818,6 @@
 			
 			// Apply the complete reset by assigning the entire object
 			$supplierForm = emptyForm;
-			
 			
 			// Force a DOM refresh to ensure the form is truly reset
 			setTimeout(() => {
@@ -649,42 +851,55 @@
 	// Function to toggle part form visibility
 	function togglePartForm() {
 		showPartForm = !showPartForm;
+		if (!showPartForm) {
+			editPartMode = false;
+			cancelPartEdit();
+		}
 	}
 	
 	// Function to handle supplier deletion event
 	function handleSupplierDeleted(event: CustomEvent<{ supplierId: string }>) {
-		
 		refreshData();
 	}
 
-	// Function to handle manufacturer edit
+	// Function to handle manufacturer edit - use proper type from schema
 	function editManufacturer(event: CustomEvent<any>) {
-		// Get manufacturer data from event - handle different event formats
-		const manufacturer = event.detail.manufacturer || event.detail.item || event.detail;
+		// Get manufacturer data from event - handling different event formats safely
+		const eventDetail = event.detail || {};
+		// Extract the manufacturer data from the event, handling different formats
+		const mfgData = eventDetail.manufacturer || eventDetail.item || eventDetail;
 		
-		// Store the original contact_info and custom_fields as they are
-		// This prevents double stringification which causes issues with input
-		const contact_info = manufacturer.contact_info || '{}';
-		const custom_fields = manufacturer.custom_fields || '{}';
-		
-		$manufacturerForm = {
-			manufacturer_id: manufacturer.manufacturer_id || '',
-			manufacturer_name: manufacturer.manufacturer_name || '',
-			manufacturer_description: manufacturer.manufacturer_description || null,
-			website_url: manufacturer.website_url || null,
-			logo_url: manufacturer.logo_url || null,
-			
-			// Only stringify if not already a string, avoid double-stringification
-			contact_info: typeof contact_info === 'string' ? contact_info : JSON.stringify(contact_info),
-			custom_fields: typeof custom_fields === 'string' ? custom_fields : JSON.stringify(custom_fields),
-			
-			created_by: manufacturer.created_by || user.user_id,
-			updated_by: user.user_id,
-			created_at: manufacturer.created_at ? new Date(manufacturer.created_at) : new Date(),
-			updated_at: new Date()
+		// Safely extract properties using type checking to avoid runtime errors
+		const safeGetString = (obj: any, prop: string): string => {
+			return obj && typeof obj[prop] === 'string' ? obj[prop] : '';
 		};
 		
+		const safeGetJson = (obj: any, prop: string): string => {
+			if (!obj) return '{}';
+			const value = obj[prop];
+			if (typeof value === 'string') return value;
+			if (value && typeof value === 'object') return JSON.stringify(value);
+			return '{}';
+		};
 		
+		// Update the manufacturer form with safe type checking
+		$manufacturerForm = {
+			manufacturer_id: safeGetString(mfgData, 'manufacturer_id'),
+			manufacturer_name: safeGetString(mfgData, 'manufacturer_name'),
+			manufacturer_description: safeGetString(mfgData, 'manufacturer_description') || undefined,
+			website_url: safeGetString(mfgData, 'website_url') || undefined,
+			logo_url: safeGetString(mfgData, 'logo_url') || undefined,
+			
+			// Handle JSON fields with proper type safety
+			contact_info: safeGetJson(mfgData, 'contact_info'),
+			custom_fields: safeGetJson(mfgData, 'custom_fields'),
+			
+			// Set metadata fields safely
+			created_by: safeGetString(mfgData, 'created_by') || user.user_id,
+			updated_by: user.user_id,
+			created_at: mfgData && mfgData.created_at ? new Date(mfgData.created_at) : new Date(),
+			updated_at: new Date()
+		};
 		
 		// Scroll to the form
 		setTimeout(() => {
@@ -722,7 +937,6 @@
 	function handleCategoryEdit(event: CustomEvent<{ category: Category }>) {
 		const categoryToEdit = event.detail.category;
 		
-		
 		// Set edit mode and current category ID
 		editCategoryMode = true;
 		currentCategoryId = categoryToEdit.category_id;
@@ -744,17 +958,123 @@
 		// This prevents the component from showing its own edit form
 		window.dispatchEvent(new CustomEvent('category:edit:handled'));
 	}
-	
-	// Function to handle part form updates 
-	function updateFormData(event: CustomEvent<Record<string, any>>) {
-		// Update the part form data with the values from the PartForm component
-		if (event.detail) {
+
+	// Function to handle part form updates from different sources
+	function updatePartFormData(event: CustomEvent<{ data: Record<string, unknown> }>) {
+		// Check if we have data from either pattern (detail or detail.data)
+		const data = event.detail.data || event.detail;
+		
+		// Only update if we received valid data
+		if (data) {
+			console.log('Updating part form with event data', data);
 			
-			// Update the reactive store
+			// Ensure the part form is updated with ALL fields from the schema
 			$partForm = {
+				// Start with existing form data
 				...$partForm,
-				...event.detail
+				
+				// Core part information - accepting multiple field name patterns
+				part_name: typeof data.part_name === 'string' ? data.part_name : 
+					(typeof data.name === 'string' ? data.name : $partForm.part_name || ''),
+				
+				part_version: typeof data.part_version === 'string' ? data.part_version : 
+					(typeof data.version === 'string' ? data.version : $partForm.part_version || '0.1.0'),
+				
+				internal_part_number: typeof data.internal_part_number === 'string' ? data.internal_part_number : 
+					(typeof data.partNumber === 'string' ? data.partNumber : $partForm.internal_part_number || ''),
+				
+				version_status: typeof data.version_status === 'string' ? data.version_status : 
+					(typeof data.lifecycle_status === 'string' ? data.lifecycle_status : $partForm.version_status || LifecycleStatusEnum.DRAFT),
+				
+				status_in_bom: typeof data.status_in_bom === 'string' ? data.status_in_bom : 
+					(typeof data.status === 'string' ? data.status : $partForm.status_in_bom || PartStatusEnum.CONCEPT),
+				
+				is_public: typeof data.is_public === 'boolean' ? data.is_public : 
+					($partForm.is_public === true),
+				
+				// Descriptions - accept multiple field name patterns
+				short_description: typeof data.short_description === 'string' ? data.short_description : 
+					(typeof data.description === 'string' ? data.description : $partForm.short_description || ''),
+				
+				functional_description: typeof data.functional_description === 'string' ? data.functional_description : 
+					($partForm.functional_description || ''),
+				long_description: data.long_description || $partForm.long_description || '',
+				
+				// Array fields - handle null or empty arrays correctly
+				compliance_info: Array.isArray(data.compliance_info) ? data.compliance_info : 
+					(Array.isArray($partForm.compliance_info) ? $partForm.compliance_info : []),
+				
+				attachments: Array.isArray(data.attachments) ? data.attachments : 
+					(Array.isArray($partForm.attachments) ? $partForm.attachments : []),
+				
+				representations: Array.isArray(data.representations) ? data.representations : 
+					(Array.isArray($partForm.representations) ? $partForm.representations : []),
+				
+				structure: Array.isArray(data.structure) ? data.structure : 
+					(Array.isArray($partForm.structure) ? $partForm.structure : []),
+				
+				manufacturer_parts: Array.isArray(data.manufacturer_parts) ? data.manufacturer_parts : 
+					(Array.isArray($partForm.manufacturer_parts) ? $partForm.manufacturer_parts : []),
+				
+				supplier_parts: Array.isArray(data.supplier_parts) ? data.supplier_parts : 
+					(Array.isArray($partForm.supplier_parts) ? $partForm.supplier_parts : []),
+				
+				// JSON fields - ensure proper handling
+				technical_specifications: (() => {
+					// Handle technical_specifications with strict type checking
+					if (typeof data.technical_specifications === 'string') {
+						return data.technical_specifications; 
+					} else if (data.technical_specifications && typeof data.technical_specifications === 'object') {
+						// Ensure it's a valid Record type
+						const techSpec: Record<string, string | number | boolean | null> = {};
+						
+						// Only copy valid properties
+						Object.entries(data.technical_specifications).forEach(([key, value]) => {
+							if (typeof value === 'string' || typeof value === 'number' || 
+								typeof value === 'boolean' || value === null) {
+								techSpec[key] = value;
+							}
+						});
+						
+						return techSpec;
+					} else {
+						// Fall back to existing value or null
+						return $partForm.technical_specifications || null;
+					}
+				})(),
+				
+				// Dimensional data - handle both objects and separate fields
+				dimensions: (() => {
+					// Create a properly typed dimensions object with either all numbers or all nulls
+					const emptyDimensions = { length: null, width: null, height: null } as const;
+					
+					if (data.dimensions && typeof data.dimensions === 'object') {
+						// If we have a complete set of numeric dimensions, use them
+						if ('length' in data.dimensions && typeof data.dimensions.length === 'number' &&
+						    'width' in data.dimensions && typeof data.dimensions.width === 'number' &&
+						    'height' in data.dimensions && typeof data.dimensions.height === 'number') {
+							
+							// All values are numbers, return a dimensions object with numbers
+							return {
+								length: data.dimensions.length,
+								width: data.dimensions.width,
+								height: data.dimensions.height
+							};
+						} else {
+							// Otherwise return null dimensions object
+							return emptyDimensions;
+						}
+					} else if ($partForm.dimensions) {
+						// Use existing dimensions
+						return $partForm.dimensions;
+					} else {
+						// Default to empty dimensions
+						return emptyDimensions;
+					}
+				})(),
+				dimensions_unit: data.dimensions_unit || $partForm.dimensions_unit
 			};
+			console.log('Part form updated with all available fields');
 		}
 	}
 	
@@ -785,24 +1105,26 @@
 			editCategoryMode = false;
 			currentCategoryId = null;
 			
-			// Reset form values
+			// Reset form values - only include fields that are part of the form schema
 			$categoryForm = {
 				category_name: '',
 				category_description: '',
 				parent_id: '',
-				is_public: false
-			} as CategoryFormType;
+				is_public: false,
+				category_id: ''
+			};
 		} else if (showCategoryForm && !editCategoryMode) {
 			// If we're opening the form for a new category
 			editCategoryMode = false;
 			currentCategoryId = null;
-			// Reset form with type assertion
+			// Reset form with proper initialization - only include fields that are part of the form schema
 			$categoryForm = {
 				category_name: '',
 				category_description: '',
 				parent_id: '',
-				is_public: false
-			} as CategoryFormType;
+				is_public: false,
+				category_id: ''
+			};
 		}
 	}
 </script>
@@ -883,78 +1205,50 @@
 		<!-- Parts Tab -->
 		{#if activeTab === 'parts'}
 			<div class="tab-content">
-				<h2>Your Parts</h2>
-				{#if userParts.length > 0}
-					<div class="user-items-grid">
-						{#each userParts as part (part.part_id)}
-							<div class="entity-card">
-								<h3>{(part as any).name || 'Unnamed Part'}</h3>
-								<p class="entity-meta">Version: {(part as any).part_version || '1.0.0'}</p>
-								<p class="entity-meta">Status: {part.lifecycle_status || 'Draft'}</p>
-								<div class="entity-actions">
-									<a href={`/parts/${part.part_id}`} class="icon-btn view-btn" title="View Part Details">👁️</a>
-									<a href={`/parts/${part.part_id}/edit`} class="icon-btn edit-btn" title="Edit Part">✏️</a>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<p class="no-items">You haven't created any parts yet.</p>
-				{/if}
-
-				<div class="action-buttons">
-					<button type="button" class="primary-btn" on:click={togglePartForm}>
-						{showPartForm ? 'Cancel' : 'Add New Part'}
-					</button>
-					<a href="/parts" class="secondary-btn">View All Parts</a>
-				</div>
-
-				{#if showPartForm}
-					<div class="form-container">
-						<h2>Create New Part</h2>
+				<PartsTab
+					parts={userParts.map((unifiedPart) => {
+						// Pass UnifiedPart objects directly to the PartsTab component
+						// No type assertion needed as we're using the standard UnifiedPart type
+						// The getUnifiedPart function now returns complete UnifiedPart objects
 						
-						{#if $partMessage}
-							<div class="form-message {typeof $partMessage === 'string' && $partMessage.includes('Failed') ? 'error' : 'success'}">
-								{$partMessage}
-							</div>
-						{/if}
+						// Validate that we have a valid UnifiedPart object
+						if (!unifiedPart || !unifiedPart.part_id) {
+							console.warn('Invalid UnifiedPart data:', unifiedPart);
+							return null;
+						}
 						
-						<div class="embedded-form">
-							<!-- Using bind:this to capture form element reference -->
-							<form method="POST" action="?/part" use:partEnhance bind:this={partFormElement}>
-								<!-- Hidden fields to capture form data from PartForm component -->
-								{#each Object.entries($partForm) as [key, value]}
-									{#if typeof value !== 'object' || value === null}
-										<input type="hidden" name={key} value={value ?? ''} />
-									{:else if key === 'dimensions' && value !== null}
-										<!-- Handle dimensions object specially -->
-										<input type="hidden" name="dimensions" value={JSON.stringify(value)} />
-									{:else if typeof value === 'object'}
-										<!-- Handle other object values -->
-										<input type="hidden" name={key} value={JSON.stringify(value)} />
-									{/if}
-								{/each}
-
-								<PartForm 
-									categories={categories || []}
-									errors={$partErrors as Record<string, any>}
-									data={{ partForm: $partForm }}
-									hideButtons={false}
-									isDashboardContext={true}
-									isEditMode={false}
-									on:formUpdate={updateFormData}
-								/>
-								
-								<div class="form-actions">
-									<button type="submit" class="primary-btn" disabled={$partSubmitting}>
-										{$partSubmitting ? 'Creating...' : 'Create Part'}
-									</button>
-									<button type="button" class="secondary-btn" on:click={togglePartForm}>Cancel</button>
-								</div>
-							</form>
-						</div>
-					</div>
-				{/if}
+						// Return the UnifiedPart object directly - no transformation needed
+						return unifiedPart;
+					}).filter(p => p !== null)}
+					currentUserId={user.user_id}
+					on:updateForm={(event) => {
+						// Handle form update request from PartsTab
+						if (event.detail && event.detail.part) {
+							// Update the form with part data
+							partForm.update(form => ({
+								...form,
+								...event.detail.part
+							}));
+							// Set current part ID and edit mode
+							currentPartId = event.detail.part.part_id || null;
+							editPartMode = true;
+							showPartForm = true;
+						}
+					}}
+					on:refreshData={refreshData}
+					on:toggleForm={() => {
+						showPartForm = !showPartForm;
+						if (!showPartForm) {
+							editPartMode = false;
+							cancelPartEdit();
+						}
+					}}
+					on:editPart={editPart}
+					on:formUpdate={updatePartFormData}
+					on:submit={(event: CustomEvent) => {
+						// Form submission is handled by SuperForm
+					}}
+				/>
 			</div>
 		{/if}
 
@@ -1193,7 +1487,7 @@
 					}}
 				/>
 
-				<!-- The hidden form is now handled internally by the SuppliersTab component -->
+				
 			</div>
 		{/if}
 
@@ -1405,13 +1699,7 @@
 		margin: 1rem 0 2rem 0;
 	}
 
-	.user-items-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 1.5rem;
-		margin: 1rem 0 2rem 0;
-	}
-
+	
 	.project-card {
 		background: hsl(var(--surface-100));
 		padding: 1rem;
@@ -1446,80 +1734,10 @@
 		margin-bottom: 2rem;
 	}
 
-	.form-container {
-		margin-top: 2rem;
-		padding: 2rem;
-		background: hsl(var(--surface-100));
-		border-radius: 12px;
-		border: 1px solid hsl(var(--border));
-		box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-		transition: background-color 0.3s, border-color 0.3s;
-	}
 
-	.form-container h2 {
-		margin-top: 0;
-		margin-bottom: 1rem;
-		color: hsl(var(--foreground));
-		border-bottom: 1px solid hsl(var(--border));
-		padding-bottom: 0.5rem;
-	}
+	
 
-	.embedded-form {
-		margin-top: 1rem;
-	}
-
-	.form-message {
-		padding: 0.75rem 1rem;
-		border-radius: 6px;
-		margin-bottom: 1rem;
-		transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-		background-color: hsl(var(--surface-100));
-		border: 1px solid hsl(var(--border));
-		color: hsl(var(--foreground));
-	}
-
-	.form-message.success {
-		background: hsl(var(--success) / 0.2);
-		border: 1px solid hsl(var(--success));
-		color: hsl(var(--success));
-	}
-
-	.form-message.error {
-		background: hsl(var(--destructive) / 0.2);
-		border: 1px solid hsl(var(--destructive));
-		color: hsl(var(--destructive));
-	}
-
-	.entity-card {
-		background: hsl(var(--card));
-		border-radius: 8px;
-		padding: 1.25rem;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-		display: flex;
-		gap: 1rem;
-		transition: box-shadow 0.3s, transform 0.2s, background-color 0.3s, border-color 0.3s;
-		border: 1px solid hsl(var(--border));
-		position: relative;
-	}
-
-	.entity-card:hover {
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-		transform: translateY(-2px);
-		border-color: hsl(var(--card-hover-border));
-	}
-
-	.entity-card h3 {
-		margin-top: 0;
-		margin-bottom: 0.5rem;
-		font-size: 1.1rem;
-		color: hsl(var(--card-foreground));
-	}
-
-	.entity-meta {
-		margin-bottom: 0.5rem;
-		color: hsl(var(--muted-foreground));
-		font-size: 0.875rem;
-	}
+	
 
 	
 
@@ -1527,22 +1745,9 @@
 	/* Contact styling moved to component level for better modularity */
 
 
-	.icon-btn {
-		padding: 0.25rem 0.5rem;
-		border-radius: 4px;
-		font-size: 1rem;
-		transition: all 0.2s ease;
-		text-decoration: none;
-	}
+	
 
-	.view-btn:hover {
-		background: hsl(var(--muted));
-	}
-
-	.edit-btn:hover {
-		background: hsl(var(--primary) / 0.1);
-	}
-
+	
 	.project-form {
 		display: flex;
 		gap: 1rem;
@@ -1557,11 +1762,6 @@
 		font-size: 1rem;
 	}
 
-	.action-buttons {
-		display: flex;
-		gap: 1rem;
-		margin-top: 1.5rem;
-	}
 
 
 
@@ -1571,12 +1771,8 @@
 
 
 
-	.form-actions {
-		margin-top: 1.5rem;
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.75rem;
-	}
+
+
 
 
 
@@ -1631,9 +1827,7 @@
 			padding: 0.75rem 0.5rem;
 		}
 
-		.action-buttons {
-			flex-direction: column;
-		}
+	
 	}
 
 	@media (max-width: 600px) {
@@ -1651,9 +1845,10 @@
 			padding: 1.25rem;
 		}
 
-		.projects-grid,
-		.user-items-grid {
-			grid-template-columns: 1fr;
+		.projects-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+			gap: 1rem;
 		}
 	}
 </style>

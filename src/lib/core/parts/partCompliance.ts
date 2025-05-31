@@ -8,21 +8,9 @@ import type { ComplianceTypeEnum } from "@/types/enums";
 import { PART_ERRORS } from "./partErrors";
 import sql from "@/server/db/postgres";
 import { sanitizeSqlString } from "@/utils/util";
+import type { PartCompliance } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartCompliance table representing compliance certifications
- */
-export interface PartCompliance {
-    part_compliance_id: string;
-    part_version_id: string;
-    compliance_type: ComplianceTypeEnum;
-    certificate_url?: string | null;
-    certified_at?: Date | null;
-    expires_at?: Date | null;
-    notes?: string | null;
-    created_at: Date;
-    updated_at?: Date | null;
-}
+
 
 /**
  * Converts a database row to a PartCompliance object

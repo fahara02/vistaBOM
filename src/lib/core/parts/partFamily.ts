@@ -3,6 +3,7 @@
  */
 import sql from '$lib/server/db';
 import type { JsonValue } from '$lib/types/types';
+import type { PartFamily, PartFamilyFormData, PartFamilyLink } from '@/types/schemaTypes';
 
 /**
  * Error messages for part family operations
@@ -15,49 +16,7 @@ export const PART_FAMILY_ERRORS = {
     GENERAL_ERROR: 'An error occurred during the part family operation'
 };
 
-/**
- * Part Family interfaces
- */
-export interface PartFamily {
-    id: string;
-    part_family_id: string;
-    family_name: string;
-    family_description?: string | null;
-    family_code?: string | null;
-    family_image_url?: string | null;
-    createdBy?: string; 
-    created_by?: string;
-    createdAt: Date;
-    created_at: Date;
-    updatedBy?: string;
-    updated_by?: string;
-    updatedAt?: Date;
-    updated_at?: Date;
-    is_public: boolean;
-    is_active: boolean;
-}
 
-export interface PartFamilyLink {
-    part_family_link_id: string;
-    part_id: string;
-    family_id: string;
-    created_by: string;
-    created_at: Date;
-}
-
-export interface PartFamilyFormData {
-    part_family_id?: string;
-    family_name: string;
-    family_description?: string | null;
-    family_code?: string | null;
-    family_image_url?: string | null;
-    created_by?: string;
-    created_at?: Date | string;
-    updated_by?: string; 
-    updated_at?: Date | string;
-    is_public?: boolean;
-    is_active?: boolean;
-}
 
 /**
  * Helper to normalize part family data from postgres result

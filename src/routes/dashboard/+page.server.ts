@@ -4,11 +4,11 @@ import { DimensionUnitEnum, LifecycleStatusEnum, PackageTypeEnum, PartStatusEnum
 import type { JsonValue } from '$lib/types/primitive';
 import { createCategory, getAllCategories } from '$lib/core/category';
 import { createManufacturer } from '$lib/core/manufacturer';
-import { createPart, getPartWithCurrentVersion } from '$lib/core/parts';
+import { createUnifiedPart, getPartWithCurrentVersion, getUnifiedPart } from '$lib/core/parts';
 import { createSupplier } from '$lib/core/supplier';
 import { categoryFormSchema, createPartSchema, manufacturerSchema, supplierSchema } from '$lib/schema/schema';
 
-import type { Category, Manufacturer, Part, Supplier, User } from '$lib/types/schemaTypes';
+import type { Category, Manufacturer, Part, Supplier, User, UnifiedPart } from '$lib/types/schemaTypes';
 import type { DbProject } from '$lib/types/types';
 import { fail, redirect } from '@sveltejs/kit';
 import { zod } from 'sveltekit-superforms/adapters';
@@ -23,20 +23,7 @@ import { supplierAction } from '$lib/actions/dashboard/supplier';
 import { projectAction } from '$lib/actions/dashboard/project';
 import { partAction } from '$lib/actions/dashboard/part';
 
-// Helper function for creating enum schemas that properly handle null/undefined/empty values
-function createNullableEnum<T extends Record<string, string>>(enumType: T) {
-    return z.union([
-        z.nativeEnum(enumType),
-        z.null(),
-        z.undefined(),
-        z.literal('null'),
-        z.literal('')
-    ]).optional().nullable().transform(value => {
-        // Transform empty strings and 'null' to actual null
-        if (value === '' || value === 'null') return null;
-        return value;
-    });
-}
+
 
 // Using the centralized schemas from schema.ts - no custom schemas
 
@@ -85,10 +72,10 @@ export const load: PageServerLoad = async (event) => {
     
     // 4. Initialize Part form data with extended schema that includes relationship fields
     const partForm = await superValidate(zod(createPartSchema));
-    // Initialize dimensions to prevent null reference errors
-    if (!partForm.data.dimensions) {
-        partForm.data.dimensions = { length: 0, width: 0, height: 0 };
-    }
+    // Initialize dimensions as null since they are optional in the database schema
+    // This follows the constraint that if a unit is null, the value must also be null
+    partForm.data.dimensions = null;
+    partForm.data.dimensions_unit = null;
     // Add default status if not set
     if (!partForm.data.version_status) {
         partForm.data.version_status = LifecycleStatusEnum.DRAFT;
@@ -100,41 +87,37 @@ export const load: PageServerLoad = async (event) => {
     // 6. Get category tree for parent selection
     const categories = await getAllCategories();
     
-    // 7. Fetch user-created parts with their current version data
-    let userParts: Part[] = [];
+    // Use the UnifiedPart type from schemaTypes.ts as the single source of truth
+    // This replaces the custom PartWithVersionFields interface with the standard type
+    
+    // 7. Fetch user-created parts using the getUnifiedPart function
+    let userParts: UnifiedPart[] = [];
     try {
-        // Following the pattern from other entities, fetch parts created by the user
-        // with their most recent version details
-        userParts = await sql`
-            SELECT 
-                p.part_id, 
-                p.creator_id AS "creatorId", 
-                p.status_in_bom,
-                p.lifecycle_status AS "lifecycleStatus",
-                p.is_public AS "isPublic",
-                p.created_at AS "createdAt",
-                p.updated_at AS "updatedAt",
-                p.current_version_id AS "currentVersionId",
-                -- Include part version details
-                pv.part_version AS "partVersion",
-                pv.part_name AS "partName",
-                pv.short_description AS "description",
-                pv.revision_notes AS "remarks",
-                -- Include category names as an array instead of just IDs
-                (
-                    SELECT jsonb_agg(jsonb_build_object(
-                        'category_id', c.category_id, 
-                        'category_name', c.category_name
-                    ))
-                    FROM "PartVersionCategory" pvc
-                    JOIN "Category" c ON pvc.category_id = c.category_id
-                    WHERE pvc.part_version_id = pv.part_version_id
-                ) AS categories
-            FROM "Part" p
-            JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
-            WHERE p.creator_id = ${user.user_id}
-            ORDER BY pv.part_name ASC
+        // First, get all part IDs created by the user
+        const userPartIds = await sql`
+            SELECT part_id
+            FROM "Part"
+            WHERE creator_id = ${user.user_id}
+            ORDER BY created_at DESC
         `;
+        
+        console.log(`Retrieved ${userPartIds.length} part IDs for user ${user.user_id}`);
+        
+        // Then fetch complete UnifiedPart data for each part
+        const partPromises = userPartIds.map(async (row) => {
+            const partId = row.part_id;
+            const unifiedPart = await getUnifiedPart(partId);
+            return unifiedPart;
+        });
+        
+        // Wait for all promises to resolve and filter out null results
+        const partResults = await Promise.all(partPromises);
+        userParts = partResults.filter((part): part is UnifiedPart => part !== null);
+        
+        // Log the first part to understand the structure
+        if (userParts.length > 0) {
+            console.log('Debug - First unified part data structure:', JSON.stringify(userParts[0], null, 2));
+        }
     } catch (error) {
         console.error('Error fetching user parts:', error);
         userParts = [];
@@ -149,9 +132,10 @@ export const load: PageServerLoad = async (event) => {
         // Use the core function to get all manufacturers created by this user
         userManufacturers = await listManufacturersByUser(user.user_id);
         
-        // Log the first manufacturer for debugging
-        if (userManufacturers.length > 0) {
-           
+        // Log manufacturers for debugging
+        console.log(`Retrieved ${userManufacturers.length} manufacturers for user ${user.user_id}`);
+        if (userManufacturers.length === 0) {
+            console.warn('No manufacturers found for this user. This will affect manufacturer part selection in forms.');
         }
     } catch (error) {
         console.error('Error fetching user manufacturers:', error);

@@ -108,20 +108,17 @@ export function rowToPartAttachment(raw: any): PartAttachment {
 	return {
 	  part_attachment_id: raw.id || raw.part_attachment_id,
 	  part_version_id: raw.part_version_id,
-	  file_url: raw.file_url,
 	  file_name: raw.file_name,
 	  file_type: raw.file_type ?? undefined,
-	  file_size_bytes: raw.file_size_bytes ?? undefined,
-	  attachment_checksum: raw.checksum ?? undefined,
-	  attachment_description: raw.description ?? undefined,
-	  attachment_type: raw.attachment_type ?? undefined,
-	  is_primary: raw.is_primary,
-	  thumbnail_url: raw.thumbnail_url ?? undefined,
-	  uploaded_by: raw.uploaded_by,
-	  uploaded_at: raw.uploaded_at,
-	  updated_by: raw.updated_by ?? undefined,
-	  updated_at: raw.updated_at,
-	  metadata: raw.metadata ?? undefined
+	  file_path: raw.file_path || raw.file_url || '',
+	  file_size_bytes: raw.file_size_bytes ?? 0,
+	  description: raw.description ?? undefined,
+	  is_primary: raw.is_primary || false,
+	  upload_date: raw.upload_date || raw.uploaded_at || new Date(),
+	  uploaded_by: raw.uploaded_by || ''
+	  // Properties removed that aren't in the PartAttachment interface:
+	  // - thumbnail_path
+	  // - updated_at
 	};
 }
 
@@ -130,14 +127,16 @@ export function rowToPartRepresentation(raw: any): PartRepresentation {
 	  part_representation_id: raw.id || raw.part_representation_id,
 	  part_version_id: raw.part_version_id,
 	  representation_type: raw.type || raw.representation_type,
-	  format: raw.format ?? undefined,
-	  file_url: raw.file_url ?? undefined,
-	  metadata: raw.metadata ?? undefined,
-	  is_recommended: raw.is_recommended,
-	  created_by: raw.created_by ?? undefined,
-	  created_at: raw.created_at,
-	  updated_by: raw.updated_by ?? undefined,
-	  updated_at: raw.updated_at
+	  file_name: raw.file_name || '',
+	  file_format: raw.file_format || raw.format || '',
+	  file_path: raw.file_path || raw.file_url || '',
+	  file_size_bytes: raw.file_size_bytes || 0,
+	  resolution: raw.resolution ?? null,
+	  thumbnail_path: raw.thumbnail_path ?? null,
+	  created_at: raw.created_at || new Date(),
+	  created_by: raw.created_by || '',
+	  is_primary: raw.is_primary || raw.is_recommended || false
+	  // Note: All properties now match PartRepresentation interface in schemaTypes.ts
 	};
 }
 

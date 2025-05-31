@@ -2,7 +2,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
 import sql from '$lib/server/db/index';
-import { updateSupplier, deleteSupplier } from '$lib/core/supplier';
+import { updateSupplier, deleteSupplier, updateSupplierCustomFields } from '$lib/core/supplier';
 
 export const PUT: RequestHandler = async ({ request, params, locals }) => {
     if (!locals.user) {
@@ -22,15 +22,22 @@ export const PUT: RequestHandler = async ({ request, params, locals }) => {
         const updated = await updateSupplier(
             id,
             {
-                supplier_name: data.supplier_name,
-                supplier_description: data.supplier_description,
-                websiteUrl: data.websiteUrl,
-                contactInfo: data.contactInfo,
-                logoUrl: data.logoUrl,
-                updatedBy: userId, // Include user ID as part of the params object
-                customFields: data.customFields // Pass custom fields from the request
+                name: data.supplier_name || data.name,
+                description: data.supplier_description || data.description,
+                websiteUrl: data.website_url || data.websiteUrl,
+                contactInfo: data.contact_info || data.contactInfo,
+                logoUrl: data.logo_url || data.logoUrl,
+                updatedBy: userId // Include user ID as part of the params object
             }
         );
+        
+        // Handle custom fields separately if they exist
+        if (data.custom_fields || data.customFields) {
+            await updateSupplierCustomFields(
+                id, 
+                data.custom_fields || data.customFields || {}
+            );
+        }
         return json(updated);
     } catch (e: any) {
         console.error('Delete supplier error:', e);

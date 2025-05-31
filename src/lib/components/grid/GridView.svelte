@@ -100,8 +100,8 @@
     }
     
     return {
-      manufacturer_id: item.manufacturer_id,
-      manufacturer_name: item.manufacturer_name,
+      manufacturer_id: item.manufacturer_id ?? '',
+      manufacturer_name: item.manufacturer_name ?? '',
       manufacturer_description: item.manufacturer_description || undefined,
       website_url: item.website_url || undefined,
       logo_url: item.logo_url || undefined,
@@ -165,8 +165,8 @@
     }
     
     return {
-      supplier_id: item.supplier_id,
-      supplier_name: item.supplier_name,
+      supplier_id: item.supplier_id ?? '',
+      supplier_name: item.supplier_name ?? '',
       supplier_description: item.supplier_description || undefined,
       website_url: item.website_url || undefined,
       logo_url: item.logo_url || undefined,

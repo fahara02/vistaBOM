@@ -6,24 +6,9 @@
 
 import sql from "@/server/db";
 import { PART_ERRORS } from "./partErrors";
+import type { ManufacturerPart } from "@/types/schemaTypes";
 
-/**
- * Interface for the ManufacturerPart table
- */
-export interface ManufacturerPart {
-    manufacturer_part_id: string;
-    part_version_id: string;
-    manufacturer_id: string;
-    manufacturer_name?: string | null; // Denormalized for convenience
-    manufacturer_part_number: string;
-    description?: string | null;
-    status: string; // e.g., 'ACTIVE', 'OBSOLETE', 'EOL', 'NRND'
-    datasheet_url?: string | null;
-    created_by: string;
-    created_at: Date;
-    updated_by?: string | null;
-    updated_at?: Date | null;
-}
+
 
 function rowToManufacturerPart(row: any): ManufacturerPart {
     return {

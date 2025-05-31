@@ -16,6 +16,22 @@ import type {
 } from './schemaTypes';
 
 /**
+ * PostgreSQL-compatible JSON value type that can be used with sql.json
+ * This matches what Postgres.js expects for JSON serialization
+ */
+export type PostgresJsonValue = string | number | boolean | null | PostgresJsonObject | PostgresJsonArray;
+export interface PostgresJsonObject { [key: string]: PostgresJsonValue }
+export type PostgresJsonArray = Array<PostgresJsonValue>;
+
+
+/**
+ * Type alias for database-compatible JSON to ensure consistency
+ */
+export type DbJson = JsonValue;
+
+
+
+/**
  * Type for PostgreSQL transaction from postgres.js library
  */
 export type PostgresTransaction = postgres.TransactionSql<Record<string, unknown>>;

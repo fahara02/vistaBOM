@@ -1,26 +1,10 @@
 
 import sql from '$lib/server/db';
 import type { StructuralRelationTypeEnum } from '@/types/enums';
+import type { PartStructure } from '@/types/schemaTypes';
 import crypto, { randomUUID } from 'crypto';
 
 
-/**
- * Interface for the PartStructure table representing parent-child relationships between parts
- */
-export interface PartStructure {
-    part_structure_id: string;
-    parent_part_id: string;
-    child_part_id: string;
-    relation_type: StructuralRelationTypeEnum;
-    quantity: number;
-    notes?: string | null;
-    created_by: string;
-    created_at: Date;
-    updated_by?: string | null;
-    updated_at: Date;
-    valid_from: Date;
-    valid_until?: Date | null;
-}
 
 /**
  * Converts a database row to a PartStructure object

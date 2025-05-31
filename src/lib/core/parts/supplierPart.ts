@@ -6,27 +6,9 @@
 
 import sql from "@/server/db";
 import { PART_ERRORS } from "./partErrors";
+import type { SupplierPart } from "@/types/schemaTypes";
 
-/**
- * Interface for the SupplierPart table
- */
-export interface SupplierPart {
-    supplier_part_id: string;
-    part_version_id: string;
-    supplier_id: string;
-    supplier_name?: string | null; // Denormalized for convenience
-    supplier_part_number: string;
-    manufacturer_part_id?: string | null; // Optional link to manufacturer part
-    description?: string | null;
-    status: string; // e.g., 'ACTIVE', 'OBSOLETE', 'EOL', 'NRND'
-    packaging?: string | null; // e.g., 'Reel', 'Tube', 'Tray'
-    min_order_quantity?: number | null;
-    lead_time_days?: number | null;
-    created_by: string;
-    created_at: Date;
-    updated_by?: string | null;
-    updated_at?: Date | null;
-}
+
 
 /**
  * Converts a database row to a SupplierPart object

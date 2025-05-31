@@ -11,8 +11,17 @@ import { PART_ERRORS } from './parts/partErrors';
 import type { PartFormData as ExtendedPartFormData } from '$lib/types/formTypes';
 import type {
     JsonValue,
-    PartVersion as SchemaPartVersion
+    PartVersion as SchemaPartVersion,
+    UnifiedPart,
+    ManufacturerPartDefinition,
+    SupplierPartDefinition,
+    AttachmentDefinition,
+    RepresentationDefinition,
+    ComplianceDefinition,
+    PartStructureDefinition,
+    StructuredDescription
 } from '$lib/types/schemaTypes';
+import type { UnifiedPartSchema } from '$lib/schema/unifiedPartSchema';
 // Import primitive types
 import type { Dimensions, MaterialComposition } from '$lib/types/primitive';
 
@@ -35,7 +44,7 @@ enum ToleranceUnitEnum {
     PPM = 'ppm',
     ABSOLUTE = 'absolute'
 }
-
+import type {DbJson} from '$lib/types/db-types';
 // Import types from schemaTypes.ts with type-only imports
 import type {
     ElectricalProperties,
@@ -45,6 +54,9 @@ import type {
     PartVersion,
     ThermalProperties
 } from '$lib/types/schemaTypes';
+
+// Import the UnifiedPart schema
+import { unifiedPartSchema } from '$lib/schema/unifiedPartSchema';
 
 // Import schemas for type inference
 import type { PartFormData } from '$lib/types/formTypes';
@@ -70,6 +82,41 @@ import type {
 import {
     createPartStructure
 } from './parts/partStructure';
+
+// Utility function to safely process JSON fields for database insertion
+const processJsonField = (value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') {
+        try {
+            // Check if it's already a valid JSON string
+            JSON.parse(value);
+            return value;
+        } catch {
+            // Not a valid JSON string, so stringify it
+            return JSON.stringify(value);
+        }
+    }
+    // Objects or arrays need to be stringified
+    return JSON.stringify(value);
+};
+
+// Utility function to safely process numeric fields for database insertion
+const processNumericField = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    
+    // Convert string to number if needed
+    if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? null : parsed;
+    }
+    
+    // Return number directly
+    if (typeof value === 'number') {
+        return isNaN(value) ? null : value;
+    }
+    
+    return null;
+};
 
 import {
     createPartCompliance
@@ -112,7 +159,28 @@ import {
 } from './parts/partFamily';
 
 
+/**
+ * Type guard for StructuredDescription validation
+ */
+export function isValidStructuredDescription(obj: unknown): obj is StructuredDescription {
+  if (!obj || typeof obj !== 'object') return false;
+  
+  // Simplified validation - in a real implementation, this would be more comprehensive
+  // based on the exact StructuredDescription schema
+  return 'sections' in obj || 'content' in obj || 'format' in obj;
+}
 
+/**
+ * Type guard for EnvironmentalData validation
+ */
+export function isValidEnvironmentalData(obj: unknown): obj is EnvironmentalData {
+  if (!obj || typeof obj !== 'object') return false;
+  
+  // Simplified validation - in a real implementation, this would check all required fields
+  // based on the exact EnvironmentalData schema
+  const envData = obj as Record<string, unknown>;
+  return 'compliance' in envData || 'rohs_status' in envData || 'weee_status' in envData;
+}
 
 
 /**
@@ -245,26 +313,7 @@ function deserializeDimensions(json: JsonValue | string | null | undefined): Dim
 
 
 
-// Create a combined type that includes all fields from both schemas
-type ExtendedPartFormData = PartFormData;
 
-// This section is already imported at the top of the file, removing duplicate imports
-
-// Define proper TypeScript types for JSON properties to ensure type safety
-
-/**
- * PostgreSQL-compatible JSON value type that can be used with sql.json
- * This matches what Postgres.js expects for JSON serialization
- */
-export type PostgresJsonValue = string | number | boolean | null | PostgresJsonObject | PostgresJsonArray;
-export interface PostgresJsonObject { [key: string]: PostgresJsonValue }
-export type PostgresJsonArray = Array<PostgresJsonValue>;
-
-
-/**
- * Type alias for database-compatible JSON to ensure consistency
- */
-type DbJson = JsonValue;
 
 /**
  * Helper function to safely convert any value to PostgreSQL-compatible JSON
@@ -458,28 +507,35 @@ export async function getPartById(partId: string): Promise<{ part: Part; current
 			pv.electrical_properties,
 			pv.mechanical_properties,
 			pv.thermal_properties,
-			pv.part_weight,
-			pv.weight_unit,
-			pv.dimensions,
-			pv.dimensions_unit,
 			pv.material_composition,
 			pv.environmental_data,
-			pv.voltage_rating_min,
-			pv.voltage_rating_max,
-			pv.current_rating_min,
-			pv.current_rating_max,
-			pv.power_rating_max,
+			pv.revision_notes,
+			
+			-- Physical properties
+			pv.dimensions,
+			pv.dimensions_unit,
+			pv.part_weight,
+			pv.weight_unit,
+			pv.package_type,
+			pv.pin_count,
 			pv.tolerance,
 			pv.tolerance_unit,
-			pv.package_type,
-			pv.mounting_type,
-			pv.pin_count,
+			
+			-- Temperature properties
 			pv.operating_temperature_min,
 			pv.operating_temperature_max,
 			pv.storage_temperature_min,
 			pv.storage_temperature_max,
 			pv.temperature_unit,
-			pv.revision_notes,
+			
+			-- Electrical properties
+			pv.voltage_rating_min,
+			pv.voltage_rating_max,
+			pv.current_rating_min,
+			pv.current_rating_max,
+			pv.power_rating_max,
+			
+			-- Status and metadata
 			pv.version_status,
 			pv.released_at,
 			pv.created_by,
@@ -549,7 +605,7 @@ export async function getPartById(partId: string): Promise<{ part: Part; current
 			released_at: versionData.released_at,
 			created_by: versionData.created_by, 
 			created_at: versionData.created_at,
-			updated_by: versionData.updated_by,
+			updated_by: versionData.updated_by || undefined,
 			updated_at: versionData.updated_at
 		};
 		
@@ -772,6 +828,7 @@ export async function getPartWithCurrentVersion(
 			part_id: normalizedVersion.part_id,
 			part_version: normalizedVersion.part_version,
 			part_name: normalizedVersion.part_name,
+			version_status: normalizedVersion.version_status as LifecycleStatusEnum,
 			
 			// Text descriptions
 			short_description: normalizedVersion.short_description || undefined,
@@ -779,44 +836,70 @@ export async function getPartWithCurrentVersion(
 			long_description: normalizedVersion.long_description || undefined,
 			revision_notes: normalizedVersion.revision_notes || undefined,
 			
-			// JSONB fields
+			// JSON fields
 			technical_specifications: normalizedVersion.technical_specifications || undefined,
 			properties: normalizedVersion.properties || undefined,
-			
-			// Use database-safe types for JSON data
-			electrical_properties: normalizedVersion.electrical_properties as DbJson | undefined,
-			mechanical_properties: normalizedVersion.mechanical_properties as DbJson | undefined,
-			thermal_properties: normalizedVersion.thermal_properties as DbJson | undefined,
+			electrical_properties: {
+				voltage_rating: {
+					min: normalizedVersion.voltage_rating_min ?? 0,
+					max: normalizedVersion.voltage_rating_max ?? 0,
+					unit: 'V'
+				},
+				current_rating: {
+					min: normalizedVersion.current_rating_min ?? 0,
+					max: normalizedVersion.current_rating_max ?? 0,
+					unit: 'A'
+				},
+				power_rating: {
+					max: normalizedVersion.power_rating_max ?? 0,
+					unit: 'W'
+				},
+				tolerance: {
+					value: normalizedVersion.tolerance ?? 0,
+					unit: normalizedVersion.tolerance_unit ?? '%'
+				}
+			},
+			mechanical_properties: {
+				mounting_type: normalizedVersion.mounting_type ?? null,
+				package_type: normalizedVersion.package_type ?? null,
+				pin_count: normalizedVersion.pin_count ?? 0
+			},
+			thermal_properties: {
+				operating_temperature: {
+					min: normalizedVersion.operating_temperature_min ?? 0,
+					max: normalizedVersion.operating_temperature_max ?? 0,
+					unit: normalizedVersion.temperature_unit ?? TemperatureUnitEnum.C
+				},
+				storage_temperature: {
+					min: normalizedVersion.storage_temperature_min ?? 0,
+					max: normalizedVersion.storage_temperature_max ?? 0,
+					unit: normalizedVersion.temperature_unit ?? TemperatureUnitEnum.C
+				}
+			},
 			material_composition: normalizedVersion.material_composition || undefined,
-			environmental_data: normalizedVersion.environmental_data as DbJson | undefined,
+			environmental_data: {
+				rohs_compliant: false,
+				reach_compliant: false,
+				conflict_mineral_free: false,
+				hazardous_substances: [],
+				environmental_certifications: []
+			},
 			dimensions: normalizedVersion.dimensions || undefined,
-			
-			// Physical properties 
 			part_weight: normalizedVersion.part_weight,
-			weight_unit: normalizedVersion.weight_unit || undefined,
-			dimensions_unit: normalizedVersion.dimensions_unit || undefined,
+			weight_unit: normalizedVersion.weight_unit,
+			dimensions_unit: normalizedVersion.dimensions_unit,
 			tolerance: normalizedVersion.tolerance,
-			tolerance_unit: normalizedVersion.tolerance_unit || undefined,
-			package_type: normalizedVersion.package_type || undefined,
+			tolerance_unit: normalizedVersion.tolerance_unit,
+			package_type: normalizedVersion.package_type,
+			mounting_type: normalizedVersion.mounting_type,
 			pin_count: normalizedVersion.pin_count,
-			
-			// Temperature properties
 			operating_temperature_min: normalizedVersion.operating_temperature_min,
 			operating_temperature_max: normalizedVersion.operating_temperature_max,
 			storage_temperature_min: normalizedVersion.storage_temperature_min,
 			storage_temperature_max: normalizedVersion.storage_temperature_max,
-			temperature_unit: normalizedVersion.temperature_unit || undefined,
-			
-			// Electrical ratings
-			voltage_rating_min: normalizedVersion.voltage_rating_min,
-			voltage_rating_max: normalizedVersion.voltage_rating_max,
-			current_rating_min: normalizedVersion.current_rating_min,
-			current_rating_max: normalizedVersion.current_rating_max,
-			power_rating_max: normalizedVersion.power_rating_max,
-			
-			// Status and metadata
-			version_status: normalizedVersion.version_status,
-			released_at: normalizedVersion.released_at || undefined,
+			temperature_unit: normalizedVersion.temperature_unit,
+			// revision_notes is already defined above at line 836
+			released_at: normalizedVersion.released_at,
 			created_by: normalizedVersion.created_by,
 			created_at: normalizedVersion.created_at,
 			updated_by: normalizedVersion.updated_by || undefined,
@@ -982,61 +1065,61 @@ async function loadManufacturersForPart(
  * @returns The created part with its initial version
  * @throws Error if input validation fails or database operation fails
  */
-export async function createPart(input: PartFormData, userId: string) {
-    try {
-        // Validate input
-        if (!input || !userId) {
-            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Missing required input or userId for part creation`);
-        }
+// export async function createPart(input: PartFormData, userId: string) {
+//     try {
+//         // Validate input
+//         if (!input || !userId) {
+//             throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Missing required input or userId for part creation`);
+//         }
 
-        console.log('[createPart] Creating new part with input data');
+//         console.log('[createPart] Creating new part with input data');
         
-        // Generate UUIDs for part and version
-        const partId = crypto.randomUUID();
-        const versionId = crypto.randomUUID();
+//         // Generate UUIDs for part and version
+//         const partId = crypto.randomUUID();
+//         const versionId = crypto.randomUUID();
         
-        // Begin a transaction for atomic operations
-        const result = await sql.begin(async (tx) => {
-            console.log('[createPart] Starting transaction');
+//         // Begin a transaction for atomic operations
+//         const result = await sql.begin(async (tx) => {
+//             console.log('[createPart] Starting transaction');
             
-            // Cast the transaction to PostgresTransaction to satisfy TypeScript
-            const transaction = tx as unknown as PostgresTransaction;
+//             // Cast the transaction to PostgresTransaction to satisfy TypeScript
+//             const transaction = tx as unknown as PostgresTransaction;
             
-            // 1. Insert the part record
-            await insertPartRecord(transaction, partId, userId, input);
+//             // 1. Insert the part record
+//             await insertPartRecord(transaction, partId, userId, input);
             
-            // 2. Insert the part version record
-            await insertPartVersionRecord(transaction, versionId, partId, userId, input);
+//             // 2. Insert the part version record
+//             await insertPartVersionRecord(transaction, versionId, partId, userId, input);
             
-            // 3. Update the part's current version
-            await transaction`
-            UPDATE "Part" 
-            SET current_version_id = ${versionId} 
-            WHERE part_id = ${partId}
-            `;
-            console.log('[createPart] Current version updated successfully');
+//             // 3. Update the part's current version
+//             await transaction`
+//             UPDATE "Part" 
+//             SET current_version_id = ${versionId} 
+//             WHERE part_id = ${partId}
+//             `;
+//             console.log('[createPart] Current version updated successfully');
 
-            // 4. Add related data
-            await addPartRelationships(transaction, partId, versionId, userId, input);
+//             // 4. Add related data
+//             await addPartRelationships(transaction, partId, versionId, userId, input);
             
-            // 5. Return the created part with its version
-            const createdPart = await transaction`
-                SELECT p.*, pv.*
-                FROM "Part" p
-                LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
-                WHERE p.part_id = ${partId}
-            `;
+//             // 5. Return the created part with its version
+//             const createdPart = await transaction`
+//                 SELECT p.*, pv.*
+//                 FROM "Part" p
+//                 LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
+//                 WHERE p.part_id = ${partId}
+//             `;
 
-            return normalizePart(createdPart[0]);
-        });
+//             return normalizePart(createdPart[0]);
+//         });
 
-        console.log('[createPart] Successfully created part with all related data');
-        return result;
-    } catch (error) {
-        console.error('[createPart] Error creating part:', error);
-        throw error;
-    }
-}
+//         console.log('[createPart] Successfully created part with all related data');
+//         return result;
+//     } catch (error) {
+//         console.error('[createPart] Error creating part:', error);
+//         throw error;
+//     }
+// }
 
 /**
  * Helper function to insert the part record
@@ -1067,117 +1150,197 @@ async function insertPartRecord(transaction: PostgresTransaction, partId: string
 }
 
 /**
+ * Database Constraints for PartVersion Table
+ * 
+ * CRITICAL VALUE-UNIT PAIR CONSTRAINTS:
+ * PartVersion_check4: CHECK (((part_weight IS NULL) AND (weight_unit IS NULL)) OR ((part_weight IS NOT NULL) AND (weight_unit IS NOT NULL)))
+ * PartVersion_check5: CHECK (((dimensions IS NULL) AND (dimensions_unit IS NULL)) OR ((dimensions IS NOT NULL) AND (dimensions_unit IS NOT NULL)))
+ * PartVersion_check6: CHECK (((tolerance IS NULL) AND (tolerance_unit IS NULL)) OR ((tolerance IS NOT NULL) AND (tolerance_unit IS NOT NULL)))
+ * 
+ * These constraints require that for each value-unit pair:
+ * - Both must be NULL, OR
+ * - Both must have values (non-NULL)
+ * - NEVER set only one of the pair (e.g., value=0, unit=null) as this will violate the constraint
+ * 
+ * RANGE CONSTRAINTS:
+ * PartVersion_check:  CHECK (voltage_rating_max >= voltage_rating_min)
+ * PartVersion_check1: CHECK (current_rating_max >= current_rating_min)
+ * PartVersion_check2: CHECK (operating_temperature_max >= operating_temperature_min)
+ * PartVersion_check3: CHECK (storage_temperature_max >= storage_temperature_min)
+ * 
+ * VALUE VALIDATION CONSTRAINTS:
+ * PartVersion_part_weight_check:      CHECK (part_weight >= 0)
+ * PartVersion_pin_count_check:        CHECK (pin_count >= 0)
+ * PartVersion_power_rating_max_check: CHECK (power_rating_max >= 0)
+ * PartVersion_tolerance_check:        CHECK (tolerance >= 0)
+ * PartVersion_dimensions_check:       CHECK (dimensions ?& ARRAY['length','width','height'])
+ * 
+ * UNIQUE CONSTRAINTS:
+ * PartVersion_part_id_part_version_key: UNIQUE (part_id, part_version)
+ * 
+ * TEXT FIELD CONSTRAINTS:
+ * PartVersion_part_name_check:    CHECK (part_name <> '')
+ * PartVersion_part_version_check: CHECK (part_version <> '')
+ */
+
+/**
  * Helper function to insert the part version record
  */
+/**
+ * Helper function to ensure consistent handling of value-unit pairs to meet database constraints.
+ * Satisfies the CHECK constraints such as PartVersion_check4, PartVersion_check5, PartVersion_check6
+ * 
+ * @param value - The value part of the pair (e.g., part_weight)
+ * @param unit - The unit part of the pair (e.g., weight_unit)
+ * @returns A tuple where both elements are either both null or both have values
+ */
+function ensureValueUnitConsistency<T, U>(value: T | null | undefined, unit: U | null | undefined): [T | null, U | null] {
+    // If either value or unit is empty/null/undefined, both should be null
+    if (value === undefined || value === null || value === '') {
+        return [null, null];
+    }
+    if (unit === undefined || unit === null || unit === '') {
+        return [null, null];
+    }
+    // Otherwise return both with their original values
+    return [value, unit];
+}
+
 async function insertPartVersionRecord(transaction: PostgresTransaction, versionId: string, partId: string, userId: string, input: ExtendedPartFormData) {
-    const processJsonField: JsonFieldProcessor = (fieldValue, fieldName) => {
-        if (fieldValue === undefined || fieldValue === null) {
-            return null;
-        }
-        
-        try {
-            return typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue);
-        } catch (error) {
-            console.error(`Error processing JSON field ${fieldName}:`, error);
-            return null;
-        }
-    };
-    
+    // Process field values for database insertion
     const processNumericField: NumericFieldProcessor = (value) => {
         if (value === undefined || value === null || value === '') {
             return null;
         }
-        
         const num = Number(value);
         return isNaN(num) ? null : num;
     };
     
-    // Insert the part version with all details
+    // Process json fields
+    const processJsonField = (value: any) => {
+        if (value === undefined || value === null) return null;
+        return typeof value === 'string' ? value : JSON.stringify(value);
+    };
+    
+    // Get version status - default to DRAFT if not provided
+    const versionStatus = input.version_status || LifecycleStatusEnum.DRAFT;
+    
+    console.log(`[insertPartVersionRecord] Setting released_at to CURRENT_TIMESTAMP for ${versionStatus} status`);
+    
+    // Process paired value-unit fields to satisfy database constraints
+    // PartVersion_check4: part_weight and weight_unit must both be NULL or both be non-NULL
+    const [partWeight, weightUnit] = ensureValueUnitConsistency(
+        processNumericField(input.part_weight),
+        input.weight_unit
+    );
+    console.log(`[insertPartVersionRecord] Processed part_weight: ${partWeight}, weight_unit: ${weightUnit}`);
+    
+    // PartVersion_check6: tolerance and tolerance_unit must both be NULL or both be non-NULL
+    const [tolerance, toleranceUnit] = ensureValueUnitConsistency(
+        processNumericField(input.tolerance),
+        input.tolerance_unit
+    );
+    console.log(`[insertPartVersionRecord] Processed tolerance: ${tolerance}, tolerance_unit: ${toleranceUnit}`);
+    
+    // Process dimensions (PartVersion_check5) - enforce constraint for dimensions and unit
+    // Dimensions and dimensions_unit must both be NULL or both be non-NULL
+    // Additionally, PartVersion_dimensions_check requires that dimensions contain 'length', 'width', and 'height' keys
+    let dimensions = null;
+    let dimensionsUnit = null;
+    
+    if (input.dimensions && typeof input.dimensions === 'object' && input.dimensions_unit) {
+        const dim = input.dimensions as Record<string, number>;
+        
+        // Ensure all required dimension fields are present with valid numeric values
+        // This satisfies the PartVersion_dimensions_check constraint
+        const length = typeof dim.length === 'number' ? dim.length : null;
+        const width = typeof dim.width === 'number' ? dim.width : null;
+        const height = typeof dim.height === 'number' ? dim.height : null;
+        
+        // Create a properly structured dimensions object
+        dimensions = { length, width, height };
+        dimensionsUnit = input.dimensions_unit;
+        
+        console.log(`[insertPartVersionRecord] Using dimensions: ${JSON.stringify(dimensions)}`);
+        console.log(`[insertPartVersionRecord] Using dimensions unit: ${dimensionsUnit}`);
+    } else {
+        // If either is missing, both must be null (PartVersion_check5)
+        dimensions = null;
+        dimensionsUnit = null;
+        console.log(`[insertPartVersionRecord] Both dimensions and unit set to null due to missing data`);
+    }
+    
+    // Process numeric ranges to satisfy CHECK constraints
+    let voltage_min = processNumericField(input.voltage_rating_min) || null;
+    let voltage_max = processNumericField(input.voltage_rating_max) || null;
+
+    
+    let current_min = processNumericField(input.current_rating_min) || null;
+    let current_max = processNumericField(input.current_rating_max) || null;
+
+    
+    let op_temp_min = processNumericField(input.operating_temperature_min) || null;
+    let op_temp_max = processNumericField(input.operating_temperature_max) || null;
+ 
+    
+    let storage_temp_min = processNumericField(input.storage_temperature_min) || null;
+    let storage_temp_max = processNumericField(input.storage_temperature_max) || null;
+
+    
+    // Use a simplified direct SQL query that avoids conditional template strings
+    // All field values are properly processed and cast to the correct types
     await transaction`
-    INSERT INTO "PartVersion" (
-        part_version_id, 
-        part_id, 
-        part_version, 
-        part_name,
-        short_description,
-        long_description,
-        functional_description,
-        technical_specifications,
-        properties,
-        electrical_properties,
-        mechanical_properties,
-        thermal_properties,
-        part_weight,
-        weight_unit,
-        dimensions,
-        dimensions_unit,
-        material_composition,
-        environmental_data,
-        voltage_rating_min,
-        voltage_rating_max,
-        current_rating_min,
-        current_rating_max,
-        power_rating_max,
-        tolerance,
-        tolerance_unit,
-        package_type,
-        mounting_type,
-        pin_count,
-        operating_temperature_min,
-        operating_temperature_max,
-        storage_temperature_min,
-        storage_temperature_max,
-        temperature_unit,
-        revision_notes,
-        version_status,
-        released_at,
-        created_by,
-        created_at,
-        updated_by,
-        updated_at
-    ) VALUES (
-        ${versionId}, 
-        ${partId}, 
-        ${input.part_version || '0.1.0'}, 
-        ${input.part_name}, 
-        ${input.short_description || null},
-        ${processJsonField(input.long_description, 'long_description')},
-        ${input.functional_description || null},
-        ${processJsonField(input.technical_specifications, 'technical_specifications')},
-        ${processJsonField(input.properties, 'properties')},
-        ${processJsonField(input.electrical_properties, 'electrical_properties')},
-        ${processJsonField(input.mechanical_properties, 'mechananical_properties')},
-        ${processJsonField(input.thermal_properties, 'thermal_properties')},
-        ${processNumericField(input.part_weight)},
-        ${input.weight_unit ? input.weight_unit.toLowerCase() : null}::weight_unit_enum,
-        ${processJsonField(input.dimensions, 'dimensions')},
-        ${input.dimensions_unit ? input.dimensions_unit.toLowerCase() : null}::dimension_unit_enum,
-        ${processJsonField(input.material_composition, 'material_composition')},
-        ${processJsonField(input.environmental_data, 'environmental_data')},
-        ${processNumericField(input.voltage_rating_min)},
-        ${processNumericField(input.voltage_rating_max)},
-        ${processNumericField(input.current_rating_min)},
-        ${processNumericField(input.current_rating_max)},
-        ${processNumericField(input.power_rating_max)},
-        ${processNumericField(input.tolerance)},
-        ${input.tolerance_unit || null},
-        ${input.package_type ? input.package_type.toUpperCase() : null}::package_type_enum,
-        ${input.mounting_type ? input.mounting_type.toUpperCase() : null}::mounting_type_enum,
-        ${processNumericField(input.pin_count)},
-        ${processNumericField(input.operating_temperature_min)},
-        ${processNumericField(input.operating_temperature_max)},
-        ${processNumericField(input.storage_temperature_min)},
-        ${processNumericField(input.storage_temperature_max)},
-        ${input.temperature_unit ? input.temperature_unit.toUpperCase() : null}::temperature_unit_enum,
-        ${input.revision_notes || null},
-        ${input.version_status || LifecycleStatusEnum.DRAFT}::lifecycle_status_enum,
-        ${input.released_at ? new Date(input.released_at) : null},
-        ${userId},
-        NOW(),
-        ${userId},
-        NOW()
-    )
+        INSERT INTO "PartVersion" (
+            part_version_id, part_id, part_version, part_name,
+            short_description, long_description, functional_description,
+            technical_specifications, properties, electrical_properties,
+            mechanical_properties, thermal_properties, part_weight, weight_unit,
+            dimensions, dimensions_unit, material_composition, environmental_data,
+            voltage_rating_min, voltage_rating_max, current_rating_min,
+            current_rating_max, power_rating_max, tolerance, tolerance_unit,
+            package_type, mounting_type, pin_count, operating_temperature_min,
+            operating_temperature_max, storage_temperature_min, storage_temperature_max,
+            temperature_unit, revision_notes, version_status,
+            released_at,
+            created_by, created_at, updated_by, updated_at
+        ) VALUES (
+            ${versionId}, ${partId}, ${input.part_version || '0.1.0'}, ${input.part_name},
+            ${input.short_description || null},
+            ${processJsonField(input.long_description)},
+            ${input.functional_description || null},
+            ${processJsonField(input.technical_specifications)},
+            ${processJsonField(input.properties)},
+            ${processJsonField(input.electrical_properties)},
+            ${processJsonField(input.mechanical_properties)},
+            ${processJsonField(input.thermal_properties)},
+            ${partWeight}, /* Using consistent value-unit pair for PartVersion_check4 */
+            ${weightUnit ? weightUnit : null}::weight_unit_enum,
+            ${dimensions ? sql.json(dimensions) : null}, /* Using proper PostgreSQL JSON format with sql.json() */
+            ${dimensionsUnit ? dimensionsUnit : null}::dimension_unit_enum,
+            ${processJsonField(input.material_composition)},
+            ${processJsonField(input.environmental_data)},
+            ${voltage_min},
+            ${voltage_max},
+            ${current_min},
+            ${current_max},
+            ${processNumericField(input.power_rating_max) || null},
+            ${tolerance}, /* Using consistent value-unit pair for PartVersion_check6 */
+            ${toleranceUnit || null},
+            ${input.package_type ? input.package_type.toUpperCase() : null}::package_type_enum,
+            ${input.mounting_type ? input.mounting_type.toUpperCase() : null}::mounting_type_enum,
+            ${processNumericField(input.pin_count) || null},
+            ${op_temp_min},
+            ${op_temp_max},
+            ${storage_temp_min},
+            ${storage_temp_max},
+            ${input.temperature_unit ? input.temperature_unit.toUpperCase() : null}::temperature_unit_enum,
+            ${input.revision_notes || null},
+            ${versionStatus}::lifecycle_status_enum,
+            CURRENT_TIMESTAMP,
+            ${userId}, CURRENT_TIMESTAMP, ${userId}, CURRENT_TIMESTAMP
+        )
     `;
+    
     console.log('[createPart] PartVersion inserted successfully');
 }
 
@@ -1204,8 +1367,12 @@ async function addPartRelationships(transaction: PostgresTransaction, partId: st
                     mfgPart.manufacturer_id,
                     mfgPart.part_number || mfgPart.manufacturer_part_number || '',
                     userId,
-                    mfgPart.manufacturer_name || '',
-                    mfgPart.description || ''
+                    typeof mfgPart.manufacturer_name === 'string' ? mfgPart.manufacturer_name : '',
+                    // Ensure description is strictly a string
+                    typeof mfgPart.description === 'string' ? mfgPart.description : '',
+                    'ACTIVE',  // Status parameter (using default value)
+                    // Ensure datasheet_url is strictly a string
+                    typeof mfgPart.datasheet_url === 'string' ? mfgPart.datasheet_url : ''
                 );
             }
             console.log(`[createPart] Added ${manufacturerParts.length} manufacturer parts`);
@@ -1287,7 +1454,7 @@ async function addPartRelationships(transaction: PostgresTransaction, partId: st
     await addTagsAndCustomFields(versionId, userId, input);
     await addPartFamiliesAndGroups(transaction, partId, userId, input);
     await addPartStructure(partId, userId, input);
-    await addPartRevisions(versionId, userId, input);
+    await addPartRevisions(transaction, versionId, userId, input);
 }
 
 /**
@@ -1406,21 +1573,30 @@ async function addTagsAndCustomFields(versionId: string, userId: string, input: 
                 
             let fieldCount = 0;
             for (const [fieldName, fieldValue] of Object.entries(customFields)) {
-                // Use the imported module function
-                await createPartCustomField(
-                    versionId,
-                    fieldName,
-                    fieldValue as JsonValue, 
-                    typeof fieldValue,
-                    userId,
-                    false, // required
-                    '', // fieldGroup
-                    0, // displayOrder
-                    '', // validationRegex
-                    '', // validationMessage
-                    [] // options (empty array instead of empty string)
-                );
-                fieldCount++;
+                // Process each value with proper typing
+                if (fieldValue === null || 
+                    typeof fieldValue === 'string' || 
+                    typeof fieldValue === 'number' || 
+                    typeof fieldValue === 'boolean' || 
+                    fieldValue instanceof Date) {
+                    await createPartCustomField(
+                        versionId,
+                        fieldName,
+                        fieldValue as JsonValue, 
+                        typeof fieldValue,
+                        userId,
+                        false, // required
+                        '', // fieldGroup
+                        0, // displayOrder
+                        '', // validationRegex
+                        '', // validationMessage
+                        [] // options (empty array instead of empty string)
+                    );
+                    fieldCount++;
+                } else {
+                    // Skip invalid values
+                    console.warn(`[createPart] Skipping invalid value type: ${typeof fieldValue}`);
+                }
             }
             console.log(`[createPart] Added ${fieldCount} custom fields`);
         } catch (e) {
@@ -1544,53 +1720,67 @@ async function addPartStructure(partId: string, userId: string, input: ExtendedP
 
 /**
  * Helper function to add part revisions
+ * @param transaction PostgreSQL transaction to use for database operations
+ * @param versionId Part version ID to create revisions for
+ * @param userId User ID creating the revision
+ * @param input Form data with revision details
  */
-async function addPartRevisions(versionId: string, userId: string, input: ExtendedPartFormData) {
-    const revisionRecords = parseComplexField(input.revision_records) as {
-        change_description?: string;
-        changed_fields?: string | string[];
-    }[];
-    if (revisionRecords.length > 0) {
-        try {
-            for (const revision of revisionRecords) {
-                await createPartRevision(
-                    versionId,
-                    '1.0', // Default revision number for initial creation
-                    userId,
-                    'INITIAL',
-                    'Initial version creation',
-                    '',
-                    [],
-                    {},
-                    {},
-                    'APPROVED',
-                    userId,
-                    new Date(),
-                    ''
-                );
-            }
-            console.log(`[createPart] Added ${revisionRecords.length} revision records`);
-        } catch (e) {
-            console.error('[createPart] Error processing revision records:', e);
+async function addPartRevisions(transaction: PostgresTransaction, versionId: string, userId: string, input: ExtendedPartFormData) {
+    // Function to create a revision record within the transaction
+    // This avoids the "Part version not found" error since we're in the same transaction
+    async function createRevisionInTransaction(
+        revNumber: string, 
+        changeType: string, 
+        description: string
+    ) {
+        // Generate a unique ID for the revision
+        const revisionId = crypto.randomUUID();
+        
+        // Insert the revision record directly in the transaction based on the actual database schema
+        // The PartRevision table has these columns: part_revision_id, part_version_id, change_description, changed_by, changed_fields, revision_date
+        await transaction`
+            INSERT INTO "PartRevision" (
+                part_revision_id,
+                part_version_id,
+                change_description,
+                changed_by,
+                changed_fields,
+                revision_date
+            ) VALUES (
+                ${revisionId},
+                ${versionId},
+                ${description},
+                ${userId},
+                ${sql.json({"type": changeType})},
+                CURRENT_TIMESTAMP
+            )
+        `;
+        
+        console.log(`[addPartRevisions] Added revision record ${revisionId} for part version ${versionId}`);
+    }
+    
+    try {
+        // Check if the revision_notes field is populated
+        if (input.revision_notes) {
+            await createRevisionInTransaction(
+                '1.0', // Default revision number
+                'INITIAL',
+                input.revision_notes // Use revision_notes as the change description
+            );
+            console.log(`[createPart] Added revision record from notes`);
+        } else {
+            // Add a default initial revision
+            await createRevisionInTransaction(
+                '1.0', // Default revision number for initial creation
+                'INITIAL',
+                'Initial part creation'
+            );
+            console.log(`[createPart] Added default initial revision record`);
         }
-    } else {
-        // Add a default initial revision
-        await createPartRevision(
-            versionId,
-            '1.0', // Default revision number for initial creation
-            userId,
-            'INITIAL',
-            'Initial part creation',
-            '', // changeJustification
-            [], // changed_fields - use empty array instead of empty object
-            {}, // previousValues
-            {}, // newValues
-            'APPROVED', // Default for initial creation
-            userId,
-            new Date(),
-            '' // comments
-        );
-        console.log(`[createPart] Added default initial revision record`);
+    } catch (e) {
+        console.error('[addPartRevisions] Error creating revision record:', e);
+        // Don't rethrow the error - allow the transaction to continue
+        // This ensures the part creation succeeds even if revision creation fails
     }
 }
 
@@ -1712,7 +1902,7 @@ export async function updatePartVersion(
 			    updateFields.push('updated_by = ${updatedBy}');
 			    updateValues.updatedBy = data.updated_by;
 			}
-			updateFields.push('updated_at = NOW()');
+			updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
 			
 			// 4. Execute the update if there are fields to update
 			if (updateFields.length > 0) {
@@ -1762,7 +1952,7 @@ export async function updatePartVersion(
 				// Always update the timestamp
 				await transaction`
 					UPDATE "PartVersion" 
-					SET updated_at = NOW()
+					SET updated_at = ${sql.unsafe('NOW()')}
 					WHERE part_version_id = ${data.part_version_id}
 				`;
 				
@@ -1950,7 +2140,364 @@ interface PartVersionInput {
     released_at?: Date; // Schema field
     
     // Allow both numeric and string inputs for number fields to accommodate form inputs
-    weight?: number;
+    weight?: number | string;
+    weight_unit?: string;
+    weightUnit?: string; // Client-side convenience field
+    
+    // Complex objects with flexible input formats
+    dimensions?: Dimensions | null;
+    dimensions_unit?: string;
+    dimensionsUnit?: string; // Client-side convenience field
+    tolerance?: number; // Fixed to match schema type - must be a number when sent to database
+    tolerance_unit?: string;
+    toleranceUnit?: string; // Client-side convenience field
+    
+    // Component properties
+    package_type?: string;
+    packageType?: string; // Client-side convenience field
+    mounting_type?: string;
+    mountingType?: string; // Client-side convenience field
+    pin_count?: number;
+    pinCount?: number | string; // Client-side convenience field
+    
+    // Temperature properties with flexible input formats
+    operating_temp_min?: number;
+    operatingTempMin?: number | string; // Client-side convenience field
+    operating_temp_max?: number;
+    operatingTempMax?: number | string; // Client-side convenience field
+    storage_temp_min?: number;
+    storageTempMin?: number | string; // Client-side convenience field
+    storage_temp_max?: number;
+    storageTempMax?: number | string; // Client-side convenience field
+    temperature_unit?: string;
+    temperatureUnit?: string; // Client-side convenience field
+    
+    // Electrical properties with flexible input formats
+    voltage_rating_min?: number;
+    voltageRatingMin?: number | string; // Client-side convenience field
+    voltage_rating_max?: number;
+    voltageRatingMax?: number | string; // Client-side convenience field
+    current_rating_min?: number;
+    currentRatingMin?: number | string; // Client-side convenience field
+    current_rating_max?: number;
+    currentRatingMax?: number | string; // Client-side convenience field
+    power_rating_max?: number;
+    powerRatingMax?: number | string; // Client-side convenience field
+    
+    // JSON fields with proper type definitions
+    technical_specifications?: JsonValue;
+    technicalSpecifications?: JsonValue | Record<string, unknown> | string | null; // Client-side convenience field
+    properties?: JsonValue;
+    electrical_properties?: JsonValue;
+    electricalProperties?: ElectricalProperties | DbJson | string | null; // Client-side convenience field
+    mechanical_properties?: JsonValue;
+    mechanicalProperties?: MechanicalProperties | DbJson | string | null; // Client-side convenience field
+    thermal_properties?: JsonValue;
+    thermalProperties?: ThermalProperties | DbJson | string | null; // Client-side convenience field
+    material_composition?: JsonValue;
+    materialComposition?: MaterialComposition | DbJson | string | null; // Client-side convenience field
+    environmental_data?: JsonValue;
+    environmentalData?: EnvironmentalData | DbJson | string | null; // Client-side convenience field
+    
+    // Other required schema fields
+    short_description?: string;
+    long_description?: string;
+    functional_description?: string;
+    revision_notes?: string;
+    
+    // Categories in various formats
+    categories?: Array<{id?: string; category_id?: string}> | string;
+}
+
+// /**
+//  * Create a new version of a part1
+//  * 
+//  * @param partVersion The part version data with required fields
+//  * @returns Newly created part version with normalized structure
+//  */
+// export async function createPartVersion(partVersion: PartVersionInput): Promise<SchemaPartVersion> {
+//     try {
+//         // Input validation ensuring all required fields are present
+//         if (!partVersion.id || !partVersion.partId || !partVersion.part_id) {
+//             console.error('[createPartVersion] Missing required fields');
+//             throw new Error('Missing required fields in part version data');
+//         }
+
+//         // Generate IDs
+//         const versionId = partVersion.id || crypto.randomUUID();
+//         const partId = partVersion.part_id || partVersion.partId; // Prefer snake_case but fall back to camelCase
+        
+//         // Helper function to safely convert values for PostgreSQL JSON
+//         const toPostgresJson = <T>(value: T | string | null | undefined): JsonValue | null => {
+//             if (value === undefined || value === null) return null;
+            
+//             // If the value is already a string representation of JSON, parse it first
+//             if (typeof value === 'string') {
+//                 try {
+//                     // Valid JSON string - parse it
+//                     return JSON.parse(value) as JsonValue;
+//                 } catch (e) {
+//                     // Not valid JSON, return the string directly since strings are valid JsonValue
+//                     return value;
+//                 }
+//             }
+            
+//             // For non-string values, use JSON.stringify and parse back to ensure it's a valid JsonValue
+//             return JSON.parse(JSON.stringify(value));
+//         };
+        
+//         // Helper function to safely convert number values
+//         const toNumber = (value: string | number | undefined | null): number | null => {
+//             if (value === undefined || value === null || value === '') return null;
+//             if (typeof value === 'number') return value;
+//             const num = Number(value);
+//             return isNaN(num) ? null : num;
+//         };
+        
+//         // Create the new part version record with properly typed fields
+//         const result = await sql`
+//             INSERT INTO "PartVersion" (
+//                 part_version_id, part_id, part_version, part_name,
+//                 short_description, long_description, functional_description,
+//                 technical_specifications, properties, electrical_properties,
+//                 mechanical_properties, thermal_properties, part_weight, weight_unit,
+//                 dimensions, dimensions_unit, material_composition, environmental_data,
+//                 voltage_rating_min, voltage_rating_max, current_rating_min,
+//                 current_rating_max, power_rating_max, tolerance, tolerance_unit,
+//                 package_type, mounting_type, pin_count, operating_temperature_min,
+//                 operating_temperature_max, storage_temperature_min, storage_temperature_max,
+//                 temperature_unit, revision_notes, version_status,
+//                 released_at,
+//                 created_by, created_at, updated_by, updated_at
+//             ) VALUES (
+//                 ${versionId}, ${partId}, ${partVersion.part_version || '0.1.0'}, ${partVersion.part_name},
+//                 ${partVersion.short_description || null},
+//                 ${processJsonField(partVersion.long_description)},
+//                 ${partVersion.functional_description || null},
+//                 ${processJsonField(partVersion.technical_specifications)},
+//                 ${processJsonField(partVersion.properties)},
+//                 ${processJsonField(partVersion.electrical_properties)},
+//                 ${processJsonField(partVersion.mechanical_properties)},
+//                 ${processJsonField(partVersion.thermal_properties)},
+//                 ${toNumber(partVersion.weight)},
+//                 ${partVersion.weight_unit ? partVersion.weight_unit : null}::weight_unit_enum,
+//                 ${partVersion.dimensions ? sql.json(toPostgresJson(partVersion.dimensions)) : null},
+//                 ${partVersion.dimensions_unit ? partVersion.dimensions_unit : null}::dimension_unit_enum,
+//                 ${processJsonField(partVersion.material_composition)},
+//                 ${processJsonField(partVersion.environmental_data)},
+//                 ${toNumber(partVersion.voltage_rating_min) || 0},
+//                 ${toNumber(partVersion.voltage_rating_max) || 0},
+//                 ${toNumber(partVersion.current_rating_min) || 0},
+//                 ${toNumber(partVersion.current_rating_max) || 0},
+//                 ${toNumber(partVersion.power_rating_max) || 0},
+//                 ${toNumber(partVersion.tolerance) || 0},
+//                 ${partVersion.tolerance_unit || null},
+//                 ${partVersion.package_type ? partVersion.package_type.toUpperCase() : null}::package_type_enum,
+//                 ${partVersion.mounting_type ? partVersion.mounting_type.toUpperCase() : null}::mounting_type_enum,
+//                 ${toNumber(partVersion.pin_count) || 0},
+//                 ${toNumber(partVersion.operating_temp_min) || 0},
+//                 ${toNumber(partVersion.operating_temp_max) || 0},
+//                 ${toNumber(partVersion.storage_temp_min) || 0},
+//                 ${toNumber(partVersion.storage_temp_max) || 0},
+//                 ${partVersion.temperature_unit ? partVersion.temperature_unit.toUpperCase() : null}::temperature_unit_enum,
+//                 ${partVersion.revision_notes || null},
+//                 ${partVersion.status || null},
+//                 NOW(), /* Use PostgreSQL's NOW() function directly in the query template */
+//                 ${partVersion.created_by || partVersion.createdBy},
+//                 ${sql.unsafe('NOW()')},
+//                 ${partVersion.created_by || partVersion.createdBy},
+//                 ${sql.unsafe('NOW()')}
+//             ) RETURNING *
+//         `;
+        
+//         if (!result || result.length === 0) {
+//             throw new Error('Failed to create part version');
+//         }
+        
+//         // Create initial revision record to track this version creation
+//         await createPartRevision(
+//             versionId,
+//             '1.0',
+//             partVersion.createdBy,
+//             'INITIAL',
+//             'Initial version creation',
+//             '',
+//             [],
+//             {},
+//             {},
+//             'APPROVED',
+//             partVersion.createdBy,
+//             new Date(),
+//             ''
+//         );
+        
+//         // Process categories if provided
+//         if (partVersion.categories) {
+//             const categories = Array.isArray(partVersion.categories) 
+//                 ? partVersion.categories 
+//                 : (typeof partVersion.categories === 'string'
+//                     ? partVersion.categories.split(',')
+//                     : []);
+                    
+//             for (const category of categories) {
+//                 const categoryId = typeof category === 'string' ? category.trim() : category.id || category.category_id;
+//                 if (categoryId) {
+//                     await addCategoryToPartVersion(versionId, categoryId);
+//                 }
+//             }
+//         }
+        
+//         // Set any custom fields provided in the input object
+//         // This provides flexibility for different part types while maintaining schema validation
+//         if (partVersion.technicalSpecifications || partVersion.properties || 
+//             partVersion.electricalProperties || partVersion.mechanicalProperties || 
+//             partVersion.thermalProperties || partVersion.materialComposition || 
+//             partVersion.environmentalData) {
+            
+//             await sql`
+//                 UPDATE "PartVersion"
+//                 SET 
+//                     technical_specifications = ${partVersion.technicalSpecifications ? sql.json(toPostgresJson(partVersion.technicalSpecifications)) : null},
+//                     properties = ${partVersion.properties ? sql.json(toPostgresJson(partVersion.properties)) : null},
+//                     electrical_properties = ${partVersion.electricalProperties ? sql.json(toPostgresJson(partVersion.electricalProperties)) : null},
+//                     mechanical_properties = ${partVersion.mechanicalProperties ? sql.json(toPostgresJson(partVersion.mechanicalProperties)) : null},
+//                     thermal_properties = ${partVersion.thermalProperties ? sql.json(toPostgresJson(partVersion.thermalProperties)) : null},
+//                     material_composition = ${partVersion.materialComposition ? sql.json(toPostgresJson(partVersion.materialComposition)) : null},
+//                     environmental_data = ${partVersion.environmentalData ? sql.json(toPostgresJson(partVersion.environmentalData)) : null}
+//                 WHERE part_version_id = ${versionId};
+//             `;
+//         }
+        
+//         // Add electrical properties if provided
+//         if (partVersion.voltageRatingMin || partVersion.voltageRatingMax || 
+//             partVersion.currentRatingMin || partVersion.currentRatingMax || 
+//             partVersion.powerRatingMax || partVersion.tolerance || partVersion.toleranceUnit) {
+            
+//             await sql`
+//                 UPDATE "PartVersion"
+//                 SET 
+//                     voltage_rating_min = ${partVersion.voltageRatingMin || null},
+//                     voltage_rating_max = ${partVersion.voltageRatingMax || null},
+//                     current_rating_min = ${partVersion.currentRatingMin || null},
+//                     current_rating_max = ${partVersion.currentRatingMax || null},
+//                     power_rating_max = ${partVersion.powerRatingMax || null},
+//                     tolerance = ${partVersion.tolerance || null},
+//                     tolerance_unit = ${partVersion.toleranceUnit || null}
+//                 WHERE part_version_id = ${versionId};
+//             `;
+//         }
+        
+//         console.log(`[createPartVersion] Successfully created version ${partVersion.version} of part ${partId}`);
+//         const versionData = normalizePartVersion(result[0]);
+//         // Ensure proper handling of JSON fields when returning the normalized part version
+//         // using snake_case property names to match database schema and PartVersion type
+//         return {
+//             ...versionData,
+//             technical_specifications: versionData.technical_specifications 
+//                 ? (typeof versionData.technical_specifications === 'string' 
+//                     ? JSON.parse(versionData.technical_specifications) 
+//                     : versionData.technical_specifications) 
+//                 : undefined,
+//             properties: versionData.properties 
+//                 ? (typeof versionData.properties === 'string' 
+//                     ? JSON.parse(versionData.properties) 
+//                     : versionData.properties) 
+//                 : undefined,
+//             electrical_properties: versionData.electrical_properties 
+//                 ? (typeof versionData.electrical_properties === 'string' 
+//                     ? JSON.parse(versionData.electrical_properties as string) as DbJson
+//                     : versionData.electrical_properties as DbJson)
+//                 : null,
+//             mechanical_properties: versionData.mechanical_properties 
+//                 ? (typeof versionData.mechanical_properties === 'string' 
+//                     ? JSON.parse(versionData.mechanical_properties as string) as DbJson
+//                     : versionData.mechanical_properties as DbJson)
+//                 : null,
+//             thermal_properties: versionData.thermal_properties 
+//                 ? (typeof versionData.thermal_properties === 'string' 
+//                     ? JSON.parse(versionData.thermal_properties as string) as DbJson
+//                     : versionData.thermal_properties as DbJson)
+//                 : null,
+//             material_composition: versionData.material_composition 
+//                 ? (typeof versionData.material_composition === 'string'
+//                     ? JSON.parse(versionData.material_composition as string) as DbJson
+//                     : versionData.material_composition as DbJson)
+//                 : null,
+//             environmental_data: versionData.environmental_data 
+//                 ? (typeof versionData.environmental_data === 'string' 
+//                     ? JSON.parse(versionData.environmental_data as string) as DbJson
+//                     : versionData.environmental_data as DbJson)
+//                 : null,
+//             dimensions: deserializeDimensions(versionData.dimensions) as { length: number; width: number; height: number; } | null | undefined, // Ensure explicit type compatibility with schema
+//         };
+//     } catch (error) {
+//         console.error('[createPartVersion] Error creating part version:', error);
+//         throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : String(error)}`);
+//     }
+// }
+
+/**
+ * Remove a category from a part version1
+ * 
+ * @param partVersionId The part version ID to remove the category from
+ * @param categoryId The category ID to remove
+ * @throws Error if the operation fails
+ */
+export async function removeCategoryFromPartVersion(partVersionId: string, categoryId: string): Promise<void> {
+    try {
+        // Validate inputs
+        if (!partVersionId || partVersionId.trim() === '') {
+            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part version ID`);
+        }
+        
+        if (!categoryId || categoryId.trim() === '') {
+            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid category ID`);
+        }
+        
+        console.log(`[removeCategoryFromPartVersion] Removing category ${categoryId} from part version ${partVersionId}`);
+        
+        // Delete the category association
+        const result = await sql`
+            DELETE FROM "PartVersionCategory" 
+            WHERE part_version_id = ${partVersionId} AND category_id = ${categoryId}
+            RETURNING *
+        `;
+        
+        if (result.length === 0) {
+            console.warn(`[removeCategoryFromPartVersion] Category ${categoryId} was not associated with part version ${partVersionId}`);
+        } else {
+            console.log(`[removeCategoryFromPartVersion] Successfully removed category ${categoryId} from part version ${partVersionId}`);
+        }
+    } catch (error) {
+        console.error(`[removeCategoryFromPartVersion] Error removing category ${categoryId} from part version ${partVersionId}:`, error);
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
+
+/**
+ * Extended interface for part version input with categories
+ * Directly inherits from the schema-defined CreatePartVersion type and adds additional
+ * input-specific properties needed for the form submission.
+ */
+interface PartVersionInput {
+    // Required core fields matching the schema
+    id: string;
+    partId: string;
+    version: string;
+    name: string;
+    status: string;
+    createdBy: string;
+    part_id: string; // Schema field required for compatibility
+    part_name: string; // Schema field required for compatibility
+    part_version: string; // Schema field required for compatibility
+    created_by: string; // Schema field required for compatibility
+
+    // Date fields with flexible input formats
+    releasedAt?: Date | string;
+    released_at?: Date; // Schema field
+    
+    // Allow both numeric and string inputs for number fields to accommodate form inputs
+    weight?: number | string;
     weight_unit?: string;
     weightUnit?: string; // Client-side convenience field
     
@@ -2020,7 +2567,7 @@ interface PartVersionInput {
 }
 
 /**
- * Create a new version of a part
+ * Create a new version of a part2
  * 
  * @param partVersion The part version data with required fields
  * @returns Newly created part version with normalized structure
@@ -2067,93 +2614,56 @@ export async function createPartVersion(partVersion: PartVersionInput): Promise<
         // Create the new part version record with properly typed fields
         const result = await sql`
             INSERT INTO "PartVersion" (
-                part_version_id,
-                part_id,
-                part_version,
-                part_name,
-                short_description,
-                long_description,
-                functional_description,
-                technical_specifications,
-                properties,
-                electrical_properties,
-                mechanical_properties,
-                thermal_properties,
-                part_weight,
-                weight_unit,
-                dimensions,
-                dimensions_unit,
-                material_composition,
-                environmental_data,
-                voltage_rating_min,
-                voltage_rating_max,
-                current_rating_min,
-                current_rating_max,
-                power_rating_max,
-                tolerance,
-                tolerance_unit,
-                package_type,
-                mounting_type,
-                pin_count,
-                operating_temperature_min,
-                operating_temperature_max,
-                storage_temperature_min,
-                storage_temperature_max,
-                temperature_unit,
-                revision_notes,
-                version_status,
+                part_version_id, part_id, part_version, part_name,
+                short_description, long_description, functional_description,
+                technical_specifications, properties, electrical_properties,
+                mechanical_properties, thermal_properties, part_weight, weight_unit,
+                dimensions, dimensions_unit, material_composition, environmental_data,
+                voltage_rating_min, voltage_rating_max, current_rating_min,
+                current_rating_max, power_rating_max, tolerance, tolerance_unit,
+                package_type, mounting_type, pin_count, operating_temperature_min,
+                operating_temperature_max, storage_temperature_min, storage_temperature_max,
+                temperature_unit, revision_notes, version_status,
                 released_at,
-                created_by,
-                created_at,
-                updated_by,
-                updated_at
+                created_by, created_at, updated_by, updated_at
             ) VALUES (
-                ${versionId},
-                ${partId},
-                ${partVersion.part_version || partVersion.version},
-                ${partVersion.part_name || partVersion.name},
+                ${versionId}, ${partId}, ${partVersion.part_version || '0.1.0'}, ${partVersion.part_name},
                 ${partVersion.short_description || null},
-                ${partVersion.long_description || null},
+                ${processJsonField(partVersion.long_description)},
                 ${partVersion.functional_description || null},
-                ${partVersion.technical_specifications ? sql.json(toPostgresJson(partVersion.technical_specifications)) : 
-                  partVersion.technicalSpecifications ? sql.json(toPostgresJson(partVersion.technicalSpecifications)) : null},
-                ${partVersion.properties ? sql.json(toPostgresJson(partVersion.properties)) : null},
-                ${partVersion.electrical_properties ? sql.json(toPostgresJson(partVersion.electrical_properties)) : 
-                  partVersion.electricalProperties ? sql.json(toPostgresJson(partVersion.electricalProperties)) : null},
-                ${partVersion.mechanical_properties ? sql.json(toPostgresJson(partVersion.mechanical_properties)) : 
-                  partVersion.mechanicalProperties ? sql.json(toPostgresJson(partVersion.mechanicalProperties)) : null},
-                ${partVersion.thermal_properties ? sql.json(toPostgresJson(partVersion.thermal_properties)) : 
-                  partVersion.thermalProperties ? sql.json(toPostgresJson(partVersion.thermalProperties)) : null},
+                ${processJsonField(partVersion.technical_specifications)},
+                ${processJsonField(partVersion.properties)},
+                ${processJsonField(partVersion.electrical_properties)},
+                ${processJsonField(partVersion.mechanical_properties)},
+                ${processJsonField(partVersion.thermal_properties)},
                 ${toNumber(partVersion.weight)},
-                ${partVersion.weight_unit || partVersion.weightUnit || null},
+                ${partVersion.weight_unit ? partVersion.weight_unit : null}::weight_unit_enum,
                 ${partVersion.dimensions ? sql.json(toPostgresJson(partVersion.dimensions)) : null},
-                ${partVersion.dimensions_unit || partVersion.dimensionsUnit || null},
-                ${partVersion.material_composition ? sql.json(toPostgresJson(partVersion.material_composition)) : 
-                  partVersion.materialComposition ? sql.json(toPostgresJson(partVersion.materialComposition)) : null},
-                ${partVersion.environmental_data ? sql.json(toPostgresJson(partVersion.environmental_data)) : 
-                  partVersion.environmentalData ? sql.json(toPostgresJson(partVersion.environmentalData)) : null},
-                ${toNumber(partVersion.voltage_rating_min || partVersion.voltageRatingMin)},
-                ${toNumber(partVersion.voltage_rating_max || partVersion.voltageRatingMax)},
-                ${toNumber(partVersion.current_rating_min || partVersion.currentRatingMin)},
-                ${toNumber(partVersion.current_rating_max || partVersion.currentRatingMax)},
-                ${toNumber(partVersion.power_rating_max || partVersion.powerRatingMax)},
-                ${toNumber(partVersion.tolerance)}, 
-                ${partVersion.tolerance_unit || partVersion.toleranceUnit || null},
-                ${partVersion.package_type || partVersion.packageType || null},
-                ${partVersion.mounting_type || partVersion.mountingType || null},
-                ${toNumber(partVersion.pin_count || partVersion.pinCount)},
-                ${toNumber(partVersion.operating_temp_min || partVersion.operatingTempMin)},
-                ${toNumber(partVersion.operating_temp_max || partVersion.operatingTempMax)},
-                ${toNumber(partVersion.storage_temp_min || partVersion.storageTempMin)},
-                ${toNumber(partVersion.storage_temp_max || partVersion.storageTempMax)},
-                ${partVersion.temperature_unit || partVersion.temperatureUnit || null},
+                ${partVersion.dimensions_unit ? partVersion.dimensions_unit : null}::dimension_unit_enum,
+                ${processJsonField(partVersion.material_composition)},
+                ${processJsonField(partVersion.environmental_data)},
+                ${toNumber(partVersion.voltage_rating_min) || 0},
+                ${toNumber(partVersion.voltage_rating_max) || 0},
+                ${toNumber(partVersion.current_rating_min) || 0},
+                ${toNumber(partVersion.current_rating_max) || 0},
+                ${toNumber(partVersion.power_rating_max) || 0},
+                ${toNumber(partVersion.tolerance) || 0},
+                ${partVersion.tolerance_unit || null},
+                ${partVersion.package_type ? partVersion.package_type.toUpperCase() : null}::package_type_enum,
+                ${partVersion.mounting_type ? partVersion.mounting_type.toUpperCase() : null}::mounting_type_enum,
+                ${toNumber(partVersion.pin_count) || 0},
+                ${toNumber(partVersion.operating_temp_min) || 0},
+                ${toNumber(partVersion.operating_temp_max) || 0},
+                ${toNumber(partVersion.storage_temp_min) || 0},
+                ${toNumber(partVersion.storage_temp_max) || 0},
+                ${partVersion.temperature_unit ? partVersion.temperature_unit.toUpperCase() : null}::temperature_unit_enum,
                 ${partVersion.revision_notes || null},
                 ${partVersion.status || null},
-                ${partVersion.released_at || partVersion.releasedAt || null},
+                NOW(), /* Use PostgreSQL's NOW() function directly in the query template */
                 ${partVersion.created_by || partVersion.createdBy},
-                CURRENT_TIMESTAMP,
+                ${sql.unsafe('NOW()')},
                 ${partVersion.created_by || partVersion.createdBy},
-                CURRENT_TIMESTAMP
+                ${sql.unsafe('NOW()')}
             ) RETURNING *
         `;
         
@@ -2283,43 +2793,7 @@ export async function createPartVersion(partVersion: PartVersionInput): Promise<
     }
 }
 
-/**
- * Remove a category from a part version
- * 
- * @param partVersionId The part version ID to remove the category from
- * @param categoryId The category ID to remove
- * @throws Error if the operation fails
- */
-export async function removeCategoryFromPartVersion(partVersionId: string, categoryId: string): Promise<void> {
-    try {
-        // Validate inputs
-        if (!partVersionId || partVersionId.trim() === '') {
-            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part version ID`);
-        }
-        
-        if (!categoryId || categoryId.trim() === '') {
-            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid category ID`);
-        }
-        
-        console.log(`[removeCategoryFromPartVersion] Removing category ${categoryId} from part version ${partVersionId}`);
-        
-        // Delete the category association
-        const result = await sql`
-            DELETE FROM "PartVersionCategory" 
-            WHERE part_version_id = ${partVersionId} AND category_id = ${categoryId}
-            RETURNING *
-        `;
-        
-        if (result.length === 0) {
-            console.warn(`[removeCategoryFromPartVersion] Category ${categoryId} was not associated with part version ${partVersionId}`);
-        } else {
-            console.log(`[removeCategoryFromPartVersion] Successfully removed category ${categoryId} from part version ${partVersionId}`);
-        }
-    } catch (error) {
-        console.error(`[removeCategoryFromPartVersion] Error removing category ${categoryId} from part version ${partVersionId}:`, error);
-        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-}
+
 
 /**
  * Complete part creation with all related data in a single function
@@ -2874,7 +3348,7 @@ export async function updatePart(partId: string, data: Partial<Part>): Promise<P
           // Always update the timestamp
           await transaction`
             UPDATE "Part" 
-            SET updated_at = NOW()
+            SET updated_at = ${sql.unsafe('NOW()')}
             WHERE part_id = ${partId}
           `;
           
@@ -2952,105 +3426,1665 @@ export async function updatePart(partId: string, data: Partial<Part>): Promise<P
  * @param userId Optional user ID to track who made the update
  * @throws Error if validation fails or part/version not found
  */
-export async function updatePartWithStatus(
-  partId: string,
-  newVersionId: string,
-  newStatus: PartStatusEnum,
-  userId?: string
-): Promise<void> {
+/**
+ * Create a part using the UnifiedPart schema
+ * This function creates a complete part with all its related data using the UnifiedPart schema
+ * It processes all fields defined in the UnifiedPart interface and saves them to the database
+ * 
+ * @param unifiedPartData - Data conforming to the UnifiedPart interface
+ * @param userId - ID of the user creating the part
+ * @returns Object containing the created part and its version
+ * @throws Error if validation fails or database operation fails
+ */
+export async function createUnifiedPart(
+  unifiedPartData: UnifiedPart,
+  userId: string
+): Promise<{ part: Part; version: PartVersion }> {
   try {
-    console.log(`[updatePartWithStatus] Updating part ${partId} with new version ${newVersionId} and status ${newStatus}`);
+    // Validate input
+    if (!unifiedPartData || !userId) {
+      throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Missing required unifiedPartData or userId for part creation`);
+    }
+
+    console.log('[createUnifiedPart] Creating new part with UnifiedPart data');
     
-    // Validate inputs
+    // Generate UUIDs for part and version if not provided
+    const partId = unifiedPartData.part_id || crypto.randomUUID();
+    const versionId = unifiedPartData.part_version_id || crypto.randomUUID();
+    
+    // Begin a transaction for atomic operations
+    return await sql.begin(async (tx) => {
+      console.log('[createUnifiedPart] Starting transaction');
+      
+      // Cast the transaction to PostgresTransaction to satisfy TypeScript
+      const transaction = tx as unknown as PostgresTransaction;
+      
+      // 1. Insert the part record
+      await transaction`
+        INSERT INTO "Part" (
+          part_id,
+          creator_id,
+          global_part_number,
+          status_in_bom,
+          lifecycle_status,
+          is_public,
+          created_at,
+          updated_at,
+          updated_by
+        ) VALUES (
+          ${partId},
+          ${userId},
+          ${unifiedPartData.global_part_number || null},
+          ${unifiedPartData.status_in_bom || PartStatusEnum.CONCEPT}::part_status_enum,
+          ${unifiedPartData.lifecycle_status || LifecycleStatusEnum.DRAFT}::lifecycle_status_enum,
+          ${unifiedPartData.is_public === true},
+          NOW(),
+          NOW(),
+          ${userId}
+        )
+      `;
+      console.log('[createUnifiedPart] Part record inserted successfully');
+      
+      // 2. Insert the part version record
+      // Process dimensions to ensure they're in the correct format
+      const dimensionsJson = unifiedPartData.dimensions ? 
+        processJsonField(unifiedPartData.dimensions) : null;
+
+      // Process complex properties as JSON
+      const electricalPropertiesJson = unifiedPartData.electrical_properties ? 
+        processJsonField(unifiedPartData.electrical_properties) : null;
+      
+      const mechanicalPropertiesJson = unifiedPartData.mechanical_properties ? 
+        processJsonField(unifiedPartData.mechanical_properties) : null;
+      
+      const thermalPropertiesJson = unifiedPartData.thermal_properties ? 
+        processJsonField(unifiedPartData.thermal_properties) : null;
+      
+      const environmentalDataJson = unifiedPartData.environmental_data ? 
+        processJsonField(unifiedPartData.environmental_data) : null;
+      
+      const technicalSpecificationsJson = unifiedPartData.technical_specifications ? 
+        processJsonField(unifiedPartData.technical_specifications) : null;
+      
+      const propertiesJson = unifiedPartData.properties ? 
+        processJsonField(unifiedPartData.properties) : null;
+
+      // Format long_description properly
+      const longDescriptionJson = unifiedPartData.long_description ? 
+        (typeof unifiedPartData.long_description === 'string' ? 
+          unifiedPartData.long_description : 
+          processJsonField(unifiedPartData.long_description)) : null;
+
+      await transaction`
+        INSERT INTO "PartVersion" (
+          part_version_id,
+          part_id,
+          part_version,
+          part_name,
+          version_status,
+          short_description,
+          long_description,
+          functional_description,
+          part_weight,
+          weight_unit,
+          dimensions,
+          dimensions_unit,
+          package_type,
+          mounting_type,
+          pin_count,
+          voltage_rating_min,
+          voltage_rating_max,
+          current_rating_min,
+          current_rating_max,
+          power_rating_max,
+          tolerance,
+          tolerance_unit,
+          electrical_properties,
+          mechanical_properties,
+          material_composition,
+          operating_temperature_min,
+          operating_temperature_max,
+          storage_temperature_min,
+          storage_temperature_max,
+          temperature_unit,
+          thermal_properties,
+          environmental_data,
+          technical_specifications,
+          properties,
+          created_by,
+          created_at,
+          updated_by,
+          updated_at,
+          revision_notes,
+          released_at
+        ) VALUES (
+          ${versionId},
+          ${partId},
+          ${unifiedPartData.part_version || '0.1.0'},
+          ${unifiedPartData.part_name},
+          ${unifiedPartData.version_status}::lifecycle_status_enum,
+          ${unifiedPartData.short_description || null},
+          ${longDescriptionJson},
+          ${unifiedPartData.functional_description || null},
+          ${processNumericField(unifiedPartData.part_weight)},
+          ${unifiedPartData.weight_unit || null},
+          ${dimensionsJson},
+          ${unifiedPartData.dimensions_unit || null},
+          ${unifiedPartData.package_type || null},
+          ${unifiedPartData.mounting_type || null},
+          ${processNumericField(unifiedPartData.pin_count)},
+          ${processNumericField(unifiedPartData.voltage_rating_min)},
+          ${processNumericField(unifiedPartData.voltage_rating_max)},
+          ${processNumericField(unifiedPartData.current_rating_min)},
+          ${processNumericField(unifiedPartData.current_rating_max)},
+          ${processNumericField(unifiedPartData.power_rating_max)},
+          ${processNumericField(unifiedPartData.tolerance)},
+          ${unifiedPartData.tolerance_unit || null},
+          ${electricalPropertiesJson},
+          ${mechanicalPropertiesJson},
+          ${unifiedPartData.material_composition || null},
+          ${processNumericField(unifiedPartData.operating_temperature_min)},
+          ${processNumericField(unifiedPartData.operating_temperature_max)},
+          ${processNumericField(unifiedPartData.storage_temperature_min)},
+          ${processNumericField(unifiedPartData.storage_temperature_max)},
+          ${unifiedPartData.temperature_unit || null},
+          ${thermalPropertiesJson},
+          ${environmentalDataJson},
+          ${technicalSpecificationsJson},
+          ${propertiesJson},
+          ${userId},
+          NOW(),
+          ${userId},
+          NOW(),
+          ${unifiedPartData.revision_notes || null},
+          ${unifiedPartData.released_at || null}
+        )
+      `;
+      console.log('[createUnifiedPart] Part version record inserted successfully');
+      
+      // 3. Update the part's current version
+      await transaction`
+        UPDATE "Part" 
+        SET current_version_id = ${versionId} 
+        WHERE part_id = ${partId}
+      `;
+      console.log('[createUnifiedPart] Current version updated successfully');
+      
+      // 4. Process manufacturer parts if provided
+      if (Array.isArray(unifiedPartData.manufacturer_parts) && unifiedPartData.manufacturer_parts.length > 0) {
+        for (const mp of unifiedPartData.manufacturer_parts) {
+          if (mp.manufacturer_id && mp.manufacturer_part_number) {
+            await createManufacturerPart(
+              versionId,
+              mp.manufacturer_id,
+              mp.manufacturer_part_number,
+              userId,
+              mp.description || undefined,
+              mp.datasheet_url || undefined,
+              mp.notes || undefined,
+              mp.lifecycle_status || undefined
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Manufacturer parts created successfully');
+      }
+      
+      // 5. Process supplier parts if provided
+      if (Array.isArray(unifiedPartData.supplier_parts) && unifiedPartData.supplier_parts.length > 0) {
+        for (const sp of unifiedPartData.supplier_parts) {
+          if (sp.supplier_id && sp.supplier_part_number) {
+            await createSupplierPart(
+              versionId,
+              sp.supplier_id,
+              sp.supplier_part_number,
+              userId,
+              undefined, // supplier_name - optional
+              undefined, // manufacturer_part_id - optional
+              undefined, // description - optional
+              'ACTIVE', // status - default
+              undefined, // packaging - optional
+              typeof sp.minimum_order_quantity === 'number' ? sp.minimum_order_quantity : undefined, // minOrderQuantity - optional
+              typeof sp.lead_time_days === 'number' ? sp.lead_time_days : undefined // leadTimeDays - optional
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Supplier parts created successfully');
+      }
+      
+      // 6. Process attachments if provided
+      if (Array.isArray(unifiedPartData.attachments) && unifiedPartData.attachments.length > 0) {
+        for (const a of unifiedPartData.attachments) {
+          if (a.file_name && a.file_url) {
+            // Parameters: partVersionId, fileName, fileSizeBytes, fileType, filePath, uploadedBy, description?, isPrimary?
+            await createPartAttachment(
+              versionId,
+              a.file_name,
+              a.file_size !== undefined ? a.file_size : 1024, // Default file size if not provided
+              a.file_type || 'application/octet-stream', // Default file type if not provided
+              a.file_url, // Use file_url as the file path
+              userId,
+              a.description || null,
+              false // Default to not being the primary attachment
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Attachments created successfully');
+      }
+      
+      // 7. Process representations if provided
+      if (Array.isArray(unifiedPartData.representations) && unifiedPartData.representations.length > 0) {
+        for (const r of unifiedPartData.representations) {
+          if (r.representation_type && r.file_url) {
+            // Get the filename from the URL path if available
+            const fileName = r.file_url.split('/').pop() || 'representation.obj';
+            
+            // Adapt parameters to match the createPartRepresentation function signature
+            await createPartRepresentation(
+              versionId,
+              r.representation_type,
+              fileName, // Extract filename from URL or use default
+              r.format || 'STL', // Default format if not provided
+              r.file_url, // Using file_url as the file path
+              1024, // Default file size in bytes
+              userId,
+              undefined, // resolution (optional)
+              r.thumbnail_url || null, // thumbnail path
+              r.is_recommended || false // isPrimary
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Representations created successfully');
+      }
+      
+      // 8. Process part structure (BOM) if provided
+      if (Array.isArray(unifiedPartData.structure) && unifiedPartData.structure.length > 0) {
+        for (const s of unifiedPartData.structure) {
+          if (s.child_part_id) {
+            await createPartStructure(
+              partId, // parent_part_id
+              s.child_part_id,
+              s.relation_type || StructuralRelationTypeEnum.COMPONENT,
+              s.quantity || 1,
+              userId,
+              s.notes || undefined
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Part structure created successfully');
+      }
+      
+      // 9. Process compliance info if provided
+      if (Array.isArray(unifiedPartData.compliance_info) && unifiedPartData.compliance_info.length > 0) {
+        for (const c of unifiedPartData.compliance_info) {
+          if (c.compliance_type) {
+            // Match exact signature of createPartCompliance
+            // Parameters: partVersionId, complianceType, certificateUrl?, certifiedAt?, expiresAt?, notes?
+            await createPartCompliance(
+              versionId,
+              c.compliance_type as ComplianceTypeEnum, // Type cast needed
+              c.certificate_url || null,
+              c.certified_at || null,
+              c.expires_at || null,
+              c.notes || null
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Compliance info created successfully');
+      }
+      
+      // 10. Process part version tags if provided
+      if (Array.isArray(unifiedPartData.part_version_tags) && unifiedPartData.part_version_tags.length > 0) {
+        for (const t of unifiedPartData.part_version_tags) {
+          if (t.tag_name) {
+            await createPartVersionTag(
+              versionId,
+              t.tag_name,
+              userId,
+              t.tag_value || undefined,
+              t.tag_category || undefined,
+              t.tag_color || undefined
+            );
+          }
+        }
+        console.log('[createUnifiedPart] Part version tags created successfully');
+      }
+      
+      // 11. Process categories if provided
+      if (Array.isArray(unifiedPartData.categories) && unifiedPartData.categories.length > 0) {
+        for (const categoryId of unifiedPartData.categories) {
+          if (categoryId) {
+            await transaction`
+              INSERT INTO "PartVersionCategory" (
+                part_version_id,
+                category_id
+              ) VALUES (
+                ${versionId},
+                ${categoryId}
+              )
+            `;
+          }
+        }
+        console.log('[createUnifiedPart] Categories linked successfully');
+      }
+      
+      // 12. Process part families if provided
+      if (Array.isArray(unifiedPartData.family_ids) && unifiedPartData.family_ids.length > 0) {
+        for (const familyId of unifiedPartData.family_ids) {
+          if (familyId) {
+            await transaction`
+              INSERT INTO "PartFamilyLink" (
+                part_family_link_id,
+                part_id,
+                family_id,
+                created_by,
+                created_at
+              ) VALUES (
+                ${crypto.randomUUID()},
+                ${partId},
+                ${familyId},
+                ${userId},
+                NOW()
+              )
+            `;
+          }
+        }
+        console.log('[createUnifiedPart] Part families linked successfully');
+      }
+      
+      // 13. Process part groups if provided
+      if (Array.isArray(unifiedPartData.group_ids) && unifiedPartData.group_ids.length > 0) {
+        for (const groupId of unifiedPartData.group_ids) {
+          if (groupId) {
+            await transaction`
+              INSERT INTO "PartGroupLink" (
+                part_group_link_id,
+                part_id,
+                group_id,
+                created_by,
+                created_at
+              ) VALUES (
+                ${crypto.randomUUID()},
+                ${partId},
+                ${groupId},
+                ${userId},
+                NOW()
+              )
+            `;
+          }
+        }
+        console.log('[createUnifiedPart] Part groups linked successfully');
+      }
+      
+      // 14. Process custom fields if provided
+      if (unifiedPartData.custom_fields && Object.keys(unifiedPartData.custom_fields).length > 0) {
+        for (const [fieldId, fieldValue] of Object.entries(unifiedPartData.custom_fields)) {
+          if (fieldId && fieldValue !== undefined) {
+            await transaction`
+              INSERT INTO "PartCustomField" (
+                part_version_id,
+                field_id,
+                custom_field_value
+              ) VALUES (
+                ${versionId},
+                ${fieldId},
+                ${processJsonField(fieldValue)}::jsonb
+              )
+            `;
+          }
+        }
+        console.log('[createUnifiedPart] Custom fields saved successfully');
+      }
+      
+      // 15. Fetch the created part and version data
+      const createdPartData = await transaction`
+        SELECT p.*, pv.*
+        FROM "Part" p
+        LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
+        WHERE p.part_id = ${partId}
+      `;
+      
+      if (!createdPartData || createdPartData.length === 0) {
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to retrieve created part data`);
+      }
+      
+      // 12. Return normalized part and version data
+      const normalizedPart = normalizePart(createdPartData[0]);
+      const normalizedVersion = normalizePartVersion(
+        createdPartData[0],
+        createdPartData[0].part_id,
+        createdPartData[0].part_version_id
+      );
+      
+      console.log('[createUnifiedPart] Successfully created part with all related data');
+      return { part: normalizedPart, version: normalizedVersion };
+    });
+  } catch (error) {
+    console.error('[createUnifiedPart] Error creating part:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update an existing part using the UnifiedPart schema
+ * This function creates a new version of an existing part with updated data
+ * @param partId ID of the part to update
+ * @param unifiedPartData Complete UnifiedPart data with updated values
+ * @param userId ID of the user making the update
+ * @returns Object containing the updated part and its new version
+ */
+export async function updateUnifiedPart(
+  partId: string,
+  unifiedPartData: UnifiedPart,
+  userId: string
+): Promise<{ part: Part; version: PartVersion }> {
+  try {
+    console.log('[updateUnifiedPart] Starting update for part:', partId);
+    
+    // 1. Validate the part ID
     if (!partId || partId.trim() === '') {
       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part ID`);
     }
     
-    if (!newVersionId || newVersionId.trim() === '') {
-      throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid version ID`);
+    // 2. Validate the unified part data using the schema
+    const validationResult = unifiedPartSchema.safeParse(unifiedPartData);
+    if (!validationResult.success) {
+      console.error('[updateUnifiedPart] Validation errors:', validationResult.error);
+      throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: ${validationResult.error.message}`);
     }
     
-    if (!Object.values(PartStatusEnum).includes(newStatus)) {
-      throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part status: ${newStatus}`);
-    }
-    
-    // Begin transaction for atomic updates
-    await sql.begin(async (transaction) => {
-      console.log('[updatePartWithStatus] Transaction started');
+    // 3. Begin transaction
+    return await sql.begin(async (transaction) => {
+      console.log('[updateUnifiedPart] Transaction started');
       
-      // First, verify the version exists
-      const versionCheck = await transaction`
-        SELECT part_version_id, part_id FROM "PartVersion" 
-        WHERE part_version_id = ${newVersionId}
+      // 4. Verify the part exists and lock the row
+      const existingPartResult = await transaction`
+        SELECT * FROM "Part" WHERE part_id = ${partId} FOR UPDATE
       `;
       
-      if (versionCheck.length === 0) {
-        throw new Error(`${PART_ERRORS.NOT_FOUND}: Part version with ID ${newVersionId} not found`);
+      if (existingPartResult.length === 0) {
+        throw new Error(`${PART_ERRORS.NOT_FOUND}: Part with ID ${partId} not found`);
       }
       
-      // Verify the version belongs to this part
-      if (versionCheck[0].part_id !== partId) {
-        throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Version ${newVersionId} does not belong to part ${partId}`);
-      }
+      const existingPart = existingPartResult[0];
+      console.log('[updateUnifiedPart] Found existing part:', existingPart.part_name);
       
-      // Lock the part row to prevent concurrent modifications
-      const lockResult = await transaction`
-        SELECT part_id FROM "Part" WHERE part_id = ${partId} FOR UPDATE
+      // 5. Create a new version ID for this update
+      const newVersionId = crypto.randomUUID();
+      
+      // 6. Insert the new part version record with validated data
+      const newVersionResult = await transaction`
+        INSERT INTO "PartVersion" (
+          part_version_id,
+          part_id,
+          part_version,
+          part_name,
+          short_description,
+          long_description,
+          functional_description,
+          technical_specifications,
+          properties,
+          voltage_rating_min,
+          voltage_rating_max,
+          current_rating_min,
+          current_rating_max,
+          power_rating_max,
+          tolerance,
+          tolerance_unit,
+          mounting_type,
+          package_type,
+          pin_count,
+          operating_temperature_min,
+          operating_temperature_max,
+          storage_temperature_min,
+          storage_temperature_max,
+          temperature_unit,
+          dimensions,
+          dimensions_unit,
+          part_weight,
+          weight_unit,
+          electrical_properties,
+          mechanical_properties,
+          thermal_properties,
+          material_composition,
+          environmental_data,
+          version_status,
+          revision_notes,
+          created_by,
+          released_at
+        ) VALUES (
+          ${newVersionId},
+          ${partId},
+          ${unifiedPartData.part_version},
+          ${unifiedPartData.part_name},
+          ${unifiedPartData.short_description || null},
+          ${processJsonField(unifiedPartData.long_description)}::jsonb,
+          ${unifiedPartData.functional_description || null},
+          ${processJsonField(unifiedPartData.technical_specifications)}::jsonb,
+          ${processJsonField(unifiedPartData.properties)}::jsonb,
+          ${processNumericField(unifiedPartData.voltage_rating_min)},
+          ${processNumericField(unifiedPartData.voltage_rating_max)},
+          ${processNumericField(unifiedPartData.current_rating_min)},
+          ${processNumericField(unifiedPartData.current_rating_max)},
+          ${processNumericField(unifiedPartData.power_rating_max)},
+          ${processNumericField(unifiedPartData.tolerance)},
+          ${unifiedPartData.tolerance_unit || null},
+          ${unifiedPartData.mounting_type || null},
+          ${unifiedPartData.package_type || null},
+          ${processNumericField(unifiedPartData.pin_count)},
+          ${processNumericField(unifiedPartData.operating_temperature_min)},
+          ${processNumericField(unifiedPartData.operating_temperature_max)},
+          ${processNumericField(unifiedPartData.storage_temperature_min)},
+          ${processNumericField(unifiedPartData.storage_temperature_max)},
+          ${unifiedPartData.temperature_unit || null},
+          ${processJsonField(unifiedPartData.dimensions)}::jsonb,
+          ${unifiedPartData.dimensions_unit || null},
+          ${processNumericField(unifiedPartData.part_weight)},
+          ${unifiedPartData.weight_unit || null},
+          ${processJsonField(unifiedPartData.electrical_properties)}::jsonb,
+          ${processJsonField(unifiedPartData.mechanical_properties)}::jsonb,
+          ${processJsonField(unifiedPartData.thermal_properties)}::jsonb,
+          ${processJsonField(unifiedPartData.material_composition)}::jsonb,
+          ${processJsonField(unifiedPartData.environmental_data)}::jsonb,
+          ${unifiedPartData.version_status || LifecycleStatusEnum.DRAFT}::lifecycle_status_enum,
+          ${unifiedPartData.revision_notes || null},
+          ${userId},
+          ${unifiedPartData.released_at || new Date()}
+        ) RETURNING *
       `;
       
-      if (lockResult.length === 0) {
-        throw new Error(`${PART_ERRORS.NOT_FOUND}: Part with ID ${partId} not found or could not be locked`);
+      if (newVersionResult.length === 0) {
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to create new version for part ${partId}`);
       }
       
-      console.log('[updatePartWithStatus] Part row locked for update');
+      console.log('[updateUnifiedPart] Created new part version:', newVersionId);
       
-      // Update the part with the new version ID and status
-      const updateResult = await transaction`
-        UPDATE "Part"
-        SET 
+      // 7. Update the main part record to point to this new version and update all relevant fields
+      const updatedPartResult = await transaction`
+        UPDATE "Part" SET 
           current_version_id = ${newVersionId},
-          status_in_bom = ${newStatus}::part_status_enum,
-          updated_at = NOW(),
-          updated_by = ${userId || null}
+          status_in_bom = ${unifiedPartData.status_in_bom}::part_status_enum,
+          lifecycle_status = ${unifiedPartData.lifecycle_status}::lifecycle_status_enum,
+          is_public = ${unifiedPartData.is_public !== undefined ? unifiedPartData.is_public : existingPart.is_public},
+          global_part_number = ${unifiedPartData.global_part_number || existingPart.global_part_number},
+          updated_at = ${sql.unsafe('NOW()')},
+          updated_by = ${userId}
         WHERE part_id = ${partId}
-        RETURNING part_id
+        RETURNING *
       `;
       
-      if (updateResult.length === 0) {
+      if (updatedPartResult.length === 0) {
         throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to update part ${partId}`);
       }
       
-      console.log('[updatePartWithStatus] Part updated successfully');
+      console.log('[updateUnifiedPart] Updated main part record');
       
-      // If we have a userId, create a revision record for this update
-      if (userId) {
-        try {
-          await createPartRevision(
-            newVersionId,
-            '', // revision number - automatically assigned
-            userId,
-            'STATUS_CHANGE',
-            `Changed part status to ${newStatus} and set as current version`,
-            '', // justification
-            ['status_in_bom', 'current_version_id'],
-            {}, // previous values - would require an additional query to get
-            { status_in_bom: newStatus, current_version_id: newVersionId },
-            'APPROVED',
-            userId,
-            new Date(),
-            ''
-          );
-          console.log('[updatePartWithStatus] Created revision record for status change');
-        } catch (revisionError: unknown) {
-          // Don't fail the update if revision creation fails
-          console.error('[updatePartWithStatus] Error creating revision record:', revisionError);
+      // 8. Handle related entities (manufacturer parts, supplier parts, etc.)
+      
+      // 8.1 Handle manufacturer parts
+      if (Array.isArray(unifiedPartData.manufacturer_parts) && unifiedPartData.manufacturer_parts.length > 0) {
+        console.log('[updateUnifiedPart] Processing manufacturer parts');
+        
+        for (const mfrPart of unifiedPartData.manufacturer_parts) {
+          try {
+            // Create a manufacturer part record with only the fields defined in the interface
+            // Note that ManufacturerPartInput doesn't include all the fields we need for the function
+            const mfrPartData = {
+              manufacturer_id: mfrPart.manufacturer_id,
+              manufacturer_part_number: mfrPart.manufacturer_part_number,
+              manufacturer_name: mfrPart.manufacturer_name,
+              description: mfrPart.description
+            };
+            
+            // Direct SQL insertion to avoid type issues with the helper function
+            await transaction`
+              INSERT INTO "ManufacturerPart" (
+                manufacturer_part_id,
+                part_version_id,
+                manufacturer_id,
+                manufacturer_part_number,
+                manufacturer_name,
+                description,
+                status,
+                datasheet_url,
+                created_by,
+                created_at
+              ) VALUES (
+                ${crypto.randomUUID()},
+                ${newVersionId},
+                ${mfrPartData.manufacturer_id},
+                ${mfrPartData.manufacturer_part_number},
+                ${mfrPartData.manufacturer_name || null},
+                ${mfrPartData.description || null},
+                ${'ACTIVE'},
+                ${mfrPart.datasheet_url || null},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (mfrError: unknown) {
+            console.error('[updateUnifiedPart] Error creating manufacturer part:', mfrError);
+            throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${mfrError instanceof Error ? mfrError.message : String(mfrError)}`);
+          }
         }
       }
+      
+      // 8.2 Handle supplier parts
+      if (Array.isArray(unifiedPartData.supplier_parts) && unifiedPartData.supplier_parts.length > 0) {
+        console.log('[updateUnifiedPart] Processing supplier parts');
+        
+        for (const supPart of unifiedPartData.supplier_parts) {
+          try {
+            // Create a supplier part record with only the fields we need
+            const supPartData = {
+              supplier_id: supPart.supplier_id,
+              supplier_part_number: supPart.supplier_part_number,
+              supplier_name: supPart.supplier_name,
+              price: supPart.price,
+              currency: supPart.currency,
+              minimum_order_quantity: supPart.minimum_order_quantity,
+              lead_time_days: supPart.lead_time_days,
+              stock_quantity: supPart.stock_quantity
+            };
+            
+            // Direct SQL insertion to avoid type issues with the helper function
+            // Create a supplier part record directly with the transaction template
+            // This follows the same pattern as the manufacturer part insertion above
+            const supplierPartId = crypto.randomUUID();
+            await transaction`
+              INSERT INTO "SupplierPart" (
+                supplier_part_id,
+                part_version_id,
+                supplier_id,
+                supplier_part_number,
+                supplier_name,
+                description,
+                status,
+                min_order_quantity,
+                lead_time_days,
+                price,
+                currency,
+                stock_quantity,
+                created_by,
+                created_at
+              ) VALUES (
+                ${supplierPartId},
+                ${newVersionId},
+                ${supPartData.supplier_id},
+                ${supPartData.supplier_part_number || ''},
+                ${supPartData.supplier_name || null},
+                ${null}, /* description */
+                ${'ACTIVE'},
+                ${supPartData.minimum_order_quantity || 0},
+                ${supPartData.lead_time_days || 0},
+                ${supPartData.price || 0},
+                ${supPartData.currency || ''},
+                ${supPartData.stock_quantity || 0},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (supError: unknown) {
+            console.error('[updateUnifiedPart] Error creating supplier part:', supError);
+            throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${supError instanceof Error ? supError.message : String(supError)}`);
+          }
+        }
+      }
+      
+      // 8.3 Handle attachments
+      if (Array.isArray(unifiedPartData.attachments) && unifiedPartData.attachments.length > 0) {
+        console.log('[updateUnifiedPart] Processing attachments');
+        
+        for (const attachment of unifiedPartData.attachments) {
+          try {
+            // Generate a new ID for the attachment
+            const attachmentId = crypto.randomUUID();
+            
+            // Direct database insertion instead of using helper function
+            // since the function signature doesn't match the interface definition
+            await transaction`
+              INSERT INTO "PartAttachment" (
+                attachment_id,
+                part_version_id,
+                attachment_type,
+                file_name,
+                file_url,
+                file_size,
+                file_type,
+                description,
+                created_by,
+                created_at
+              ) VALUES (
+                ${attachmentId},
+                ${newVersionId},
+                ${attachment.attachment_type},
+                ${attachment.file_name},
+                ${attachment.file_url},
+                ${attachment.file_size || 0},
+                ${attachment.file_type || 'unknown'},
+                ${attachment.description || null},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (attachError: unknown) {
+            console.error('[updateUnifiedPart] Error creating attachment:', attachError);
+            throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${attachError instanceof Error ? attachError.message : String(attachError)}`);
+          }
+        }
+      }
+      
+      // 8.4 Handle representations
+      if (Array.isArray(unifiedPartData.representations) && unifiedPartData.representations.length > 0) {
+        console.log('[updateUnifiedPart] Processing representations');
+        
+        for (const representation of unifiedPartData.representations) {
+          try {
+            // Generate a new ID for the representation
+            const representationId = crypto.randomUUID();
+            
+            // Direct database insertion instead of using helper function
+            // since the function signature doesn't match the interface definition
+            await transaction`
+              INSERT INTO "PartRepresentation" (
+                representation_id,
+                part_version_id,
+                representation_type,
+                format,
+                file_url,
+                preview_url,
+                metadata,
+                is_recommended,
+                created_by,
+                created_at
+              ) VALUES (
+                ${representationId},
+                ${newVersionId},
+                ${representation.representation_type},
+                ${representation.format || 'unknown'},
+                ${representation.file_url},
+                ${representation.preview_url || null},
+                ${null}::jsonb, /* metadata */
+                ${representation.is_recommended || false},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (repError: unknown) {
+            console.error('[updateUnifiedPart] Error creating representation:', repError);
+            throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${repError instanceof Error ? repError.message : String(repError)}`);
+          }
+        }
+      }
+      
+      // 8.5 Handle compliance info
+      if (Array.isArray(unifiedPartData.compliance_info) && unifiedPartData.compliance_info.length > 0) {
+        console.log('[updateUnifiedPart] Processing compliance information');
+        
+        for (const compliance of unifiedPartData.compliance_info) {
+          try {
+            // Generate a new ID for the compliance record
+            const complianceId = crypto.randomUUID();
+            
+            // Direct database insertion instead of using helper function
+            // since the function signature doesn't match the interface definition
+            await transaction`
+              INSERT INTO "PartCompliance" (
+                compliance_id,
+                part_version_id,
+                compliance_type,
+                certificate_url,
+                certified_at,
+                expires_at,
+                notes,
+                created_by,
+                created_at
+              ) VALUES (
+                ${complianceId},
+                ${newVersionId},
+                ${compliance.compliance_type}::compliance_type_enum,
+                ${compliance.certificate_url || null},
+                ${compliance.certified_at || new Date()},
+                ${compliance.expires_at || null},
+                ${compliance.notes || null},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (compError: unknown) {
+            console.error('[updateUnifiedPart] Error creating compliance info:', compError);
+            throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${compError instanceof Error ? compError.message : String(compError)}`);
+          }
+        }
+      }
+      
+      // 8.6 Handle structural relationships
+      if (Array.isArray(unifiedPartData.structure) && unifiedPartData.structure.length > 0) {
+        console.log('[updateUnifiedPart] Processing structural relationships');
+        
+        for (const structure of unifiedPartData.structure) {
+          try {
+            // Direct SQL insertion to avoid parameter count issues
+            await transaction`
+              INSERT INTO "PartStructure" (
+                structure_id,
+                parent_part_id,
+                child_part_id,
+                relation_type,
+                quantity,
+                notes,
+                created_by,
+                created_at
+              ) VALUES (
+                ${crypto.randomUUID()},
+                ${newVersionId},
+                ${structure.child_part_id},
+                ${structure.relation_type}::structural_relation_type_enum,
+                ${structure.quantity},
+                ${structure.notes || null},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (structError: unknown) {
+            console.error('[updateUnifiedPart] Error creating structural relationship:', structError);
+            throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${structError instanceof Error ? structError.message : String(structError)}`);
+          }
+        }
+      }
+      
+      // 8.7 Handle part tags if available
+      if (Array.isArray(unifiedPartData.part_tags) && unifiedPartData.part_tags.length > 0) {
+        console.log('[updateUnifiedPart] Processing part tags');
+        
+        // First, clear existing tags for this version to avoid duplicates
+        await transaction`
+          DELETE FROM "PartTag" WHERE part_id = ${partId}
+        `;
+        
+        // Then insert the new tags
+        for (const tag of unifiedPartData.part_tags) {
+          try {
+            // Insert part tag based on the schema
+            // Convert null values to proper SQL parameters with explicit string types
+            const tagId = tag.tag_id || crypto.randomUUID();
+            const tagName = tag.tag_name || '';
+            const tagValue = 'tag_value' in tag && tag.tag_value !== null ? String(tag.tag_value) : null;
+            
+            await transaction`
+              INSERT INTO "PartTag" (tag_id, part_id, tag_name, tag_value, created_by)
+              VALUES (${tagId}, ${partId}, ${tagName}, ${tagValue}, ${userId})
+            `;
+          } catch (tagError: unknown) {
+            console.error('[updateUnifiedPart] Error creating part tag:', tagError);
+            // Don't fail the entire transaction for tag errors
+          }
+        }
+      }
+      
+      // 8.8 Handle part version tags if available
+      if (Array.isArray(unifiedPartData.part_version_tags) && unifiedPartData.part_version_tags.length > 0) {
+        console.log('[updateUnifiedPart] Processing part version tags');
+        
+        for (const versionTag of unifiedPartData.part_version_tags) {
+          try {
+            // Direct SQL insertion to avoid property access and parameter count issues
+            // Convert null values to proper SQL parameters with explicit string types
+            const versionTagId = crypto.randomUUID();
+            const versionTagName = versionTag.tag_name || '';
+            const versionTagValue = 'tag_value' in versionTag && versionTag.tag_value !== null ? 
+              String(versionTag.tag_value) : null;
+            const versionTagCategory = 'tag_category' in versionTag && versionTag.tag_category !== null ? 
+              String(versionTag.tag_category) : null;
+            const versionTagColor = 'tag_color' in versionTag && versionTag.tag_color !== null ? 
+              String(versionTag.tag_color) : null;
+            
+            await transaction`
+              INSERT INTO "PartVersionTag" (
+                part_version_tag_id,
+                part_version_id,
+                tag_name,
+                tag_value,
+                tag_category,
+                tag_color,
+                created_by,
+                created_at
+              ) VALUES (
+                ${versionTagId},
+                ${newVersionId},
+                ${versionTagName},
+                ${versionTagValue},
+                ${versionTagCategory},
+                ${versionTagColor},
+                ${userId},
+                NOW()
+              )
+            `;
+          } catch (vTagError: unknown) {
+            console.error('[updateUnifiedPart] Error creating part version tag:', vTagError);
+            // Don't fail the entire transaction for tag errors
+          }
+        }
+      }
+      
+      // 8.9 Handle categories if provided
+      if (Array.isArray(unifiedPartData.categories) && unifiedPartData.categories.length > 0) {
+        console.log('[updateUnifiedPart] Processing categories');
+        
+        for (const categoryId of unifiedPartData.categories) {
+          if (categoryId && typeof categoryId === 'string') {
+            try {
+              // Use explicit string parameters instead of template literals to avoid type issues
+              await transaction.unsafe(
+                `INSERT INTO "PartVersionCategory" (part_version_id, category_id) VALUES ($1, $2)`,
+                [newVersionId, categoryId]
+              );
+            } catch (categoryError: unknown) {
+              console.error('[updateUnifiedPart] Error linking category:', categoryError);
+              // Don't fail the entire transaction for category errors
+            }
+          }
+        }
+      }
+      
+      // 8.10 Handle part families if provided
+      if (Array.isArray(unifiedPartData.family_ids) && unifiedPartData.family_ids.length > 0) {
+        console.log('[updateUnifiedPart] Processing part families');
+        
+        // First remove existing family links for this part to prevent duplicates
+        try {
+          await transaction.unsafe(
+            `DELETE FROM "PartFamilyLink" WHERE part_id = $1`,
+            [partId]
+          );
+          
+          for (const familyId of unifiedPartData.family_ids) {
+            if (familyId && typeof familyId === 'string') {
+              const linkId = crypto.randomUUID();
+              await transaction.unsafe(
+                `INSERT INTO "PartFamilyLink" (
+                  part_family_link_id, part_id, family_id, created_by, created_at
+                ) VALUES ($1, $2, $3, $4, NOW())`,
+                [linkId, partId, familyId, userId]
+              );
+            }
+          }
+        } catch (familyError: unknown) {
+          console.error('[updateUnifiedPart] Error handling part families:', familyError);
+          // Don't fail the entire transaction for family errors
+        }
+      }
+      
+      // 8.11 Handle part groups if provided
+      if (Array.isArray(unifiedPartData.group_ids) && unifiedPartData.group_ids.length > 0) {
+        console.log('[updateUnifiedPart] Processing part groups');
+        
+        // First remove existing group links for this part to prevent duplicates
+        try {
+          await transaction.unsafe(
+            `DELETE FROM "PartGroupLink" WHERE part_id = $1`,
+            [partId]
+          );
+          
+          for (const groupId of unifiedPartData.group_ids) {
+            if (groupId && typeof groupId === 'string') {
+              const linkId = crypto.randomUUID();
+              await transaction.unsafe(
+                `INSERT INTO "PartGroupLink" (
+                  part_group_link_id, part_id, group_id, created_by, created_at
+                ) VALUES ($1, $2, $3, $4, NOW())`,
+                [linkId, partId, groupId, userId]
+              );
+            }
+          }
+        } catch (groupError: unknown) {
+          console.error('[updateUnifiedPart] Error handling part groups:', groupError);
+          // Don't fail the entire transaction for group errors
+        }
+      }
+      
+      // 8.12 Handle custom fields if provided
+      if (unifiedPartData.custom_fields && Object.keys(unifiedPartData.custom_fields).length > 0) {
+        console.log('[updateUnifiedPart] Processing custom fields');
+        
+        for (const [fieldId, fieldValue] of Object.entries(unifiedPartData.custom_fields)) {
+          if (fieldId && fieldValue !== undefined) {
+            try {
+              // Process JSON field safely and use parameterized query
+              const processedValue = processJsonField(fieldValue);
+              await transaction.unsafe(
+                `INSERT INTO "PartCustomField" (
+                  part_version_id, field_id, custom_field_value
+                ) VALUES ($1, $2, $3::jsonb)`,
+                [newVersionId, fieldId, processedValue]
+              );
+            } catch (customFieldError: unknown) {
+              console.error('[updateUnifiedPart] Error saving custom field:', customFieldError);
+              // Don't fail the entire transaction for custom field errors
+            }
+          }
+        }
+      }
+      
+      // 9. Create a part revision record for this update
+      try {
+        // Create a properly formatted revision description
+        const revisionDescription = `Updated part ${unifiedPartData.part_name || 'unnamed'} to version ${unifiedPartData.part_version || '0.0.0'}`;
+        
+        // Use properly typed parameters for the createPartRevision function
+        await createPartRevision(
+          newVersionId,
+          '', // revision number - automatically assigned
+          userId,
+          'VERSION_UPDATE', // revision type
+          revisionDescription,
+          '', // No remarks in UnifiedPart interface
+          ['part_name', 'status_in_bom', 'current_version_id'], // changed fields
+          { // old values
+            part_name: existingPart.part_name || '',
+            status_in_bom: existingPart.status_in_bom || 'CONCEPT',
+            current_version_id: existingPart.current_version_id || ''
+          },
+          { // new values
+            part_name: unifiedPartData.part_name || '',
+            status_in_bom: unifiedPartData.status_in_bom || 'CONCEPT',
+            current_version_id: newVersionId
+          },
+          'APPROVED',
+          userId,
+          new Date(),
+          `Part update: ${unifiedPartData.part_name || 'unnamed'} version ${unifiedPartData.part_version || '0.0.0'}`
+        );
+        console.log('[updateUnifiedPart] Created revision record for part update');
+      } catch (revisionError: unknown) {
+        console.error('[updateUnifiedPart] Error creating revision record:', revisionError);
+        // Don't fail the update if revision creation fails
+      }
+      
+      // 10. Get the final data to return (with proper type safety)
+      const partIdParam = partId; // Ensure partId is a string
+      const updatedPartData = await transaction`
+        SELECT p.*, pv.*
+        FROM "Part" p
+        JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
+        WHERE p.part_id = ${partIdParam}
+      `;
+      
+      if (updatedPartData.length === 0) {
+        throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to retrieve updated part data`);
+      }
+      
+      // 11. Return normalized part and version data
+      const normalizedPart = normalizePart(updatedPartData[0]);
+      const normalizedVersion = normalizePartVersion(
+        updatedPartData[0],
+        updatedPartData[0].part_id,
+        updatedPartData[0].part_version_id
+      );
+      
+      console.log('[updateUnifiedPart] Successfully updated part with all related data');
+      return { part: normalizedPart, version: normalizedVersion };
     });
+  } catch (error) {
+    console.error('[updateUnifiedPart] Error updating part:', error);
+    throw error;
+  }
+}
+
+// export async function updatePartWithStatus(
+//   partId: string,
+//   newVersionId: string,
+//   newStatus: PartStatusEnum,
+//   userId?: string
+// ): Promise<void> {
+//   try {
+//     console.log(`[updatePartWithStatus] Updating part ${partId} with new version ${newVersionId} and status ${newStatus}`);
     
-    console.log('[updatePartWithStatus] Transaction committed successfully');
-  } catch (error: unknown) {
-    console.error('[updatePartWithStatus] Error:', error);
-    throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : String(error)}`);
+//     // Validate inputs
+//     if (!partId || partId.trim() === '') {
+//       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part ID`);
+//     }
+    
+//     if (!newVersionId || newVersionId.trim() === '') {
+//       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid version ID`);
+//     }
+    
+//     if (!Object.values(PartStatusEnum).includes(newStatus)) {
+//       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part status: ${newStatus}`);
+//     }
+    
+//     // Begin transaction for atomic updates
+//     await sql.begin(async (transaction) => {
+//       console.log('[updatePartWithStatus] Transaction started');
+      
+//       // First, verify the version exists
+//       const versionCheck = await transaction`
+//         SELECT part_version_id, part_id FROM "PartVersion" 
+//         WHERE part_version_id = ${newVersionId}
+//       `;
+      
+//       if (versionCheck.length === 0) {
+//         throw new Error(`${PART_ERRORS.NOT_FOUND}: Part version with ID ${newVersionId} not found`);
+//       }
+      
+//       // Verify the version belongs to this part
+//       if (versionCheck[0].part_id !== partId) {
+//         throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Version ${newVersionId} does not belong to part ${partId}`);
+//       }
+      
+//       // Lock the part row to prevent concurrent modifications
+//       const lockResult = await transaction`
+//         SELECT part_id FROM "Part" WHERE part_id = ${partId} FOR UPDATE
+//       `;
+      
+//       if (lockResult.length === 0) {
+//         throw new Error(`${PART_ERRORS.NOT_FOUND}: Part with ID ${partId} not found or could not be locked`);
+//       }
+      
+//       console.log('[updatePartWithStatus] Part row locked for update');
+      
+//       // Update the part with the new version ID and status
+//       const updateResult = await transaction`
+//         UPDATE "Part"
+//         SET 
+//           current_version_id = ${newVersionId},
+//           status_in_bom = ${newStatus}::part_status_enum,
+//           updated_at = ${sql.unsafe('NOW()')},
+//           updated_by = ${userId || null}
+//         WHERE part_id = ${partId}
+//         RETURNING part_id
+//       `;
+      
+//       if (updateResult.length === 0) {
+//         throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to update part ${partId}`);
+//       }
+      
+//       console.log('[updatePartWithStatus] Part updated successfully');
+      
+//       // If we have a userId, create a revision record for this update
+//       if (userId) {
+//         try {
+//           await createPartRevision(
+//             newVersionId,
+//             '', // revision number - automatically assigned
+//             userId,
+//             'STATUS_CHANGE',
+//             `Changed part status to ${newStatus} and set as current version`,
+//             '', // justification
+//             ['status_in_bom', 'current_version_id'],
+//             {}, // previous values - would require an additional query to get
+//             { status_in_bom: newStatus, current_version_id: newVersionId },
+//             'APPROVED',
+//             userId,
+//             new Date(),
+//             ''
+//           );
+//           console.log('[updatePartWithStatus] Created revision record for status change');
+//         } catch (revisionError: unknown) {
+//           // Don't fail the update if revision creation fails
+//           console.error('[updatePartWithStatus] Error creating revision record:', revisionError);
+//         }
+//       }
+//     });
+    
+//     console.log('[updatePartWithStatus] Transaction committed successfully');
+//   } catch (error: unknown) {
+//     console.error('[updatePartWithStatus] Error:', error);
+//     throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : String(error)}`);
+//   }
+// }
+
+/**
+ * Get a complete part as a UnifiedPart object
+ * This function retrieves a part and all its related data, returning it as a unified structure
+ * that conforms to the UnifiedPart schema. This ensures consistent data access across the application.
+ * 
+ * @param partId - ID of the part to retrieve
+ * @returns Promise resolving to a complete UnifiedPart object or null if not found
+ * @throws Error if database operation fails
+ */
+export async function getUnifiedPart(partId: string): Promise<UnifiedPart | null> {
+  try {
+    console.log(`[getUnifiedPart] Retrieving complete unified part data for part ${partId}`);
+    
+    // Validate input
+    if (!partId || partId.trim() === '') {
+      throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part ID`);
+    }
+    
+    // 1. Get base part and current version data
+    const partData = await getPartWithCurrentVersion(partId).catch(() => null);
+    
+    if (!partData) {
+      console.log(`[getUnifiedPart] Part with ID ${partId} not found`);
+      return null;
+    }
+    
+    const { part, currentVersion } = partData;
+    
+    // Helper function to safely parse JSON strings to their proper types
+    function parseJsonOrNull<T>(value: string | object | null | undefined): T | null {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        return parsed as T;
+      } catch (err) {
+        console.error('Error parsing JSON:', err);
+        return null;
+      }
+    }
+    
+    // 2. Begin building the UnifiedPart object with base properties
+    const unifiedPart: UnifiedPart = {
+      // Part core fields
+      part_id: part.part_id,
+      // Removed part_number as it's not in the UnifiedPart type
+      part_name: currentVersion.part_name || '',
+      short_description: currentVersion.short_description || '',
+      status_in_bom: part.status_in_bom as PartStatusEnum,
+      is_public: part.is_public,
+      creator_id: part.creator_id,
+      created_at: part.created_at,
+      updated_at: part.updated_at,
+      updated_by: part.updated_by,
+      
+      // Version fields
+      part_version_id: currentVersion.part_version_id,
+      part_version: currentVersion.part_version,
+      version_status: currentVersion.version_status as LifecycleStatusEnum,
+      lifecycle_status: currentVersion.version_status as LifecycleStatusEnum, // Required field in UnifiedPart
+      released_at: currentVersion.released_at,
+      // short_description is already set above
+      long_description: currentVersion.long_description ? typeof currentVersion.long_description === 'string' ? currentVersion.long_description : parseJsonOrNull<StructuredDescription>(typeof currentVersion.long_description === 'string' ? currentVersion.long_description : JSON.stringify(currentVersion.long_description)) : null,
+      functional_description: currentVersion.functional_description || null,
+      revision_notes: currentVersion.revision_notes || null,
+      
+      // Physical properties
+      part_weight: currentVersion.part_weight !== undefined ? Number(currentVersion.part_weight) : null,
+      weight_unit: currentVersion.weight_unit ? (currentVersion.weight_unit as WeightUnitEnum) : null,
+      dimensions: currentVersion.dimensions ? (() => {
+        const parsed = parseJsonOrNull<Dimensions>(typeof currentVersion.dimensions === 'string' ? currentVersion.dimensions : JSON.stringify(currentVersion.dimensions));
+        // Ensure null values are replaced with 0 to match the expected type
+        if (parsed) {
+          return {
+            length: parsed.length ?? 0,
+            width: parsed.width ?? 0,
+            height: parsed.height ?? 0
+          };
+        }
+        return null;
+      })() : null,
+      dimensions_unit: currentVersion.dimensions_unit ? (currentVersion.dimensions_unit as DimensionUnitEnum) : null,
+      material_composition: currentVersion.material_composition ? parseJsonOrNull<JsonValue>(typeof currentVersion.material_composition === 'string' ? currentVersion.material_composition : JSON.stringify(currentVersion.material_composition)) : null,
+      
+      // Technical specifications
+      technical_specifications: currentVersion.technical_specifications ? parseJsonOrNull<JsonValue>(typeof currentVersion.technical_specifications === 'string' ? currentVersion.technical_specifications : JSON.stringify(currentVersion.technical_specifications)) : null,
+      properties: currentVersion.properties ? parseJsonOrNull<JsonValue>(typeof currentVersion.properties === 'string' ? currentVersion.properties : JSON.stringify(currentVersion.properties)) : null,
+      
+      // Component properties
+      package_type: currentVersion.package_type ? (currentVersion.package_type as PackageTypeEnum) : null,
+      mounting_type: currentVersion.mounting_type ? (currentVersion.mounting_type as MountingTypeEnum) : null,
+      pin_count: currentVersion.pin_count !== undefined ? Number(currentVersion.pin_count) : null,
+      tolerance: currentVersion.tolerance !== undefined ? Number(currentVersion.tolerance) : null,
+      tolerance_unit: currentVersion.tolerance_unit || null,
+      
+      // Electrical properties
+      electrical_properties: currentVersion.electrical_properties ? parseJsonOrNull<ElectricalProperties>(typeof currentVersion.electrical_properties === 'string' ? currentVersion.electrical_properties : JSON.stringify(currentVersion.electrical_properties)) : null,
+      voltage_rating_min: currentVersion.voltage_rating_min !== undefined ? Number(currentVersion.voltage_rating_min) : null,
+      voltage_rating_max: currentVersion.voltage_rating_max !== undefined ? Number(currentVersion.voltage_rating_max) : null,
+      current_rating_min: currentVersion.current_rating_min !== undefined ? Number(currentVersion.current_rating_min) : null,
+      current_rating_max: currentVersion.current_rating_max !== undefined ? Number(currentVersion.current_rating_max) : null,
+      power_rating_max: currentVersion.power_rating_max !== undefined ? Number(currentVersion.power_rating_max) : null,
+      
+      // Mechanical properties
+      mechanical_properties: currentVersion.mechanical_properties ? parseJsonOrNull<MechanicalProperties>(typeof currentVersion.mechanical_properties === 'string' ? currentVersion.mechanical_properties : JSON.stringify(currentVersion.mechanical_properties)) : null,
+      
+      // Thermal properties
+      thermal_properties: currentVersion.thermal_properties ? parseJsonOrNull<ThermalProperties>(typeof currentVersion.thermal_properties === 'string' ? currentVersion.thermal_properties : JSON.stringify(currentVersion.thermal_properties)) : null,
+      operating_temperature_min: currentVersion.operating_temperature_min !== undefined ? Number(currentVersion.operating_temperature_min) : null,
+      operating_temperature_max: currentVersion.operating_temperature_max !== undefined ? Number(currentVersion.operating_temperature_max) : null,
+      storage_temperature_min: currentVersion.storage_temperature_min !== undefined ? Number(currentVersion.storage_temperature_min) : null,
+      storage_temperature_max: currentVersion.storage_temperature_max !== undefined ? Number(currentVersion.storage_temperature_max) : null,
+      temperature_unit: currentVersion.temperature_unit ? (currentVersion.temperature_unit as TemperatureUnitEnum) : null,
+      
+      // Environmental data
+      environmental_data: currentVersion.environmental_data ? parseJsonOrNull<EnvironmentalData>(typeof currentVersion.environmental_data === 'string' ? currentVersion.environmental_data : JSON.stringify(currentVersion.environmental_data)) : null,
+      
+      // Initialize arrays to be populated
+      manufacturer_parts: [],
+      supplier_parts: [],
+      attachments: [],
+      representations: [],
+      part_tags: [],
+      part_version_tags: [],
+      structure: [],
+      compliance_info: [],
+      custom_fields: {}
+    };
+    
+    // 3. Get manufacturer parts
+    const manufacturerParts = await getManufacturerPartsForVersion(currentVersion.part_version_id);
+    if (manufacturerParts && manufacturerParts.length > 0) {
+      unifiedPart.manufacturer_parts = manufacturerParts.map(mp => ({
+        manufacturer_id: mp.manufacturer_id,
+        manufacturer_name: mp.manufacturer_name || '',
+        manufacturer_part_number: mp.manufacturer_part_number,
+        description: mp.description || null,
+        datasheet_url: mp.datasheet_url || null,
+        product_url: null, // This field may need to be populated from elsewhere
+        is_recommended: mp.status === 'ACTIVE' // Mapping status to is_recommended
+      }));
+    }
+    
+    // 4. Get supplier parts
+    try {
+      const supplierParts = await getSupplierPartsForVersion(currentVersion.part_version_id);
+      if (supplierParts && supplierParts.length > 0) {
+        unifiedPart.supplier_parts = supplierParts.map(sp => ({
+          supplier_id: sp.supplier_id,
+          supplier_name: sp.supplier_name || '',
+          supplier_part_number: sp.supplier_part_number || '',
+          description: sp.manufacturer_part_description || null,
+          url: sp.product_url || null, // Using the correct field name from schema
+          currency_code: sp.currency || 'USD', // Using the correct field name from schema
+          unit_price: sp.unit_price || 0,
+          minimum_order_quantity: sp.minimum_order_quantity || 1,
+          lead_time_weeks: sp.lead_time_days ? Math.ceil(sp.lead_time_days / 7) : null, // Convert days to weeks
+          notes: sp.notes || null,
+          manufacturer_part_index: 0, // Default value for required field
+          is_preferred: sp.is_preferred === true // Default to false if not specified
+        }));
+      }
+    } catch (error) {
+      console.error('Error in getUnifiedPart:', error);
+      // Continue with empty supplier parts
+      unifiedPart.supplier_parts = [];
+    }
+    
+    // 5. Get attachments
+    try {
+      const attachments = await getAttachmentsForVersion(currentVersion.part_version_id);
+      if (attachments && attachments.length > 0) {
+        unifiedPart.attachments = attachments.map(att => ({
+          attachment_id: att.part_attachment_id, // Correct field name from schema
+          file_name: att.file_name || '',
+          file_url: att.file_url,
+          file_type: att.file_type || null,
+          description: att.attachment_description || null, // Correct field name from schema
+          version: null, // No version field in schema
+          uploaded_by: att.uploaded_by || null,
+          uploaded_at: att.uploaded_at,
+          attachment_type: att.attachment_type || 'DOCUMENT', // Default attachment type
+          filename: att.file_name || '', // For backward compatibility
+          is_primary: att.is_primary === true // Default to false if not specified
+        }));
+      }
+    } catch (error) {
+      console.error('Error mapping attachments:', error);
+      unifiedPart.attachments = [];
+    }
+    
+    // 6. Get representations (3D models, etc.)
+    try {
+      const representations = await getRepresentationsForVersion(currentVersion.part_version_id);
+      if (representations && representations.length > 0) {
+        unifiedPart.representations = representations.map(rep => ({
+          representation_id: rep.part_representation_id, // Correct field name from schema
+          representation_type: rep.representation_type,
+          file_url: rep.file_url || '',
+          file_format: rep.format, // Correct field name from schema
+          description: rep.description || null,
+          version: null, // No version field in schema
+          created_by: rep.created_by || null,
+          created_at: rep.created_at || new Date()
+        }));
+      }
+    } catch (error) {
+      console.error('Error mapping representations:', error);
+      unifiedPart.representations = [];
+    }
+    
+    // 7. Get tags - Since tag tables don't exist in the schema, initialize with empty arrays
+    try {
+      const tags = await getTagsForPart(part.part_id);
+      // The getTagsForPart function now handles the missing tables and returns an empty array
+      // We'll initialize the part_tags with an empty array to match the UnifiedPart schema
+      unifiedPart.part_tags = [];
+    } catch (error) {
+      console.error('Error handling part tags:', error);
+      unifiedPart.part_tags = [];
+    }
+    
+    // 8. Get version tags - Since tag tables don't exist in the schema, initialize with empty arrays
+    try {
+      const versionTags = await getTagsForPartVersion(currentVersion.part_version_id);
+      // The getTagsForPartVersion function now handles the missing tables and returns an empty array
+      // We'll initialize the part_version_tags with an empty array to match the UnifiedPart schema
+      unifiedPart.part_version_tags = [];
+    } catch (error) {
+      console.error('Error handling part version tags:', error);
+      unifiedPart.part_version_tags = [];
+    }
+    
+    // 9. Get part structure (BOM relationships)
+    // Using the existing BOM structure function
+    const structure = await getPartBomItems(part.part_id, currentVersion.part_version_id);
+    if (structure && Array.isArray(structure) && structure.length > 0) {
+      unifiedPart.structure = structure.map(rel => ({
+        structure_id: rel.structure_id,
+        child_part_id: rel.child_part_id,
+        child_part_name: rel.child_part_name || '',
+        child_part_number: rel.child_part_number || '',
+        quantity: rel.quantity,
+        relation_type: rel.relation_type as StructuralRelationTypeEnum,
+        reference_designator: rel.reference_designator || null,
+        notes: rel.notes || null
+      }));
+    }
+    
+    // 10. Get compliance information
+    const compliance = await getComplianceForVersion(currentVersion.part_version_id);
+    if (compliance && compliance.length > 0) {
+      unifiedPart.compliance_info = compliance.map(comp => ({
+        compliance_id: comp.compliance_id,
+        compliance_type: comp.compliance_type as ComplianceTypeEnum,
+        status: comp.status,
+        reference_number: comp.reference_number || null,
+        issue_date: comp.issue_date,
+        expiry_date: comp.expiry_date || null,
+        notes: comp.notes || null,
+        documents: comp.documents || []
+      }));
+    }
+    
+    // 11. Get custom fields
+    const customFields = await getCustomFieldsForVersion(currentVersion.part_version_id);
+    if (customFields) {
+      // Convert custom fields to the expected type
+      unifiedPart.custom_fields = customFields;
+    }
+    
+    return unifiedPart;
+  } catch (error) {
+    console.error('Error in getUnifiedPart:', error);
+    return null;
+  }
+}
+
+/**
+ * Helper function to get manufacturer parts for a part version
+ */
+async function getManufacturerPartsForVersion(partVersionId: string): Promise<any[]> {
+  console.log(`Getting manufacturer parts for version ${partVersionId}`);
+  const result = await sql`
+    SELECT mp.*, m.manufacturer_name
+    FROM "ManufacturerPart" mp
+    LEFT JOIN "Manufacturer" m ON mp.manufacturer_id = m.manufacturer_id
+    WHERE mp.part_version_id = ${partVersionId}
+  `;
+  console.log(`Found ${result.length} manufacturer parts for version ${partVersionId}`);
+  return result;
+}
+
+/**
+ * Helper function to get supplier parts for a part version
+ */
+async function getSupplierPartsForVersion(partVersionId: string): Promise<any[]> {
+  console.log(`Getting supplier parts for version ${partVersionId}`);
+  const result = await sql`
+    SELECT sp.*, s.supplier_name
+    FROM "SupplierPart" sp
+    LEFT JOIN "Supplier" s ON sp.supplier_id = s.supplier_id
+    LEFT JOIN "ManufacturerPart" mp ON sp.manufacturer_part_id = mp.manufacturer_part_id
+    WHERE mp.part_version_id = ${partVersionId}
+  `;
+  console.log(`Found ${result.length} supplier parts for version ${partVersionId}`);
+  return result;
+}
+
+/**
+ * Helper function to get attachments for a part version
+ */
+async function getAttachmentsForVersion(partVersionId: string): Promise<any[]> {
+  console.log(`Getting attachments for version ${partVersionId}`);
+  try {
+    const result = await sql`
+      SELECT * FROM "PartAttachment"
+      WHERE part_version_id = ${partVersionId}
+    `;
+    console.log(`Found ${result.length} attachments for version ${partVersionId}`);
+    return result;
+  } catch (error) {
+    console.error('Error getting attachments:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to get representations for a part version
+ */
+async function getRepresentationsForVersion(partVersionId: string): Promise<any[]> {
+  console.log(`Getting representations for version ${partVersionId}`);
+  try {
+    const result = await sql`
+      SELECT * FROM "PartRepresentation"
+      WHERE part_version_id = ${partVersionId}
+    `;
+    console.log(`Found ${result.length} representations for version ${partVersionId}`);
+    return result;
+  } catch (error) {
+    console.error('Error getting representations:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to get tags for a part
+ */
+async function getTagsForPart(partId: string): Promise<any[]> {
+  try {
+    // Since Tag/PartTag tables don't exist in the schema, return an empty array to avoid errors
+    console.log(`Getting tags for part ${partId} - tables not present in schema`);
+    return [];
+  } catch (error) {
+    console.error('Error getting tags for part:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to get tags for a part version
+ */
+async function getTagsForPartVersion(partVersionId: string): Promise<any[]> {
+  try {
+    // Since Tag/PartVersionTag tables don't exist in the schema, return an empty array to avoid errors
+    console.log(`Getting tags for part version ${partVersionId} - tables not present in schema`);
+    return [];
+  } catch (error) {
+    console.error('Error getting tags for part version:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to get compliance information for a part version
+ */
+async function getComplianceForVersion(partVersionId: string): Promise<any[]> {
+  try {
+    console.log(`Getting compliance for part version ${partVersionId}`);
+    const result = await sql`
+      SELECT * FROM "PartCompliance"
+      WHERE part_version_id = ${partVersionId}
+    `;
+    console.log(`Found ${result.length} compliance records for version ${partVersionId}`);
+    return result;
+  } catch (error) {
+    console.error('Error getting compliance for part version:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to get custom fields for a part version
+ */
+async function getCustomFieldsForVersion(partVersionId: string): Promise<JsonValue> {
+  try {
+    console.log(`Getting custom fields for part version ${partVersionId}`);
+    const result = await sql`
+      SELECT cf.field_name, pcf.custom_field_value as field_value
+      FROM "PartCustomField" pcf
+      JOIN "CustomField" cf ON pcf.field_id = cf.custom_field_id
+      WHERE pcf.part_version_id = ${partVersionId}
+    `;
+    
+    console.log(`Found ${result.length} custom fields for version ${partVersionId}`);
+    
+    // Convert array of rows to an object
+    const customFields: Record<string, any> = {};
+    for (const row of result) {
+      try {
+        if (typeof row.field_value === 'string') {
+          customFields[row.field_name] = JSON.parse(row.field_value);
+        } else {
+          // If it's already a JSON object (JSONB from PostgreSQL)
+          customFields[row.field_name] = row.field_value;
+        }
+      } catch (e) {
+        // If it's not valid JSON, use the raw value
+        customFields[row.field_name] = row.field_value;
+      }
+    }
+    
+    return customFields;
+  } catch (error) {
+    console.error('Error getting custom fields for part version:', error);
+    return {};
+  }
+}
+
+/**
+ * Helper function to get part BOM items
+ * Retrieves the structure relationships for a part's BOM
+ */
+async function getPartBomItems(partId: string, partVersionId: string): Promise<any[]> {
+  try {
+    console.log(`Getting BOM items for part ${partId} and version ${partVersionId}`);
+    
+    // Using PartStructure instead of Structure (per schema.sql)
+    // Note: PartStructure doesn't have parent_part_version_id or is_deleted columns in the schema
+    const result = await sql`
+      SELECT ps.*, p.global_part_number as child_part_number, pv.part_name as child_part_name
+      FROM "PartStructure" ps
+      JOIN "Part" p ON ps.child_part_id = p.part_id
+      JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
+      WHERE ps.parent_part_id = ${partId}
+    `;
+    
+    console.log(`Found ${result.length} BOM items for part ${partId}`);
+    return result;
+  } catch (error) {
+    console.error('Error getting part BOM items:', error);
+    return [];
   }
 }

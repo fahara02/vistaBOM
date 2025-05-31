@@ -23,7 +23,7 @@ export const load: PageServerLoad = async (event) => {
     errors: false // Don't show errors on initial load
   });
   
-  console.log('Manufacturer form initialized:', form);
+  
   return { user, manufacturers, form };
 };
 

@@ -527,13 +527,6 @@
         color: hsl(var(--foreground));
     }
 
-    .meta {
-        margin-top: 1.5rem;
-        color: hsl(var(--muted-foreground));
-        font-size: 0.85em;
-        display: flex;
-        gap: 1rem;
-    }
 
     .actions {
         margin-top: 1.5rem;

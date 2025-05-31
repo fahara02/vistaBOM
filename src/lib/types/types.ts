@@ -50,6 +50,7 @@ import type {
   Session,
   Supplier,
   ThermalProperties,
+  UnifiedPart,
   User
 } from './schemaTypes';
 
@@ -57,7 +58,7 @@ import type {
 export type {
   Category, CreatePart, CreatePartVersion, ElectricalProperties, EnvironmentalData, Manufacturer, MechanicalProperties, Part, PartAttachment,
   PartRepresentation, PartVersion,
-  PartVersionBase, PartVersionWithRelations, PartWithCurrentVersion, Permission, Project, Role, RolePermission, Session, Supplier, ThermalProperties, User
+  PartVersionBase, PartVersionWithRelations, PartWithCurrentVersion, Permission, Project, Role, RolePermission, Session, Supplier, ThermalProperties, UnifiedPart, User
 };
 
 // Export dimensions type with an alias
@@ -79,4 +80,7 @@ export type DbPartRepresentation = PartRepresentation;
 export type DbCategory = Category;
 export type DbManufacturer = Manufacturer;
 export type DbSupplier = Supplier;
+
+// Unified Part type - use this as the source of truth for all part-related operations
+export type DbUnifiedPart = UnifiedPart;
 

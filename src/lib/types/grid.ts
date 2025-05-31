@@ -1,6 +1,9 @@
+//src/lib/types/grid.ts
+
 // Grid component type definitions
 // This follows the project pattern of having types in a dedicated .ts file
-import type { Manufacturer, Supplier, Category, Part } from './types';
+import type { Manufacturer, Supplier, Category, Part, UnifiedPart } from './types';
+import type { JsonValue } from './schemaTypes';
 
 // Common grid column type
 export interface GridColumn {
@@ -31,8 +34,39 @@ export interface GridApi {
 // Generic entity type for the grid
 export type EntityType = 'manufacturer' | 'supplier' | 'category' | 'part';
 
+// Extended entity interfaces with required grid properties
+export interface GridEntityBase {
+  entityType: EntityType;
+  _currentVersion?: any;
+  
+  // Common properties accessed by GridView.svelte
+  contact_info?: string | Record<string, any>;
+  custom_fields?: JsonValue;
+  created_by?: string;
+  website_url?: string;
+  logo_url?: string;
+  
+  // Manufacturer-specific fields that might be accessed
+  manufacturer_description?: string;
+  
+  // Supplier-specific fields that might be accessed
+  supplier_description?: string;
+}
+
+// Manufacturer entity with grid properties
+export type GridManufacturer = Manufacturer & GridEntityBase;
+
+// Supplier entity with grid properties
+export type GridSupplier = Supplier & GridEntityBase;
+
+// Category entity with grid properties
+export type GridCategory = Category & GridEntityBase;
+
+// Part entity with grid properties
+export type GridPart = UnifiedPart & GridEntityBase;
+
 // Generic entity union type
-export type GridEntity = Manufacturer | Supplier | Category | Part;
+export type GridEntity = GridManufacturer | GridSupplier | GridCategory | GridPart;
 
 // Generic grid item position
 export interface GridItemPosition {

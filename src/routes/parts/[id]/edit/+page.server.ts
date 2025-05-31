@@ -11,7 +11,7 @@ import { partVersionSchema, partSchema } from '$lib/schema/schema';
 // Import part related functions
 import { 
   createPartVersion, 
-  updatePartWithStatus,
+  updateUnifiedPart,
   getPartWithCurrentVersion
 } from '$lib/core/parts';
 
@@ -173,18 +173,22 @@ export const actions: Actions = {
             console.error('DIMENSIONS FIX: Converting empty object to null');
           }
           // Case 3: Has some values but not all - ensure all values exist
-          else if (parsedDimensions && (
-              typeof parsedDimensions.length === 'number' || 
-              typeof parsedDimensions.width === 'number' || 
-              typeof parsedDimensions.height === 'number'
-          )) {
-            // Make sure all dimension values exist and are numbers (0 if null)
-            if (parsedDimensions.length === null) parsedDimensions.length = 0;
-            if (parsedDimensions.width === null) parsedDimensions.width = 0;
-            if (parsedDimensions.height === null) parsedDimensions.height = 0;
+          else if (parsedDimensions && Object.keys(parsedDimensions).length > 0) {
+            // Make sure all dimension values exist and are numbers (null if not present)
+            const dimensions = { ...parsedDimensions };
+            if (dimensions.length === null) dimensions.length = null;
+            if (dimensions.width === null) dimensions.width = null;
+            if (dimensions.height === null) dimensions.height = null;
             
-            formData.set('dimensions', JSON.stringify(parsedDimensions));
-            console.error('DIMENSIONS FIX: Converting mixed dimensions to all numeric:', parsedDimensions);
+            // Final dimension normalization
+            // If all dimensions are null, set the form to use null for dimensions
+            if (dimensions.length === null && dimensions.width === null && dimensions.height === null) {
+              formData.set('dimensions', 'null');
+              formData.set('dimensions_unit', 'null'); // Also clear unit when dimensions are null
+            } else {
+              formData.set('dimensions', JSON.stringify(dimensions));
+              console.error('DIMENSIONS FIX: Converting mixed dimensions to all numeric:', dimensions);
+            }
           }
         }
       } catch (err) {
@@ -418,9 +422,9 @@ export const actions: Actions = {
             // Two options: either make all values numeric or set dimensions to null
             // Let's set all to 0 to avoid losing data structure
             versionData.dimensions = {
-              length: typeof versionData.dimensions.length === 'number' ? versionData.dimensions.length : 0,
-              width: typeof versionData.dimensions.width === 'number' ? versionData.dimensions.width : 0,
-              height: typeof versionData.dimensions.height === 'number' ? versionData.dimensions.height : 0
+              length: typeof versionData.dimensions.length === 'number' ? versionData.dimensions.length : null,
+              width: typeof versionData.dimensions.width === 'number' ? versionData.dimensions.width : null,
+              height: typeof versionData.dimensions.height === 'number' ? versionData.dimensions.height : null
             };
             console.log('Fixed dimensions:', versionData.dimensions);
           }
@@ -514,7 +518,7 @@ export const actions: Actions = {
         }
       })();
       
-      await updatePartWithStatus(
+      await updateUnifiedPart(
         part.part_id,
         newVersionId,
         partStatusForUpdate

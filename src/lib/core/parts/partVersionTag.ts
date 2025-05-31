@@ -6,20 +6,9 @@
 
 import sql from "@/server/db/postgres";
 import { PART_ERRORS } from "./partErrors";
+import type { PartVersionTag } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartVersionTag table representing tags associated with part versions
- */
-export interface PartVersionTag {
-    part_version_tag_id: string;
-    part_version_id: string;
-    tag_name: string;
-    tag_value?: string | null;
-    tag_category?: string | null;
-    tag_color?: string | null;
-    created_by: string;
-    created_at: Date;
-}
+
 
 /**
  * Converts a database row to a PartVersionTag object

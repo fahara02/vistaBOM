@@ -7,27 +7,9 @@
 import sql from "@/server/db/postgres";
 import { PART_ERRORS } from "./partErrors";
 import type { JsonValue } from "@/types";
+import type { PartCustomField } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartCustomField table representing custom properties
- */
-export interface PartCustomField {
-    part_custom_field_id: string;
-    part_version_id: string;
-    field_name: string;
-    field_value: JsonValue; // Can be any JSON value
-    field_type: string; // e.g., 'STRING', 'NUMBER', 'BOOLEAN', 'DATE', 'OBJECT', 'ARRAY'
-    field_group?: string | null; // For grouping related fields
-    display_order?: number | null; // For controlling display order in UI
-    required: boolean;
-    validation_regex?: string | null;
-    validation_message?: string | null;
-    options?: string[] | null; // For enum/drop-down fields
-    created_by: string;
-    created_at: Date;
-    updated_by?: string | null;
-    updated_at?: Date | null;
-}
+
 
 /**
  * Converts a database row to a PartCustomField object

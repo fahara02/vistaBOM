@@ -69,6 +69,42 @@
     }
   }
   
+  // Track the custom fields as a string for editing
+  let customFieldsValue = '';
+  
+  // Initialize and keep the custom fields value in sync with the form
+  $: {
+    if ($form.custom_fields) {
+      if (typeof $form.custom_fields === 'object') {
+        customFieldsValue = JSON.stringify($form.custom_fields, null, 2);
+      } else if (typeof $form.custom_fields === 'string') {
+        customFieldsValue = $form.custom_fields;
+      }
+    } else {
+      customFieldsValue = '';
+    }
+  }
+  
+  // Handle input changes to update the form value
+  function handleCustomFieldsInput() {
+    if (validateJSON(customFieldsValue)) {
+      try {
+        // If it's valid JSON, parse it and store as object
+        if (customFieldsValue.trim()) {
+          $form.custom_fields = JSON.parse(customFieldsValue);
+        } else {
+          $form.custom_fields = {};
+        }
+      } catch (e) {
+        // If parsing fails, store as string
+        $form.custom_fields = customFieldsValue;
+      }
+    } else {
+      // If invalid, just store the raw string
+      $form.custom_fields = customFieldsValue;
+    }
+  }
+  
   let showConfirmDelete = false;
 </script>
 
@@ -113,29 +149,29 @@
           <div class="form-group">
             <label for="supplier_name">Name <span class="required">*</span></label>
             <input 
-              id="name" 
-              name="name" 
+              id="supplier_name" 
+              name="supplier_name" 
               type="text" 
-              bind:value={$form.name}
+              bind:value={$form.supplier_name}
               class="form-control" 
               required
             />
-            {#if $errors.name}
-              <span class="error-message">{$errors.name}</span>
+            {#if $errors.supplier_name}
+              <span class="error-message">{$errors.supplier_name}</span>
             {/if}
           </div>
           
           <div class="form-group">
             <label for="description">Description</label>
             <textarea 
-              id="description" 
-              name="description" 
-              bind:value={$form.description}
+              id="supplier_description" 
+              name="supplier_description" 
+              bind:value={$form.supplier_description}
               class="form-control"
               rows="4"
             ></textarea>
-            {#if $errors.description}
-              <span class="error-message">{$errors.description}</span>
+            {#if $errors.supplier_description}
+              <span class="error-message">{$errors.supplier_description}</span>
             {/if}
           </div>
           
@@ -244,8 +280,8 @@
                 Custom Fields (JSON)
               </label>
               <div class="json-status">
-                {#if $form.custom_fields_json}
-                  {#if validateJSON($form.custom_fields_json)}
+                {#if $form.custom_fields}
+                  {#if validateJSON(typeof $form.custom_fields === 'string' ? $form.custom_fields : JSON.stringify($form.custom_fields))}
                     <span class="valid-json">✓ Valid JSON</span>
                   {:else}
                     <span class="invalid-json">✗ Invalid JSON</span>
@@ -258,8 +294,9 @@
               <div class="code-editor-tools">
                 <span class="field-hint">Enter a valid JSON object with your custom fields</span>
                 <button type="button" class="format-button" on:click={() => {
-                  if ($form.custom_fields_json && validateJSON($form.custom_fields_json)) {
-                    $form.custom_fields_json = JSON.stringify(JSON.parse($form.custom_fields_json), null, 2);
+                  if (customFieldsValue && validateJSON(customFieldsValue)) {
+                    customFieldsValue = JSON.stringify(JSON.parse(customFieldsValue), null, 2);
+                    handleCustomFieldsInput();
                   }
                 }}>
                   Format JSON
@@ -267,15 +304,16 @@
               </div>
               
               <textarea 
-                id="custom_fields_json" 
-                name="custom_fields_json" 
-                bind:value={$form.custom_fields_json}
+                id="custom_fields" 
+                name="custom_fields" 
+                bind:value={customFieldsValue}
                 class="form-control code-input"
                 rows="8"
                 placeholder="Enter your custom fields in JSON format"
+                on:input={handleCustomFieldsInput}
               ></textarea>
               
-              {#if $form.custom_fields_json && !validateJSON($form.custom_fields_json)}
+              {#if customFieldsValue && !validateJSON(customFieldsValue)}
                 <span class="error-message">JSON format is invalid. Please check for missing commas, quotes, or braces.</span>
               {/if}
             </div>
@@ -298,11 +336,11 @@
                 <div class="example-json">
                   <p><strong>Example:</strong></p>
                   <pre>{`{
-  "taxId": "123-45-6789",
-  "employeeCount": 250,
-  "isPreferredVendor": true,
-  "paymentTerms": "Net 30" 
-}`}</pre>
+                      "taxId": "123-45-6789",
+                      "employeeCount": 250,
+                      "isPreferredVendor": true,
+                      "paymentTerms": "Net 30" 
+                    }`}</pre>
                 </div>
               </div>
             {/if}
@@ -313,7 +351,7 @@
           <button 
             type="submit" 
             class="primary-button"
-            disabled={$submitting || $delayed || (typeof $form.custom_fields_json === 'string' && !validateJSON($form.custom_fields_json))}
+            disabled={Boolean($submitting || $delayed || (customFieldsValue && !validateJSON(customFieldsValue)))}
           >
             {$submitting ? 'Saving...' : 'Save Changes'}
           </button>

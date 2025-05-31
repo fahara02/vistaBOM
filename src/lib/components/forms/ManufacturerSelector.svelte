@@ -21,12 +21,24 @@
   export let disabled: boolean = false;
   export let width: string = "w-full";
   
+  // Debug manufacturers to see if they're being passed correctly
+  $: console.log('ManufacturerSelector received manufacturers:', manufacturers);
+  
   // Internal state
   let open = false;
   let currentManufacturerId: string = "";
   let editingIndex: number = -1; // -1 means we're adding a new manufacturer part
   let currentPart: ManufacturerPartInput = createEmptyManufacturerPart();
   let showForm = false;
+  
+  // Ensure we have valid manufacturer data
+  $: {
+    if (manufacturers.length === 0) {
+      console.warn('ManufacturerSelector has no manufacturers available!');
+    } else {
+      console.log(`ManufacturerSelector has ${manufacturers.length} manufacturers available`);
+    }
+  }
 
   // Create a new empty manufacturer part object
   function createEmptyManufacturerPart(): ManufacturerPartInput {
@@ -85,18 +97,31 @@
     showForm = false;
   }
   
-  // Get manufacturer name by ID
+  // Function to get the manufacturer name by ID
   function getManufacturerName(id: string): string {
-    // Find manufacturer by ID and access the name property
-    // This safely maps manufacturer_id to the name property
-    return manufacturers.find(m => m.id === id)?.name || "Unknown";
+    const manufacturer = manufacturers.find(m => m.id === id);
+    if (!manufacturer) {
+      console.warn(`Manufacturer with ID ${id} not found in`, manufacturers);
+      return "Unknown Manufacturer";
+    }
+    return manufacturer.name;
   }
   
-  // Close popover and focus trigger
+  // Close popover and focus trigger with improved behavior
   function closeAndFocusTrigger(triggerId: string) {
+    // Explicitly set the open state to false
     open = false;
+    
+    // Wait for Svelte to update the DOM
     tick().then(() => {
-      document.getElementById(triggerId)?.focus();
+      // Focus the trigger element if it exists
+      const triggerElement = document.getElementById(triggerId);
+      if (triggerElement) {
+        triggerElement.focus();
+        console.log('Focused trigger element');
+      } else {
+        console.warn('Could not find trigger element with ID:', triggerId);
+      }
     });
   }
 </script>
@@ -198,24 +223,35 @@
             </Popover.Trigger>
             <Popover.Content class="w-[var(--radix-popover-trigger-width)] p-0 max-h-[300px] overflow-y-auto dropdown-content" side="bottom" align="start" sideOffset={8}>
               <Command.Root>
-                {#if true}
-                  <Command.Input />
-                {/if}
-                <Command.Empty>No manufacturer found.</Command.Empty>
+                <Command.Input class="manufacturer-search-input" />
+                <Command.Empty>
+                  {manufacturers.length === 0 ? 'No manufacturers available. Please create manufacturers first.' : 'No manufacturer found.'}
+                </Command.Empty>
                 <Command.Group>
-                  {#each manufacturers as manufacturer}
-                    <Command.Item
-                      on:click={() => {
-                        currentPart.manufacturer_id = manufacturer.id;
-                        closeAndFocusTrigger(ids.trigger);
-                      }}
-                    >
-                      <Check
-                        class="mr-2 h-4 w-4 {currentPart.manufacturer_id !== manufacturer.id ? 'opacity-0' : ''}"
-                      />
-                      {manufacturer.name}
+                  {#if manufacturers.length === 0}
+                    <Command.Item class="text-red-500">
+                      No manufacturers available
                     </Command.Item>
-                  {/each}
+                  {:else}
+                    {#each manufacturers as manufacturer}
+                      <Command.Item
+                        on:click={() => {
+                          currentPart.manufacturer_id = manufacturer.id;
+                          open = false;
+                          console.log('Selected manufacturer:', manufacturer.name, 'with ID:', manufacturer.id);
+                          // Trigger reactivity by reassigning the object
+                          currentPart = {...currentPart};
+                        }}
+                      >
+                        <div class="flex items-center w-full">
+                          <Check
+                            class="mr-2 h-4 w-4 {currentPart.manufacturer_id !== manufacturer.id ? 'opacity-0' : ''}"
+                          />
+                          <span>{manufacturer.name}</span>
+                        </div>
+                      </Command.Item>
+                    {/each}
+                  {/if}
                 </Command.Group>
               </Command.Root>
             </Popover.Content>

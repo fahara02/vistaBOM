@@ -7,24 +7,8 @@
 import sql from "@/server/db";
 import { PART_ERRORS } from "./partErrors";
 import { sanitizeSqlString } from "@/utils/util";
+import type { PartRepresentation } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartRepresentation table representing visual models for parts
- */
-export interface PartRepresentation {
-    part_representation_id: string;
-    part_version_id: string;
-    representation_type: string; // e.g., '3D_MODEL', '2D_DRAWING', 'ICON', 'THUMBNAIL'
-    file_name: string;
-    file_format: string; // e.g., 'STEP', 'STL', 'PNG', 'SVG'
-    file_path: string;
-    file_size_bytes: number;
-    resolution?: string | null; // for images, format: '1024x768'
-    thumbnail_path?: string | null;
-    created_at: Date;
-    created_by: string;
-    is_primary: boolean;
-}
 
 /**
  * Converts a database row to a PartRepresentation object

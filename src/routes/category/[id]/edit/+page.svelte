@@ -209,20 +209,8 @@
     margin-right: 0.5rem;
   }
 
-  .custom-fields-section {
-    margin: 2rem 0;
-    padding: 1.5rem;
-    background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-  }
-
-  .custom-fields-section h2 {
-    font-size: 1.25rem;
-    margin-top: 0;
-    margin-bottom: 1rem;
-    color: #1f2937;
-  }
+ 
+ 
 
   .help-text {
     color: #6b7280;
@@ -242,56 +230,11 @@
     font-style: italic;
   }
 
-  .existing-fields {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
-    background: #eef2ff;
-    border-radius: 6px;
-  }
+ 
 
-  .existing-fields h3 {
-    font-size: 1rem;
-    margin-top: 0;
-    margin-bottom: 0.5rem;
-    color: #4338ca;
-  }
 
-  .existing-fields ul {
-    margin: 0;
-    padding-left: 1.5rem;
-  }
 
-  .format-btn {
-    float: right;
-    background: #4f46e5;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-
-  .format-btn:hover {
-    background: #4338ca;
-  }
-
-  .json-examples {
-    margin-top: 0.75rem;
-    font-size: 0.875rem;
-    color: #6b7280;
-  }
-
-  .example-code {
-    display: block;
-    background: #f3f4f6;
-    padding: 0.5rem;
-    border-radius: 4px;
-    white-space: pre-wrap;
-    font-family: monospace;
-    margin-top: 0.25rem;
-  }
-
+ 
   .form-actions {
     display: flex;
     justify-content: flex-end;

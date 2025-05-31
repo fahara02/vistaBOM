@@ -6,28 +6,9 @@
 
 import sql from "@/server/db";
 import { PART_ERRORS } from "./partErrors";
+import type { PartValidation } from "@/types/schemaTypes";
 
-/**
- * Interface for the PartValidation table tracking validation events for parts
- */
-export interface PartValidation {
-    part_validation_id: string;
-    part_version_id: string;
-    validation_type: string; // e.g., 'DESIGN_REVIEW', 'QUALITY_CHECK', 'SPECIFICATION_VALIDATION'
-    validation_status: string; // e.g., 'PENDING', 'PASSED', 'FAILED', 'WAIVED'
-    validation_date: Date;
-    validated_by: string;
-    waived_by?: string | null;
-    waiver_reason?: string | null;
-    waiver_date?: Date | null;
-    validation_method: string; // e.g., 'PHYSICAL_TEST', 'SIMULATION', 'INSPECTION'
-    test_procedure?: string | null;
-    test_results?: Record<string, any> | null;
-    issues_found?: string[] | null;
-    corrective_actions?: string[] | null;
-    attachments?: string[] | null; // Array of attachment IDs
-    notes?: string | null;
-}
+
 
 /**
  * Converts a database row to a PartValidation object

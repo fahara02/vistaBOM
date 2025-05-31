@@ -201,16 +201,7 @@
     border: 1px solid #fecaca;
   }
 
-  .error + input,
-  .error + textarea {
-    border-color: #dc2626;
-  }
-
-  .error + input:focus,
-  .error + textarea:focus {
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
-  }
+  
 
   .actions {
     margin-top: 1.5rem;

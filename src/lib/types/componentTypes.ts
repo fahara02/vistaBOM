@@ -2,7 +2,7 @@
  * Type definitions for UI components
  * These are adapter types that bridge the core schema types with component requirements
  */
-import type { Manufacturer, ManufacturerPart } from './schemaTypes';
+import type { Manufacturer, ManufacturerPart, ManufacturerPartDefinition } from './schemaTypes';
 
 /**
  * Input version of ManufacturerPart for use in forms before saving to database
@@ -46,9 +46,9 @@ export function adaptManufacturer(manufacturer: Manufacturer): ManufacturerDispl
  * This is used when preparing form data for API submission
  * The server must handle adding the missing required fields
  */
-export function prepareManufacturerPartForSubmission(
+export function convertToManufacturerPart(
   input: ManufacturerPartInput
-): Partial<ManufacturerPart> {
+): Partial<ManufacturerPartDefinition> {
   return {
     manufacturer_id: input.manufacturer_id,
     manufacturer_part_number: input.manufacturer_part_number,
