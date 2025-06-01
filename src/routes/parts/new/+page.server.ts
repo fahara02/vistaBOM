@@ -34,12 +34,19 @@ import type {
   ElectricalProperties,
   MechanicalProperties,
   ThermalProperties,
-  EnvironmentalData
+  EnvironmentalData,
+  Category
 } from '@/types/schemaTypes';
 import type { UnifiedPartSchema } from '@/schema/unifiedPartSchema';
 import type { Manufacturer } from '@/types/schemaTypes';
 import { listManufacturers } from '@/core/manufacturer';
+import { getAllCategories } from '$lib/core/category';
 
+// Define a UI-specific extension of Category with additional display properties
+interface CategoryWithUIFields extends Category {
+  parent_name?: string | null;
+  child_count?: number;
+}
 
 /**
  * Custom type guard to check if an object has a specific field
@@ -75,30 +82,41 @@ export const load: PageServerLoad = async (event) => {
   const formData = form.data as PartFormData;
   formData.dimensions_unit = formData.dimensions_unit || DimensionUnitEnum.MM;
   
-  // Fetch manufacturers from API endpoint instead of direct SQL query
-  let manufacturers: any[] = [];
+  // Fetch manufacturers directly from the database using the core function
+  let manufacturers: Manufacturer[] = [];
   
   try {
-    console.log('Fetching manufacturers from API endpoint');
+    console.log('Fetching manufacturers from database using listManufacturers');
     
-    // Use relative URL to avoid hardcoding domains - works with SvelteKit's server-side fetch
-    const response = await fetch('/api/manufacturers', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
+    // Use the core function to get all manufacturers
+    const result = await listManufacturers();
     
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    // DEBUG: Log raw result from database
+    console.log('Raw manufacturer data from database:', JSON.stringify(result?.slice(0, 2)));
+    
+    if (result && Array.isArray(result)) {
+      // Transform to the format expected by ManufacturerSelector component
+      manufacturers = result.map(m => ({
+        id: m.manufacturer_id,                   // ManufacturerSelector expects 'id'
+        name: m.manufacturer_name,               // ManufacturerSelector expects 'name'
+        logo_url: m.logo_url,
+        website: m.website_url || '',           // Match expected property name
+        description: m.manufacturer_description, // Match expected property name
+        // Include other fields for completeness
+        manufacturer_id: m.manufacturer_id,
+        manufacturer_name: m.manufacturer_name,
+        website_url: m.website_url,
+        contact_info: m.contact_info,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        custom_fields: m.custom_fields
+      }));
+      console.log(`Database returned ${manufacturers.length} manufacturers`);
+      // DEBUG: Log transformed data
+      console.log('Transformed manufacturer data (first 2):', JSON.stringify(manufacturers.slice(0, 2)));
     }
-    
-    manufacturers = await response.json();
-    console.log(`API returned ${manufacturers.length} manufacturers`);
-    
-    // No need to transform - API already returns data in the format expected by ManufacturerSelector
   } catch (error) {
-    console.error('Error fetching manufacturers from API:', error);
+    console.error('Error fetching manufacturers from database:', error);
     if (error instanceof Error) {
       console.error('Error details:', error.message);
       console.error('Error stack:', error.stack);
@@ -107,32 +125,48 @@ export const load: PageServerLoad = async (event) => {
     manufacturers = [];
   }
   
-  // Also load all categories for the form
-  // Using EXACTLY the same working query from getChildCategories() function
-  let categories: any[] = [];
+  // Load all categories for the form using the core function
+  let categories: CategoryWithUIFields[] = [];
   try {
-    console.log('Using EXACT query from working getChildCategories() function');
+    console.log('Fetching categories from database using getAllCategories');
     
-    // Get all categories - using the exact SQL pattern from getChildCategories
-    categories = await sql`
-      SELECT * FROM Category 
-      WHERE is_deleted = false 
-      ORDER BY name
-    `;
-
-    // If that didn't work, try a fallback approach with lowercase
-    if (categories.length === 0) {
-      console.log('No categories found with PascalCase, trying lowercase');
-      categories = await sql`
-        SELECT * FROM category 
-        WHERE is_deleted = false 
-        ORDER BY name
-      `;
-    }
-    console.log(`Loaded ${categories.length} categories for part form`);
+    // Use the core function to get all categories
+    const categoryResult = await getAllCategories({ excludeDeleted: true });
+    
+    // DEBUG: Log raw category result from database
+    console.log('Raw category data from database:', JSON.stringify(categoryResult?.slice(0, 2)));
+    
+    // Map the category data and add some UI-specific fields
+    categories = categoryResult.map(cat => {
+      // Create a UI-enhanced category object with additional display fields
+      const enhancedCategory: CategoryWithUIFields = {
+        category_id: cat.category_id,
+        category_name: cat.category_name,
+        category_path: cat.category_path,
+        category_description: cat.category_description || '',
+        parent_id: cat.parent_id || undefined,
+        is_public: cat.is_public,
+        created_by: cat.created_by,
+        created_at: cat.created_at,
+        updated_by: cat.updated_by,
+        updated_at: cat.updated_at,
+        is_deleted: cat.is_deleted,
+        // UI-specific fields
+        parent_name: null, // Will be populated if needed from parent category
+        child_count: 0     // Default to 0 child categories
+      };
+      return enhancedCategory;
+    });
+    
+    console.log(`Database returned ${categories.length} categories`);
   } catch (error) {
     console.error('Error loading categories:', error);
-    // categories will remain an empty array on error
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    // Default to empty array
+    categories = [];
   }
   
   return {

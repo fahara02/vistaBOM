@@ -1205,6 +1205,7 @@
 		<!-- Parts Tab -->
 		{#if activeTab === 'parts'}
 			<div class="tab-content">
+				<!-- Pass manufacturers and categories to PartsTab -->
 				<PartsTab
 					parts={userParts.map((unifiedPart) => {
 						// Pass UnifiedPart objects directly to the PartsTab component
@@ -1221,6 +1222,9 @@
 						return unifiedPart;
 					}).filter(p => p !== null)}
 					currentUserId={user.user_id}
+					manufacturers={data.userManufacturers || []}
+					categories={categories}
+					formInstance={partSuperForm}
 					on:updateForm={(event) => {
 						// Handle form update request from PartsTab
 						if (event.detail && event.detail.part) {
@@ -1245,7 +1249,7 @@
 					}}
 					on:editPart={editPart}
 					on:formUpdate={updatePartFormData}
-					on:submit={(event: CustomEvent) => {
+					on:submit={function(event: CustomEvent<Record<string, unknown>>) {
 						// Form submission is handled by SuperForm
 					}}
 				/>

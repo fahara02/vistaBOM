@@ -196,16 +196,50 @@ const { form: formStore, enhance: enhanceAction, errors: formErrors, validate } 
     resetForm: false,
     dataType: 'json',
     taintedMessage: null,
+
+
     onSubmit: ({ formData, cancel, submitter }) => {
       if (submitter && (submitter as HTMLElement).getAttribute('name') === 'cancel') {
         cancel();
         dispatch('cancel');
       } else {
-        // Ensure formData follows UnifiedPart structure
-        const validatedFormData = getData();
-        const normalizedData = prepareFormDataForValidation(formData as Partial<UnifiedPart>);
-        // Dispatch the normalized data
-        dispatch('submit', normalizedData);
+        try {
+          // Get normalized form data
+          const normalizedData = prepareFormDataForValidation(formData as Partial<UnifiedPart>);
+          const sanitizedFormData = JSON.parse(JSON.stringify(formData));
+    
+          // CRITICAL FIX: Sanitize manufacturer_parts before submission
+          // This prevents the "Cannot stringify a function" error
+          if (sanitizedFormData.manufacturer_parts && sanitizedFormData.manufacturer_parts.length > 0) {
+            // Create sanitized copies of manufacturer parts (no reactive properties)
+            const sanitizedParts = sanitizedFormData.manufacturer_parts.map((part: ManufacturerPartDefinition) => ({
+              manufacturer_id: part.manufacturer_id,             
+              manufacturer_part_number: part.manufacturer_part_number,    
+              description: part.manufacturer_part_description || null,
+              datasheet_url: part.datasheet_url || null,
+              product_url: part.product_url || null,             
+              is_recommended: !!part.is_recommended
+            }));
+            
+            // Replace the manufacturer_parts with the sanitized data
+            normalizedData.manufacturer_parts = sanitizedParts;
+            console.log(`Sanitized ${sanitizedParts.length} manufacturer parts for submission`);
+          } else {
+            // Ensure it's an empty array, not undefined
+            normalizedData.manufacturer_parts = [];
+          }
+          
+          // Deep clone the entire normalized data to remove ALL function references
+             const fullySanitizedData = JSON.parse(JSON.stringify(normalizedData));
+
+        // Dispatch the normalized data with all functions removed
+        dispatch('submit', fullySanitizedData);
+        return JSON.parse(JSON.stringify(normalizedData));
+        } catch (error) {
+          console.error('Error in form submission handler:', error);
+          // Continue with basic form submission as fallback
+          dispatch('submit', formData);
+        }
       }
     },
     onResult: ({ result }) => {
@@ -246,8 +280,84 @@ let newVersionTagName = '';
 let selectedTags: TagItem[] = [];
 let selectedVersionTags: TagItem[] = [];
 
+function safeArrayProcess<T>(source: unknown): T[] {
+      if (!source || !Array.isArray(source)) {
+        return [] as T[];
+      }
+      
+      try {
+        // Ensure properly formatted with JSON.parse/stringify to remove reactivity
+        return JSON.parse(JSON.stringify(source)) as T[];
+      } catch (e) {
+        console.error('Error processing array:', e);
+        return [] as T[];
+      }
+    }
 
+// Helper to ensure date strings are converted to Date objects
+function ensureDateObject(value: unknown): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+  
+  if (typeof value === 'string') {
+    try {
+      const date = new Date(value);
+      // Check if valid date
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    } catch (e) {
+      console.warn('Invalid date string:', value);
+    }
+  }
+  
+  // Default to current date if value is invalid
+  return new Date();
+}
 
+// Helper to convert a Date object to ISO string to ensure proper date validation
+function dateToIsoString(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  
+  try {
+    // Try to create a date from the value
+    const date = new Date(value as any);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  } catch (e) {
+    console.warn('Could not convert to ISO date string:', value);
+  }
+  
+  // Default to current date if conversion fails
+  return new Date().toISOString();
+}
+
+// Helper to ensure we always have proper objects for JSON fields
+function ensureJsonObject<T extends Record<string, any>>(value: unknown): T {
+      if (!value) return {} as T;
+      
+      // If it's already an object (not a string), just return it
+      if (typeof value === 'object' && value !== null) {
+        return value as T;
+      }
+      
+      // If it's a string, try to parse it
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value) as T;
+        } catch (e) {
+          console.warn('Failed to parse JSON string:', value);
+          return {} as T;
+        }
+      }
+      
+      // Fallback
+      return {} as T;
+    }
 // Add these helper methods to safely handle array operations
 function addManufacturerPart(): void {
   // Create a new manufacturer part with required fields
@@ -255,13 +365,12 @@ function addManufacturerPart(): void {
     manufacturer_id: '',
     manufacturer_part_number: '',
     is_recommended: false,
-    manufacturer_name: undefined,
-    mpn: undefined,
-    description: undefined,
+   
+  
+    manufacturer_part_description: undefined,
     datasheet_url: undefined,
     product_url: undefined,
-    notes: undefined,
-    lifecycle_status: undefined
+
   };
   
   // Add to the form store
@@ -416,6 +525,53 @@ function removePartVersionTag(index: number): void {
   updatedTags.splice(index, 1);
   $formStore.part_version_tags = updatedTags;
 }
+// Convert JSON to editable string safely with better error handling and typing
+function jsonToString(json: unknown): string {
+  if (json === null || json === undefined) return '{}';
+  
+  try {
+    if (typeof json === 'string') {
+      // Try to parse the string as JSON
+      try {
+        const parsed = JSON.parse(json);
+        return JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        // Not valid JSON, return empty object
+        console.error('Failed to parse JSON string:', e);
+        return '{}';
+      }
+    } else {
+      // Object, try to stringify it directly
+      return JSON.stringify(json, null, 2);
+    }
+  } catch (error) {
+    console.error('Error converting to JSON string:', error);
+    return '{}';
+  }
+}
+
+// Check if dimensions are complete AND valid (has at least one non-zero value)
+function isCompleteDimensions(dims: Dimensions | null | undefined): dims is Dimensions {
+  return dims != null && 
+         typeof dims.length === 'number' && typeof dims.width === 'number' && typeof dims.height === 'number' && 
+         !isNaN(dims.length) && !isNaN(dims.width) && !isNaN(dims.height) && 
+         (dims.length > 0 || dims.width > 0 || dims.height > 0);
+}
+
+
+// Helper function to safely parse manufacturer_parts from any source
+function getManufacturerPartsByManufacturerId(manufacturerId: string): ManufacturerPartDefinition[] {
+  if (!manufacturers) return [];
+  
+  // Find the manufacturer by ID
+  const manufacturer = manufacturers.find(m => m.id === manufacturerId);
+  
+  if (!manufacturer) return [];
+  
+  // Use our helper function to safely parse manufacturer parts
+  // ManufacturerDisplay doesn't have parts property directly, but we can get manufacturer parts by ID
+  return parseManufacturerParts([]);
+}
 
 // Handler functions for family, tag and version tag management
 function handleAddFamily() {
@@ -521,15 +677,16 @@ export let categories: Category[] = [];
 // Using ManufacturerDisplay from componentTypes.ts
 export let manufacturers: ManufacturerDisplay[] = [];
 
-// Remove versionData references as we now use UnifiedPart which includes all version data
-
 // Debug manufacturers to verify they're being passed correctly
 $: console.log('PartForm received manufacturers:', manufacturers);
-// Initialize with at least empty objects to prevent 'undefined' errors
-$: if (manufacturers && manufacturers.length === 0) {
-  // Make sure we always have a valid array even if prop is not passed
-  manufacturers = [];
+// Watch for changes to manufacturers prop
+$: if (manufacturers && manufacturers.length > 0) {
+  console.log('PartForm received manufacturers:', manufacturers.length);
+  console.log('First manufacturer sample:', manufacturers[0]);
+} else {
+  console.warn('ManufacturerSelector: No manufacturers provided');
 }
+
 // Initialize with explicit type to avoid 'never[]' type inference issues
 export let selectedCategoryIds: Array<string> = [];
 // Using ManufacturerPartDefinition from UnifiedPart interface
@@ -557,19 +714,6 @@ function parseFloatOrNull(value: string | number | null | undefined): number | n
   return isNaN(parsed) ? null : parsed;
 }
 
-// Helper function to safely parse manufacturer_parts from any source
-function getManufacturerPartsByManufacturerId(manufacturerId: string): ManufacturerPartDefinition[] {
-  if (!manufacturers) return [];
-  
-  // Find the manufacturer by ID
-  const manufacturer = manufacturers.find(m => m.id === manufacturerId);
-  
-  if (!manufacturer) return [];
-  
-  // Use our helper function to safely parse manufacturer parts
-  // ManufacturerDisplay doesn't have parts property directly, but we can get manufacturer parts by ID
-  return parseManufacturerParts([]);
-}
 
 // Helper function to safely parse manufacturer_parts from any source
 function parseManufacturerParts(value: unknown): ManufacturerPartDefinition[] {
@@ -639,25 +783,13 @@ let jsonEditors = {
   thermal_properties: '{}',
   material_composition: '{}',
   environmental_data: '{}',
+  custom_fields: '{}',
   long_description: '{}'
 };
 
 // Define a type for the JSON editors to ensure property name consistency
 type JsonEditorKeys = keyof typeof jsonEditors;
 
-// Define the shape of the manufacturer part form data
-type ManufacturerPartFormData = {
-  manufacturer_id: string;
-  manufacturer_part_number: string;
-  description?: string;
-  datasheet_url?: string;
-  product_url?: string;
-  part_number?: string;
-  lead_time_days?: number | null;
-  lifecycle_status?: LifecycleStatusEnum | null;
-  rohs_status?: string;
-  custom_fields?: Record<string, unknown>;
-};
 
 // Handle JSON editor changes with proper typing
 function onJsonEditorChange(editorName: JsonEditorKeys, value: string): void {
@@ -665,50 +797,24 @@ function onJsonEditorChange(editorName: JsonEditorKeys, value: string): void {
 }
 
 // Prepare manufacturer part for submission by ensuring consistent data structure
-function prepareManufacturerPartForSubmission(part: ManufacturerPartDefinition): ManufacturerPartDefinition {
+/**
+ * Prepare manufacturer part for submission by ensuring consistent data structure
+ * Aligns with ManufacturerPartDefinition interface
+ */
+function prepareManufacturerPartForSubmission(part: Partial<ManufacturerPartDefinition>): ManufacturerPartDefinition {
   return {
     manufacturer_id: part.manufacturer_id || '',
+
     manufacturer_part_number: part.manufacturer_part_number || '',
-    datasheet_url: part.datasheet_url || '',
-    // Include required is_recommended field
-    is_recommended: part.is_recommended !== undefined ? part.is_recommended : true,
-    // Optional fields will be included if they exist in the part object
-    ...(part.product_url !== undefined && { product_url: part.product_url })
+
+    manufacturer_part_description: part.manufacturer_part_description || null,
+    datasheet_url: part.datasheet_url || null,
+    product_url: part.product_url || null,
+    
+    is_recommended: part.is_recommended !== undefined ? part.is_recommended : true
   };
 }
 
-// Convert JSON to editable string safely with better error handling and typing
-function jsonToString(json: unknown): string {
-  if (json === null || json === undefined) return '{}';
-  
-  try {
-    if (typeof json === 'string') {
-      // Try to parse the string as JSON
-      try {
-        const parsed = JSON.parse(json);
-        return JSON.stringify(parsed, null, 2);
-      } catch (e) {
-        // Not valid JSON, return empty object
-        console.error('Failed to parse JSON string:', e);
-        return '{}';
-      }
-    } else {
-      // Object, try to stringify it directly
-      return JSON.stringify(json, null, 2);
-    }
-  } catch (error) {
-    console.error('Error converting to JSON string:', error);
-    return '{}';
-  }
-}
-
-// Check if dimensions are complete AND valid (has at least one non-zero value)
-function isCompleteDimensions(dims: Dimensions | null | undefined): dims is Dimensions {
-  return dims != null && 
-         typeof dims.length === 'number' && typeof dims.width === 'number' && typeof dims.height === 'number' && 
-         !isNaN(dims.length) && !isNaN(dims.width) && !isNaN(dims.height) && 
-         (dims.length > 0 || dims.width > 0 || dims.height > 0);
-}
 
 // Ensure dimensions is always a properly formatted object
 function ensureDimensions(dims: unknown): Dimensions {
@@ -754,56 +860,391 @@ function ensureDimensions(dims: unknown): Dimensions {
   return defaultDims;
 }
 
-// Function to get the current form data with proper typing
-function getData(): Partial<UnifiedPart> {
+// This was a duplicate prepareManufacturerPartForSubmission function, now removed
+
+
+
+// Function to get the current form data with proper typing - capturing ALL UnifiedPart fields
+function getData(): Partial<UnifiedPart> | null {
   try {
-    // Prepare form data with proper handling of complex properties
-    const sanitizedFormData: Partial<UnifiedPart> = { ...formData };
+    // COMPLETE APPROACH: Create a fresh object with ALL UnifiedPart fields properly captured
+    // Start with a merged base of both formData and formStore to ensure no fields are missed
+    const sanitizedFormData: Partial<UnifiedPart> = {};
+
+    // 1. CAPTURE ALL CORE PART FIELDS
+    // Validate UUIDs - in edit mode they should exist, in create mode they can be undefined (server will generate them)
+    // For UUID fields, ensure they are strings matching UUID format or undefined
+    // Updated to properly handle null values for type safety
+    const isValidUUID = (str: string | null | undefined): boolean => {
+      if (str === null || str === undefined) return false;
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    };
     
-    // Ensure part_id is set for edit mode
-    if (isEditMode && partData?.part_id) {
-      sanitizedFormData.part_id = partData.part_id;
+    // For part_id and part_version_id - only include if they're valid UUIDs
+    const rawPartId = $formStore.part_id || formData.part_id;
+    sanitizedFormData.part_id = isValidUUID(rawPartId) ? rawPartId : undefined;
+    
+    const rawCreatorId = $formStore.creator_id || formData.creator_id;
+    sanitizedFormData.creator_id = isValidUUID(rawCreatorId) ? rawCreatorId : undefined;
+    
+    // Normal fields
+    sanitizedFormData.global_part_number = $formStore.global_part_number || formData.global_part_number;
+    sanitizedFormData.status_in_bom = $formStore.status_in_bom || formData.status_in_bom || PartStatusEnum.CONCEPT;
+    sanitizedFormData.lifecycle_status = $formStore.lifecycle_status || formData.lifecycle_status || LifecycleStatusEnum.DRAFT;
+    sanitizedFormData.is_public = $formStore.is_public !== undefined ? $formStore.is_public : (formData.is_public !== undefined ? formData.is_public : false);
+    
+    // Ensure dates are proper Date objects
+    // For created_at and updated_at, we need to handle them according to schema expectations
+    // Some schemas expect Date objects, others expect strings
+    // To satisfy the validation requirement, we'll use actual Date objects
+    const createdDate = ensureDateObject($formStore.created_at || formData.created_at);
+    const updatedDate = new Date(); // Always set to current date on submission
+    
+    // Use actual Date objects to satisfy the schema validation
+    sanitizedFormData.created_at = createdDate;
+    sanitizedFormData.updated_at = updatedDate;
+    
+    sanitizedFormData.updated_by = $formStore.updated_by || formData.updated_by;
+    
+    // Handle current_version_id with proper null/undefined safety
+    const rawCurrentVersionId = $formStore.current_version_id || formData.current_version_id;
+    // First make sure it's not null before passing to isValidUUID, then validate
+    sanitizedFormData.current_version_id = rawCurrentVersionId === null ? undefined : 
+      (isValidUUID(rawCurrentVersionId) ? rawCurrentVersionId : undefined);
+    // Handle custom_fields with proper null/undefined handling for type safety
+    const customFields = $formStore.custom_fields || formData.custom_fields;
+    sanitizedFormData.custom_fields = customFields === null ? undefined : customFields;
+
+    // 2. CAPTURE ALL PART VERSION FIELDS
+    // Validate part_version_id as a valid UUID
+    const rawPartVersionId = $formStore.part_version_id || formData.part_version_id;
+    sanitizedFormData.part_version_id = isValidUUID(rawPartVersionId) ? rawPartVersionId : undefined;
+    sanitizedFormData.part_version = $formStore.part_version || formData.part_version || '0.1.0';
+    sanitizedFormData.part_name = $formStore.part_name || formData.part_name || '';
+    sanitizedFormData.version_status = $formStore.version_status || formData.version_status || LifecycleStatusEnum.DRAFT;
+    
+    // 3. CAPTURE ALL DESCRIPTION FIELDS
+    sanitizedFormData.short_description = $formStore.short_description || formData.short_description;
+    sanitizedFormData.long_description = $formStore.long_description || formData.long_description;
+    sanitizedFormData.full_description = $formStore.full_description || formData.full_description || $formStore.long_description || formData.long_description;
+    sanitizedFormData.functional_description = $formStore.functional_description || formData.functional_description;
+    
+    // 4. CAPTURE ALL IDENTIFIER FIELDS
+    sanitizedFormData.internal_part_number = $formStore.internal_part_number || formData.internal_part_number;
+    sanitizedFormData.manufacturer_part_number = $formStore.manufacturer_part_number || formData.manufacturer_part_number;
+    sanitizedFormData.mpn = $formStore.mpn || formData.mpn || $formStore.manufacturer_part_number || formData.manufacturer_part_number;
+    sanitizedFormData.gtin = $formStore.gtin || formData.gtin;
+    
+    // 5. CAPTURE ALL CATEGORIZATION FIELDS
+    sanitizedFormData.category_ids = $formStore.category_ids || formData.category_ids;
+    sanitizedFormData.family_ids = $formStore.family_ids || formData.family_ids;
+    sanitizedFormData.group_ids = $formStore.group_ids || formData.group_ids;
+    sanitizedFormData.tag_ids = $formStore.tag_ids || formData.tag_ids;
+    
+    // 6. CAPTURE ALL PHYSICAL PROPERTY FIELDS
+    
+    // Handle dimensions fields
+    const formDimensions = $formStore.dimensions || formData.dimensions || dimensions;
+    if (formDimensions) {
+      // Use ensureDimensions to get a properly formatted dimensions object
+      const validDimensions = ensureDimensions(formDimensions);
+      
+      // Check if dimensions are all zeros or empty
+      const isEmptyDimensions = 
+        (validDimensions.length === 0 || validDimensions.length === null) && 
+        (validDimensions.width === 0 || validDimensions.width === null) && 
+        (validDimensions.height === 0 || validDimensions.height === null);
+      
+      // Only set dimensions and unit if there are actual values
+      if (!isEmptyDimensions) {
+        // FIXED: Avoid JSON.stringify/parse which causes double stringification in database
+        // Just directly assign the dimensions object
+        sanitizedFormData.dimensions = validDimensions;
+        // Always respect the user-selected dimensions unit, never hardcode to a default
+        // Get unit from form or UI state, prioritizing form data
+        const dimensionUnit = $formStore.dimensions_unit || formData.dimensions_unit || dimensionsUnit || null;
+        console.log('Using dimensions_unit value:', dimensionUnit);
+        sanitizedFormData.dimensions_unit = dimensionUnit;
+      } else if ($formStore.dimensions_unit || formData.dimensions_unit || dimensionsUnit) {
+        // If only unit is set but dimensions are empty, create a default dimensions object
+        sanitizedFormData.dimensions = { length: 0, width: 0, height: 0 };
+        sanitizedFormData.dimensions_unit = $formStore.dimensions_unit || formData.dimensions_unit || dimensionsUnit;
+      } else {
+        // If neither has a useful value, set both to null to satisfy DB constraint
+        sanitizedFormData.dimensions = null;
+        sanitizedFormData.dimensions_unit = null;
+      }
+    } else if ($formStore.dimensions_unit || formData.dimensions_unit || dimensionsUnit) {
+      // If only unit is set but no dimensions, create a default dimensions object
+      sanitizedFormData.dimensions = { length: 0, width: 0, height: 0 };
+      sanitizedFormData.dimensions_unit = $formStore.dimensions_unit || formData.dimensions_unit || dimensionsUnit;
+    } else {
+      // If neither is set, ensure both are null
+      sanitizedFormData.dimensions = null;
+      sanitizedFormData.dimensions_unit = null;
     }
     
+    // Handle weight fields - consolidated from weight_value/part_weight
+    // Prioritize form values, with precise null/undefined checks to capture 0 values
+    const weightValue = $formStore.weight_value !== undefined ? $formStore.weight_value : 
+                       (formData.weight_value !== undefined ? formData.weight_value : 
+                       ($formStore.part_weight !== undefined ? $formStore.part_weight : 
+                       formData.part_weight));
+    
+    // Respect user-selected unit, never default
+    const weightUnit = $formStore.weight_unit !== null && $formStore.weight_unit !== undefined ? $formStore.weight_unit : 
+                      formData.weight_unit;
+    
+    console.log('Using weight values:', { weightValue, weightUnit });
+    
+    // Always use exact user values, no defaults or transformations
+    sanitizedFormData.part_weight = weightValue;
+    sanitizedFormData.weight_value = weightValue; // Set both for compatibility
+    sanitizedFormData.weight_unit = weightUnit;
+    
+    // Package type and related fields - use strict equality checks to capture all valid values
+    // including empty strings and zeros
+    sanitizedFormData.package_type = $formStore.package_type !== undefined && $formStore.package_type !== null ? 
+                                    $formStore.package_type : formData.package_type;
+    
+    sanitizedFormData.mounting_type = $formStore.mounting_type !== undefined && $formStore.mounting_type !== null ? 
+                                     $formStore.mounting_type : formData.mounting_type;
+    
+    // Pin count may be legitimately 0, so we need to use strict equality
+    sanitizedFormData.pin_count = $formStore.pin_count !== undefined ? 
+                                 $formStore.pin_count : formData.pin_count;
+    
+    console.log('Package fields captured:', { 
+      package_type: sanitizedFormData.package_type,
+      mounting_type: sanitizedFormData.mounting_type, 
+      pin_count: sanitizedFormData.pin_count 
+    });
+    
+    // 7. CAPTURE ALL ELECTRICAL PROPERTY FIELDS
+    sanitizedFormData.voltage_rating_min = $formStore.voltage_rating_min !== undefined ? $formStore.voltage_rating_min : formData.voltage_rating_min;
+    sanitizedFormData.voltage_rating_max = $formStore.voltage_rating_max !== undefined ? $formStore.voltage_rating_max : formData.voltage_rating_max;
+    sanitizedFormData.current_rating_min = $formStore.current_rating_min !== undefined ? $formStore.current_rating_min : formData.current_rating_min;
+    sanitizedFormData.current_rating_max = $formStore.current_rating_max !== undefined ? $formStore.current_rating_max : formData.current_rating_max;
+    sanitizedFormData.power_rating_max = $formStore.power_rating_max !== undefined ? $formStore.power_rating_max : formData.power_rating_max;
+    
+    // Handle tolerance/tolerance_unit (paired field with constraint)
+    const toleranceValue = $formStore.tolerance !== undefined ? $formStore.tolerance : formData.tolerance;
+    const toleranceUnit = $formStore.tolerance_unit || formData.tolerance_unit;
+    
+    if (toleranceValue !== null && toleranceValue !== undefined) {
+      sanitizedFormData.tolerance = toleranceValue;
+      // Only use exactly what the user provided, no defaults
+      sanitizedFormData.tolerance_unit = toleranceUnit;
+    } else if (toleranceUnit) {
+      sanitizedFormData.tolerance = 0;
+      sanitizedFormData.tolerance_unit = toleranceUnit;
+    } else {
+      sanitizedFormData.tolerance = null;
+      sanitizedFormData.tolerance_unit = null;
+    }
+    
+    // 8. CAPTURE ALL THERMAL PROPERTY FIELDS
+    // Handle temperature fields - checking both formStore and formData
+    const operatingTempMin = $formStore.operating_temperature_min !== undefined ? $formStore.operating_temperature_min : formData.operating_temperature_min;
+    const operatingTempMax = $formStore.operating_temperature_max !== undefined ? $formStore.operating_temperature_max : formData.operating_temperature_max;
+    const storageTempMin = $formStore.storage_temperature_min !== undefined ? $formStore.storage_temperature_min : formData.storage_temperature_min;
+    const storageTempMax = $formStore.storage_temperature_max !== undefined ? $formStore.storage_temperature_max : formData.storage_temperature_max;
+    const tempUnit = $formStore.temperature_unit || formData.temperature_unit;
+    
+    // Check if any temperature value is set
+    const hasTemperatureValues = 
+      operatingTempMin !== null && operatingTempMin !== undefined ||
+      operatingTempMax !== null && operatingTempMax !== undefined ||
+      storageTempMin !== null && storageTempMin !== undefined ||
+      storageTempMax !== null && storageTempMax !== undefined;
+    
+    if (hasTemperatureValues) {
+      // Set all temperature fields, defaulting to same value if one is missing
+      sanitizedFormData.operating_temperature_min = operatingTempMin;
+      sanitizedFormData.operating_temperature_max = operatingTempMax;
+      sanitizedFormData.storage_temperature_min = storageTempMin;
+      sanitizedFormData.storage_temperature_max = storageTempMax;
+      // Only use exactly what the user provided, no defaults
+      sanitizedFormData.temperature_unit = tempUnit;
+    } else if (tempUnit) {
+      // If only unit is set but no temperature values, set defaults
+      sanitizedFormData.operating_temperature_min = 0;
+      sanitizedFormData.operating_temperature_max = 0;
+      sanitizedFormData.storage_temperature_min = null;
+      sanitizedFormData.storage_temperature_max = null;
+      sanitizedFormData.temperature_unit = tempUnit;
+    } else {
+      // If neither is set, ensure all are null
+      sanitizedFormData.operating_temperature_min = null;
+      sanitizedFormData.operating_temperature_max = null;
+      sanitizedFormData.storage_temperature_min = null;
+      sanitizedFormData.storage_temperature_max = null;
+      sanitizedFormData.temperature_unit = null;
+    }
+    
+    // 9. CAPTURE ALL MATERIAL AND ENVIRONMENTAL FIELDS
+    // material_composition should be a string, not an object
+    const materialComp = $formStore.material_composition || formData.material_composition;
+    if (typeof materialComp === 'object' && materialComp !== null) {
+      // Convert object to string if needed
+      try {
+        sanitizedFormData.material_composition = JSON.stringify(materialComp);
+      } catch (e) {
+        sanitizedFormData.material_composition = '';
+      }
+    } else {
+      // Keep as string
+      sanitizedFormData.material_composition = materialComp as string || '';
+    }
+    
+    // 10. CAPTURE ALL JSON EDITOR FIELDS
     // Parse JSON editor contents if they've been modified
     if (jsonEditors.technical_specifications) {
       try { sanitizedFormData.technical_specifications = JSON.parse(jsonEditors.technical_specifications); } catch (e) {}
+    } else {
+      // Fall back to existing values if editor not used
+      sanitizedFormData.technical_specifications = $formStore.technical_specifications || formData.technical_specifications;
     }
     
-    if (jsonEditors.properties) {
-      try { sanitizedFormData.properties = JSON.parse(jsonEditors.properties); } catch (e) {}
-    }
     
-    if (jsonEditors.electrical_properties) {
-      try { sanitizedFormData.electrical_properties = JSON.parse(jsonEditors.electrical_properties); } catch (e) {}
-    }
+    // Process all JSON fields in a type-safe way
+    // Define a map of all JSON fields to process
+    const jsonFieldsMap: Record<keyof typeof jsonEditors, keyof Partial<UnifiedPart>> = {
+      electrical_properties: 'electrical_properties',
+      mechanical_properties: 'mechanical_properties',
+      thermal_properties: 'thermal_properties',
+      material_composition: 'material_composition',
+      environmental_data: 'environmental_data',
+      custom_fields: 'custom_fields',
+      properties: 'properties',
+      technical_specifications: 'technical_specifications',
+      long_description: 'long_description'
+    };
     
-    if (jsonEditors.mechanical_properties) {
-      try { sanitizedFormData.mechanical_properties = JSON.parse(jsonEditors.mechanical_properties); } catch (e) {}
-    }
+    // Process each JSON field with its correct type
+    Object.entries(jsonFieldsMap).forEach(([editorKey, formKey]) => {
+      // Type assertion to make TypeScript happy
+      const editorKeyTyped = editorKey as keyof typeof jsonEditors;
+      const formKeyTyped = formKey as keyof Partial<UnifiedPart>;
+      
+      // Skip long_description special handling - it's not a JSON object
+      if (formKeyTyped === 'long_description') {
+        const longDescValue = jsonEditors.long_description || $formStore.long_description || formData.long_description || '';
+        if (typeof longDescValue === 'string') {
+          // For long_description, we just need the raw string content
+          sanitizedFormData.long_description = longDescValue;
+        } else {
+          // If somehow not a string, convert to string
+          sanitizedFormData.long_description = String(longDescValue || '');
+        }
+        return; // Skip the rest of the processing for long_description
+      }
+      
+      // Get the editor content
+      const editorContent = jsonEditors[editorKeyTyped];
+      
+      // Create a properly typed empty object based on the field name
+      let parsedValue: Record<string, unknown> = {};
+      
+      if (editorContent && editorContent.trim() !== '{}') {
+        try {
+          // Try to parse JSON from editor
+          parsedValue = JSON.parse(editorContent) as Record<string, unknown>;
+          console.log(`Parsed JSON for ${formKeyTyped} from editor:`, parsedValue);
+        } catch (e) {
+          // Fall back to formStore or formData
+          const existingValue = $formStore[formKeyTyped] || formData[formKeyTyped];
+          parsedValue = ensureJsonObject<Record<string, unknown>>(existingValue);
+          console.warn(`Failed parsing ${formKeyTyped} editor, using fallback:`, parsedValue);
+        }
+      } else {
+        // No editor content, use formStore or formData
+        const existingValue = $formStore[formKeyTyped] || formData[formKeyTyped];
+        parsedValue = ensureJsonObject<Record<string, unknown>>(existingValue);
+        console.log(`Using existing ${formKeyTyped} from form:`, parsedValue);
+      }
+      
+      // Final check to ensure we never have a string instead of an object
+      if (typeof parsedValue === 'string') {
+        try {
+          parsedValue = JSON.parse(parsedValue) as Record<string, unknown>;
+        } catch (e) {
+          console.warn(`Failed final parse of ${formKeyTyped}, using empty object`);
+          parsedValue = {};
+        }
+      }
+      
+      // Ensure we have an object, not null, undefined, or a primitive
+      if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+        console.warn(`${formKeyTyped} is not a valid object, using empty object`);
+        parsedValue = {};
+      }
+      
+      // Assign the properly formatted object to the sanitized form data
+      sanitizedFormData[formKeyTyped as keyof Partial<UnifiedPart>] = parsedValue as any;
+    });
     
-    if (jsonEditors.thermal_properties) {
-      try { sanitizedFormData.thermal_properties = JSON.parse(jsonEditors.thermal_properties); } catch (e) {}
-    }
+    // 11. CAPTURE ALL MANUFACTURER/SUPPLIER RELATIONSHIP FIELDS
+    sanitizedFormData.manufacturer_id = $formStore.manufacturer_id || formData.manufacturer_id;
+    sanitizedFormData.manufacturer_name = $formStore.manufacturer_name || formData.manufacturer_name;
+    sanitizedFormData.manufacturer = $formStore.manufacturer || formData.manufacturer;
+    sanitizedFormData.supplier_id = $formStore.supplier_id || formData.supplier_id;
+    sanitizedFormData.supplier_name = $formStore.supplier_name || formData.supplier_name;
+    sanitizedFormData.suppliers = $formStore.suppliers || formData.suppliers || [];
     
-    if (jsonEditors.material_composition) {
-      try { sanitizedFormData.material_composition = JSON.parse(jsonEditors.material_composition); } catch (e) {}
-    }
+    // 12. CAPTURE ALL ARRAY FIELDS (ensuring they're properly initialized)
+    // Helper function to safely process arrays
+  
+
+    // Handle manufacturer parts - get from form store, form data, or local state
+    const manufacturerPartsSource = $formStore.manufacturer_parts || formData.manufacturer_parts || selectedManufacturerParts;
+    sanitizedFormData.manufacturer_parts = safeArrayProcess(manufacturerPartsSource);
     
-    if (jsonEditors.environmental_data) {
-      try { sanitizedFormData.environmental_data = JSON.parse(jsonEditors.environmental_data); } catch (e) {}
-    }
+    // Handle supplier parts
+    const supplierPartsSource = $formStore.supplier_parts || formData.supplier_parts;
+    sanitizedFormData.supplier_parts = safeArrayProcess(supplierPartsSource);
     
-    // Ensure dimensions are properly formatted
-    sanitizedFormData.dimensions = ensureDimensions(sanitizedFormData.dimensions);
+    // Handle attachments
+    const attachmentsSource = $formStore.attachments || formData.attachments;
+    sanitizedFormData.attachments = safeArrayProcess(attachmentsSource);
     
+    // Handle representations
+    const representationsSource = $formStore.representations || formData.representations;
+    sanitizedFormData.representations = safeArrayProcess(representationsSource);
+    
+    // Handle structure
+    const structureSource = $formStore.structure || formData.structure;
+    sanitizedFormData.structure = safeArrayProcess(structureSource);
+    
+    // Continue using safeArrayProcess for remaining arrays
+    // Handle compliance info
+    const complianceSource = $formStore.compliance_info || formData.compliance_info;
+    sanitizedFormData.compliance_info = safeArrayProcess(complianceSource);
+    
+    // Handle categories
+    const categoriesSource = $formStore.categories || formData.categories;
+    sanitizedFormData.categories = safeArrayProcess(categoriesSource);
+    
+    // Handle tags
+    const partTagsSource = $formStore.part_tags || formData.part_tags;
+    sanitizedFormData.part_tags = safeArrayProcess(partTagsSource);
+    
+    // Handle version tags
+    const versionTagsSource = $formStore.part_version_tags || formData.part_version_tags;
+    sanitizedFormData.part_version_tags = safeArrayProcess(versionTagsSource);
+    
+    // 13. CAPTURE LIFECYCLE FIELDS
+    sanitizedFormData.revision_notes = $formStore.revision_notes || formData.revision_notes;
+    sanitizedFormData.released_at = $formStore.released_at || formData.released_at;
+    
+    // Log the complete data for debugging
+    console.log('Complete form data with ALL fields captured:', sanitizedFormData);
     return sanitizedFormData;
   } catch (e) {
-    console.error('Error getting form data:', e);
+    console.error('Error getting complete form data:', e);
     return {};
   }
 }
-
 // Define the toggleSection function
 function toggleSection(section: string): void {
   console.log(`Toggle section ${section} called. Current active section: ${activeSection}`);
@@ -862,51 +1303,91 @@ $: if (formData && formData.dimensions) {
   dimensionsUnit = formData.dimensions_unit as DimensionUnitEnum | null;
 }
 
-// Create a safe enhance function to avoid TypeScript errors and ensure proper JSON handling
+// Create a safe enhance function to avoid TypeScript errors and ensure proper form submission
 function enhanceSafe(node: HTMLFormElement): { destroy: () => void } {
   // Set up pre-submission handler to process form data
-  const handleSubmit = (event: SubmitEvent) => {
-    // CRITICAL: Process released_at for RELEASED status
-    // For schema validation, released_at MUST be a valid date when version_status is RELEASED
-    if ($formStore.version_status === LifecycleStatusEnum.RELEASED) {
-      // Handle both form submission initialization and from user input
-      const releasedDate = new Date();
-      // For the form validation, we need to set both properties
-      updateFormData('released_at', releasedDate);
-      // And direct store update for immediate effect
-      ($formStore as Record<string, unknown>).released_at = releasedDate;
-      
-      console.log('Set released_at date for RELEASED status:', releasedDate);
-    } else {
-      // For non-RELEASED status, don't set released_at (to match DB constraints)
-      updateFormData('released_at', undefined);
-      delete ($formStore as Record<string, unknown>).released_at;
-      console.log('Removing released_at field for non-RELEASED status');
-    }
+  const handleFormSubmit = (event: SubmitEvent) => {
+    console.log('Form submission initiated - preparing data...');
     
-    // Process dimensions - critical to ensure proper serialization
-    if (dimensions) {
-      // Create a JSON-safe object that satisfies the DB constraint (must have keys, values can be 0)
-      const dimensionsObject = {
-        length: Number(dimensions.length) || 0,
-        width: Number(dimensions.width) || 0,
-        height: Number(dimensions.height) || 0
-      };
+    try {
+      // IMPORTANT: Call our comprehensive getData function that handles all form fields
+      // and ensures paired fields satisfy DB constraints
+      handleSubmit();
       
-      // Update dimensions - just need the three keys present
-      ($formStore as Record<string, unknown>).dimensions = dimensionsObject;
+  
       
-      // Make sure we have a dimension unit
-      if (!$formStore.dimensions_unit) {
-        ($formStore as Record<string, unknown>).dimensions_unit = DimensionUnitEnum.MM;
+      // If dimensions are null/empty but unit is set, clear the unit
+      if (!$formStore.dimensions && $formStore.dimensions_unit) {
+        $formStore.dimensions_unit = null;
+        console.log('Clearing dimensions_unit because dimensions are not provided');
       }
       
-      console.log('Prepared dimensions for submission:', dimensionsObject);
+      // IMPORTANT: Check for dimension constraints validation
+      // Either both dimensions AND dimensions_unit must be null, or both must be provided
+      const hasDimensions = $formStore.dimensions && (
+        typeof $formStore.dimensions === 'object' && 
+        ($formStore.dimensions.length > 0 || $formStore.dimensions.width > 0 || $formStore.dimensions.height > 0)
+      );
+      
+      // Check the PostgreSQL constraint without hardcoding values
+      if (hasDimensions) {
+        // If dimensions exist but no unit is provided, we need to warn the user
+        // instead of automatically setting a value
+        if (!$formStore.dimensions_unit) {
+          console.warn('Validation warning: Dimensions provided but no unit selected. Please select a dimension unit.');
+          // We don't set a default - that should be a user choice
+        }
+      } else {
+        // If no meaningful dimensions data, ensure dimensions_unit is also null
+        if ($formStore.dimensions_unit) {
+          $formStore.dimensions_unit = null;
+          console.log('Clearing dimensions_unit because dimensions are not provided');
+        }
+        // Also set dimensions to null to be safe
+        if ($formStore.dimensions) {
+          $formStore.dimensions = null;
+          console.log('Setting dimensions to null since no meaningful dimension values provided');
+        }
+      }
+      
+      // Log the final values for debugging
+      console.log('Final dimensions values:', {
+        dimensions: $formStore.dimensions,
+        dimensions_unit: $formStore.dimensions_unit
+      });
+      
+      // Validate the form for database constraints
+      // Log warnings for the most common issues to help with debugging
+      const validationWarnings: string[] = [];
+      
+      // PostgreSQL PartVersion_check5 constraint validation: dimensions and dimensions_unit
+      if ($formStore.dimensions && !$formStore.dimensions_unit) {
+        validationWarnings.push('Dimensions provided but unit is missing - this will violate database constraint');
+      }
+      
+      // Log the validation results
+      if (validationWarnings.length > 0) {
+        console.warn('Form validation warnings (these may cause database errors):', validationWarnings);
+      } else {
+        console.log('Form pre-validation passed - no common constraint violations detected');
+      }
+      
+      console.log('Form submission processing complete - form ready for server submission');
+      
+      // Let SuperForm handle the validation directly
+      // The form data has been updated in the formStore above
+      // We'll log validation status but not prevent submission
+      console.log('Form data prepared for submission - SuperForm will handle validation');
+      // We don't need to call validate() explicitly - SuperForm will do this
+      // during the normal form submission flow
+    } catch (error) {
+      console.error('Error in form pre-submission processing:', error);
+      // Don't prevent form submission - let SuperForm handle errors
     }
   };
   
   // Add event listener for form submission
-  node.addEventListener('submit', handleSubmit);
+  node.addEventListener('submit', handleFormSubmit);
   
   // Get the appropriate enhance function
   const enhanceFunc = enhance || enhanceAction;
@@ -915,7 +1396,60 @@ function enhanceSafe(node: HTMLFormElement): { destroy: () => void } {
   let destroyHandler: { destroy: () => void } | undefined = undefined;
   
   if (enhanceFunc) {
-    const result = enhanceFunc(node);
+    // Create a wrapper for the SuperForm enhance function that runs our handler first
+    const wrappedEnhance = (form: HTMLFormElement) => {
+      return enhanceFunc(form, {
+        // Add any additional options needed
+        onSubmit: ({ formData, formElement, cancel }) => {
+          // This runs after our handleFormSubmit but before actual submission
+          // Final check to sanitize any reactive properties before submission
+          try {
+       // Create a deep clone without losing Date object types
+          const sanitizedFormData = structuredClone($formStore) as Record<string, any>;
+
+          // Ensure date fields are proper Date objects
+          const dateFields = ['created_at', 'updated_at', 'released_at', 'availability_date'];
+          for (const field of dateFields) {
+            if (field in sanitizedFormData && sanitizedFormData[field]) {
+              sanitizedFormData[field] = ensureDateObject(sanitizedFormData[field]);
+            }
+          }
+          // Handle dimensions specifically to ensure proper format for PostgreSQL
+          // Handle dimensions specifically to ensure proper format for PostgreSQL
+          if (sanitizedFormData.dimensions) {
+            if (typeof sanitizedFormData.dimensions === 'object') {
+              // Check if dimensions has any non-zero values
+              const dims = sanitizedFormData.dimensions;
+              const hasValues = dims.length > 0 || dims.width > 0 || dims.height > 0;
+              
+              if (!hasValues) {
+                // If all dimensions are zero, set both dimensions and unit to null
+                sanitizedFormData.dimensions = null;
+                sanitizedFormData.dimensions_unit = null;
+              }
+            } else {
+              // If dimensions is not an object (might be a string), parse it
+              try {
+                sanitizedFormData.dimensions = JSON.parse(sanitizedFormData.dimensions);
+              } catch (e) {
+                // If parsing fails, set both to null to avoid constraint violation
+                sanitizedFormData.dimensions = null;
+                sanitizedFormData.dimensions_unit = null;
+              }
+            }
+          }
+          // Update the form store with the sanitized data
+          formStore.set(sanitizedFormData);
+            console.log('Form data fully sanitized before SuperForm submission');
+          } catch (err) {
+            console.error('Error sanitizing form data:', err);
+          }
+          return { formData, formElement, cancel };
+        }
+      });
+    };
+    
+    const result = wrappedEnhance(node);
     
     // Handle various result types safely
     if (result && typeof result === 'object' && 'destroy' in result && typeof result.destroy === 'function') {
@@ -930,7 +1464,7 @@ function enhanceSafe(node: HTMLFormElement): { destroy: () => void } {
   return {
     destroy: () => {
       // Always remove our event listener
-      node.removeEventListener('submit', handleSubmit);
+      node.removeEventListener('submit', handleFormSubmit);
       
       // Call the original destroy method if it exists
       if (destroyHandler) {
@@ -980,9 +1514,8 @@ onMount(() => {
             short_description: serverData.short_description ?? '',
             is_public: !!serverData.is_public,
             
-            // Map long_description (server) to full_description (client)
-            // Using type assertion to access server field
-            long_description: (serverData as any).long_description ?? ((serverData as any).full_description ?? ''),
+            // Use the correct field name
+            long_description: serverData.long_description ?? ((serverData as any).full_description ?? ''),
             
             // Physical properties
             dimensions: serverData.dimensions ?? { length: null, width: null, height: null },
@@ -1509,94 +2042,241 @@ onMount(() => {
   // Define handleSubmit function - called when the form is submitted
   function handleSubmit() {
     try {
-      console.log('Form submitted with values:', $formStore);
+      console.log('Form submission started - preparing complete data');
       
-      // For RELEASED status, ensure valid released_at date
-      if ($formStore.version_status === LifecycleStatusEnum.RELEASED) {
-        // Create date object for validation
-        const releasedDate = new Date();
-        
-        // Update the form data with the Date object - critical for Zod validation
-        ($formStore as Record<string, unknown>).released_at = releasedDate;
-        
-        console.log('Set released_at date for form submission:', releasedDate);
+      // Get comprehensive form data with ALL fields properly captured and constraints enforced
+      // This ensures all paired fields (dimensions/units, etc.) satisfy DB constraints
+      const completeFormData = getData();
+      
+      if (!completeFormData) {
+        console.error('getData() returned empty or invalid data');
+        return;
+      }
+      
+      // Extract dates before deep cloning to prevent date object -> string conversion
+      const createdAtDate = completeFormData.created_at instanceof Date ? 
+        completeFormData.created_at : new Date(completeFormData.created_at || new Date());
+      const updatedAtDate = completeFormData.updated_at instanceof Date ? 
+        completeFormData.updated_at : new Date(completeFormData.updated_at || new Date());
+      
+      // Deep clone to avoid reactivity issues
+      const submissionData = JSON.parse(JSON.stringify(completeFormData));
+      
+      // Restore date objects after cloning (JSON.stringify converts dates to strings)
+      submissionData.created_at = createdAtDate;
+      submissionData.updated_at = updatedAtDate;
+      
+      console.log('Comprehensive form data captured for submission:', submissionData);
+      
+      // Special handling for RELEASED status lifecycle requirements
+      if (submissionData.version_status === LifecycleStatusEnum.RELEASED) {
+        // Ensure a valid released_at date for RELEASED status
+        submissionData.released_at = submissionData.released_at || new Date().toISOString();
+        console.log('Set released_at date for RELEASED status:', submissionData.released_at);
       } else {
-        // For non-RELEASED status, don't set released_at (to match DB constraints)
-        delete ($formStore as Record<string, unknown>).released_at; // Remove the property entirely
-        console.log('Removing released_at field for non-RELEASED status');
+        // For non-RELEASED status, released_at must be null to satisfy DB constraints
+        submissionData.released_at = null;
+        console.log('Set released_at to null for non-RELEASED status');
       }
       
-      // Ensure dimensions are valid numbers > 0
-      if (dimensions) {
-        // Create dimensions object that preserves user input
-        const dimensionsObject = {
-          length: parseFloat(dimensions.length?.toString() || '') || (dimensions.length === 0 ? 0 : null),
-          width: parseFloat(dimensions.width?.toString() || '') || (dimensions.width === 0 ? 0 : null),
-          height: parseFloat(dimensions.height?.toString() || '') || (dimensions.height === 0 ? 0 : null)
-        };
-        
-        // Only set dimensions if at least one value is non-null (preserves user intent)
-        const hasValidDimensions = dimensionsObject.length !== null || 
-                                   dimensionsObject.width !== null || 
-                                   dimensionsObject.height !== null;
-                                   
-        // Set both dimensions and unit together, preserving valid data
-        ($formStore as Record<string, unknown>).dimensions = hasValidDimensions ? dimensionsObject : null;
-        ($formStore as Record<string, unknown>).dimensions_unit = hasValidDimensions ? 
-          ($formStore.dimensions_unit || DimensionUnitEnum.MM) : null;
-        
-        console.log('Set dimensions for submission:', dimensionsObject, 'hasValid:', hasValidDimensions);
+      // Process all array fields for submission - ensuring proper format
+      
+      // Handle manufacturer parts - merge from selected parts in UI
+      const manufacturerPartsToSubmit = selectedManufacturerParts.length > 0 
+        ? selectedManufacturerParts.map((part: ManufacturerPartDefinition) => prepareManufacturerPartForSubmission(part))
+        : (Array.isArray(submissionData.manufacturer_parts) ? submissionData.manufacturer_parts : []);
+      
+      submissionData.manufacturer_parts = manufacturerPartsToSubmit;
+      console.log(`Prepared ${manufacturerPartsToSubmit.length} manufacturer parts for submission`);
+      
+      // Process tags, families, and categories
+      
+      // Convert category selections to comma-separated ID list
+      if (selectedCategoryIds.length > 0) {
+        submissionData.category_ids = selectedCategoryIds.join(',');
+        console.log(`Set ${selectedCategoryIds.length} category IDs: ${submissionData.category_ids}`);
       }
       
-      // CRITICAL FIX: Properly prepare all data for submission to avoid constraint violations
-      // Get current form data with all JSON fields properly parsed
-      const validatedFormData = getData();
+      // Convert family selections to comma-separated ID list
+      if (selectedFamilies.length > 0) {
+        submissionData.family_ids = selectedFamilies.map(f => f.id).join(',');
+        console.log(`Set ${selectedFamilies.length} family IDs: ${submissionData.family_ids}`);
+      }
       
-      // Clean SuperForm integration for manufacturer parts - no hidden hacks
-      // First check if we have existing manufacturer parts from the form
-      const existingParts = $formStore.manufacturer_parts;
-      const existingArray = Array.isArray(existingParts) ? existingParts : 
-                          (typeof existingParts === 'string' ? 
-                           (() => {
-                             try { return JSON.parse(existingParts); } catch { return []; }
-                           })() : []);
+      // Convert tag selections to comma-separated ID list
+      if (selectedTags.length > 0) {
+        submissionData.tag_ids = selectedTags.map(t => t.id).join(',');
+        console.log(`Set ${selectedTags.length} tag IDs: ${submissionData.tag_ids}`);
+      }
       
-      // Then merge with selected parts, preserving all user data
-      const mergedParts = selectedManufacturerParts.length > 0 ? 
-        selectedManufacturerParts.map(part => prepareManufacturerPartForSubmission(part)) : 
-        (existingArray.length > 0 ? existingArray : []);
+      // Process version tags if needed
+      if (selectedVersionTags.length > 0) {
+        // Make sure they're in the expected format for submission
+        submissionData.part_version_tags = selectedVersionTags.map(tag => ({
+          part_version_tag_id: tag.id || `tmp-${Math.random().toString(36).substring(2, 15)}`,
+          part_version_id: submissionData.part_version_id || '',
+          tag_name: tag.name,
+          created_by: submissionData.creator_id || '',
+          created_at: new Date().toISOString()
+        }));
+        console.log(`Prepared ${selectedVersionTags.length} version tags for submission`);
+      }
+      
+      // Handle JSON fields - ensure they are properly formatted strings for PostgreSQL
+      // These fields should be objects in the UI but stringified JSON in the database
+      // For SuperForm/Zod validation, we need to ensure that all JSON fields are actual objects, not strings
+      // This is critically important to match the expected schema types
+      const jsonFields = [
+        'custom_fields',
+        'electrical_properties',
+        'mechanical_properties',
+        'thermal_properties',
+        'environmental_data',
+        'technical_specifications'
+        // Then explicitly ensure material_composition is a string
+      ];
+      
+      // Process JSON fields for submission - ensure they are objects
+      jsonFields.forEach(field => {
+        if (submissionData[field]) {
+          // Always ensure we have an object, not a string
+          if (typeof submissionData[field] === 'string') {
+            try {
+              // Convert any string to a parsed object
+              submissionData[field] = JSON.parse(submissionData[field]);
+              console.log(`Converted ${field} from string to object for submission`); 
+            } catch (e) {
+              console.error(`Failed to parse ${field} string, using empty object`);
+              submissionData[field] = {};
+            }
+          }
+          
+          // Verify the result is an object
+          if (typeof submissionData[field] !== 'object' || submissionData[field] === null) {
+            console.warn(`${field} is not an object after processing, fixing`);
+            submissionData[field] = {};
+          }
+        } else {
+          // Initialize missing JSON fields with empty objects
+          submissionData[field] = {};
+        }
         
-      // Cast to avoid TypeScript errors while maintaining type safety
-      ($formStore as Record<string, unknown>).manufacturer_parts = JSON.stringify(mergedParts);
-      console.log('Setting manufacturer parts:', mergedParts.length, 'items');
-      
-      // Clean SuperForm integration for category IDs - no hidden hacks
-      ($formStore as Record<string, unknown>).category_ids = selectedCategoryIds.join(',');
-      
-      // Apply all validated data to the form store
-      Object.entries(validatedFormData).forEach(([key, value]) => {
-        // Use type-safe approach for indexing
-        ($formStore as Record<string, unknown>)[key] = value;
-        // Use safer type checking for form data display in console
-  console.log('Form fully prepared for submission:', {
-    category_ids: $formStore.category_ids,
-    // Use safe type assertions to avoid 'never' type issues with manufacturer_parts
-    manufacturer_parts: (() => {
-      const parts = $formStore?.manufacturer_parts;
-      if (!parts) return 'no value';
-      if (Array.isArray(parts)) return `Array with ${(parts as any[]).length} items`;
-      if (typeof parts === 'string') return `String with length ${(parts as string).length}`;
-      return `Unknown type: ${typeof parts}`;
-    })(),
-    dimensions: $formStore.dimensions,
-    dimensions_unit: $formStore.dimensions_unit,
-    weight_value: $formStore.weight_value,
-    weight_unit: $formStore.weight_unit,
-    tolerance: $formStore.tolerance,
-    tolerance_unit: $formStore.tolerance_unit
-  });
+        // Final verification
+        console.log(`Final ${field} type:`, typeof submissionData[field]);
       });
-
+      
+      // Ensure dates are actual Date objects and not strings or ISO strings
+      // This is critical for Zod validation which expects z.date() 
+      // For Zod validation with z.date() we need actual Date objects
+      // Try multiple approaches to ensure we have proper Date objects
+      
+      // For created_at
+      if (submissionData.created_at) {
+        if (!(submissionData.created_at instanceof Date)) {
+          try {
+            // Try to create a new Date from the value (string or number)
+            if (typeof submissionData.created_at === 'string' || typeof submissionData.created_at === 'number') {
+              submissionData.created_at = new Date(submissionData.created_at);
+            } else {
+              // Fallback to current date if the value is invalid
+              console.warn('Invalid created_at value, using current date');
+              submissionData.created_at = new Date();
+            }
+          } catch (e) {
+            console.error('Error converting created_at to Date:', e);
+            submissionData.created_at = new Date();
+          }
+        }
+      } else {
+        // Ensure we have a default value
+        submissionData.created_at = new Date();
+      }
+      
+      // For updated_at
+      if (submissionData.updated_at) {
+        if (!(submissionData.updated_at instanceof Date)) {
+          try {
+            // Try to create a new Date from the value (string or number)
+            if (typeof submissionData.updated_at === 'string' || typeof submissionData.updated_at === 'number') {
+              submissionData.updated_at = new Date(submissionData.updated_at);
+            } else {
+              // Fallback to current date if the value is invalid
+              console.warn('Invalid updated_at value, using current date');
+              submissionData.updated_at = new Date();
+            }
+          } catch (e) {
+            console.error('Error converting updated_at to Date:', e);
+            submissionData.updated_at = new Date();
+          }
+        }
+      } else {
+        // Always set updated_at to current date
+        submissionData.updated_at = new Date();
+      }
+      
+      // Final debug log to verify correct date types
+      console.log('Final date types before form update:', {
+        created_at: submissionData.created_at instanceof Date ? 'Date object' : typeof submissionData.created_at,
+        updated_at: submissionData.updated_at instanceof Date ? 'Date object' : typeof submissionData.updated_at,
+        'created_at constructor': submissionData.created_at?.constructor?.name,
+        'updated_at constructor': submissionData.updated_at?.constructor?.name
+      });
+      
+      // Then explicitly ensure material_composition is a string
+      if (submissionData.material_composition && typeof submissionData.material_composition !== 'string') {
+        try {
+          submissionData.material_composition = JSON.stringify(submissionData.material_composition);
+        } catch (e) {
+          submissionData.material_composition = '';
+        }
+      }
+      
+      // Apply final submission data to the form store for SuperForm to submit
+      // For SuperForm to properly validate with Zod, we need to ensure all fields have correct types
+      // especially date fields that must be actual Date objects
+      
+      console.log('Updating form store with processed submission data');
+      
+      // Loop through all properties in the submission data and update formStore directly
+      Object.entries(submissionData).forEach(([key, value]) => {
+        // Skip undefined values
+        if (value !== undefined) {
+          // Use type assertion for TypeScript
+          ($formStore as any)[key] = value;
+        }
+      });
+      
+      console.log('Form store updated with sanitized submission data');
+      console.log('Form submission preparation complete - data is ready for submission');
+      console.log('Form data size:', Object.keys(submissionData).length, 'fields');
+      
+      // Final verification to prevent constraint violations
+      // Check that all DB constraint pairs are enforced
+      const constraintPairs = [
+        { field1: 'dimensions', field2: 'dimensions_unit' },
+        { field1: 'part_weight', field2: 'weight_unit' },
+        { field1: 'operating_temperature_min', field2: 'temperature_unit' },
+        { field1: 'tolerance', field2: 'tolerance_unit' }
+      ];
+      
+      // Verify each constraint pair - only log warnings, do NOT modify values
+      // Data processing should happen in getData() only, not here
+      constraintPairs.forEach(({ field1, field2 }) => {
+        const value1 = ($formStore as Record<string, unknown>)[field1];
+        const value2 = ($formStore as Record<string, unknown>)[field2];
+        
+        // Both should be null or both should have values - only log warnings
+        if ((value1 === null && value2 !== null) || (value1 !== null && value2 === null)) {
+          console.warn(`⚠️ Constraint pair issue detected: ${field1}=${value1}, ${field2}=${value2}`);
+          // Do not modify values here - the processing should have been handled in getData()
+          // This is just a verification step
+        }
+      });
+      
+      // Finally, update the formStore with the sanitized submission data
+      formStore.set(submissionData);
+      console.log('Form store updated with sanitized submission data');
+      
     } catch (error) {
       console.error('Error in form submission:', error);
     }
@@ -1652,7 +2332,7 @@ onMount(async () => {
 </script>
 
 
-<form class="part-form" method="POST" action="?/part" use:enhanceSafe on:submit={handleSubmit} data-section-all={activeSection === 'all' ? 'true' : 'false'}>
+<form class="part-form" method="POST" action="?/part" use:enhanceSafe  data-section-all={activeSection === 'all' ? 'true' : 'false'}>
 
   <!-- Basic Information -->
   <div class="form-section {activeSection === 'basic' ? 'active' : ''}">
@@ -1831,7 +2511,9 @@ onMount(async () => {
                        const val = parseFloat(e.currentTarget.value);
                        if (!dimensions) dimensions = { length: 0, width: 0, height: 0 };
                        dimensions.length = isNaN(val) ? 0 : val;
-                       updateFormData('dimensions', dimensions);
+                       // Deep clone the dimensions object to remove reactive properties
+                       const sanitizedDimensions = JSON.parse(JSON.stringify(dimensions));
+                       updateFormData('dimensions', sanitizedDimensions);
                      }}
                      value={dimensions?.length ?? 0} 
                      min="0" step="any" class="form-input">
@@ -1844,7 +2526,9 @@ onMount(async () => {
                        const val = parseFloat(e.currentTarget.value);
                        if (!dimensions) dimensions = { length: 0, width: 0, height: 0 };
                        dimensions.width = isNaN(val) ? 0 : val;
-                       updateFormData('dimensions', dimensions);
+                       // Deep clone the dimensions object to remove reactive properties
+                       const sanitizedDimensions = JSON.parse(JSON.stringify(dimensions));
+                       updateFormData('dimensions', sanitizedDimensions);
                      }}
                      value={dimensions?.width ?? 0} 
                      min="0" step="any" class="form-input">
@@ -1857,17 +2541,19 @@ onMount(async () => {
                        const val = parseFloat(e.currentTarget.value);
                        if (!dimensions) dimensions = { length: 0, width: 0, height: 0 };
                        dimensions.height = isNaN(val) ? 0 : val;
-                       updateFormData('dimensions', dimensions);
+                       // Deep clone the dimensions object to remove reactive properties
+                       const sanitizedDimensions = JSON.parse(JSON.stringify(dimensions));
+                       updateFormData('dimensions', sanitizedDimensions);
                      }}
                      value={dimensions?.height ?? 0} 
                      min="0" step="any" class="form-input">
             </div>
             <div class="dimension-field">
               <label for="dimensions_unit">Unit</label>
-              <select name="dimensions_unit" id="dimensions_unit" bind:value={dimensionsUnit} class="form-select">
+              <select name="dimensions_unit" id="dimensions_unit" bind:value={$formStore.dimensions_unit} class="form-select">
                 <option value="">Select unit (optional)</option>
                 {#each options.dimensionUnits as dimUnit}
-                  <option value={dimUnit} selected={dimensionsUnit === dimUnit}>{dimUnit}</option>
+                <option value={dimUnit} selected={$formStore.dimensions_unit === dimUnit}>{dimUnit}</option>
                 {/each}
               </select>
             </div>
@@ -1877,32 +2563,32 @@ onMount(async () => {
         <div class="form-grid">
           <div class="form-group">
             <label for="weight_value">Weight</label>
-            <input type="number" name="weight_value" id="weight_value" bind:value={formData.weight_value} min="0" step="any" class="form-input">
+            <input type="number" name="weight_value" id="weight_value" bind:value={$formStore.weight_value} min="0" step="any" class="form-input">
           </div>
 
           <div class="form-group">
             <label for="weight_unit">Weight Unit</label>
-            <select name="weight_unit" id="weight_unit" bind:value={formData.weight_unit} class="form-select">
+            <select name="weight_unit" id="weight_unit" bind:value={$formStore.weight_unit} class="form-select">
               <option value="">Select unit (optional)</option>
               {#each options.weightUnits as weightUnit}
-                <option value={weightUnit} selected={formData.weight_unit === weightUnit}>{weightUnit}</option>
+                <option value={weightUnit} selected={$formStore.weight_unit === weightUnit}>{weightUnit}</option>
               {/each}
             </select>
           </div>
 
           <div class="form-group">
             <label for="package_type">Package Type</label>
-            <select name="package_type" id="package_type" bind:value={formData.package_type} class="form-select">
+            <select name="package_type" id="package_type" bind:value={$formStore.package_type} class="form-select">
               <option value="">Select packaging (optional)</option>
               {#each options.packageTypes as packageType}
-                <option value={packageType} selected={formData.package_type === packageType}>{packageType}</option>
+                <option value={packageType} selected={$formStore.package_type === packageType}>{packageType}</option>
               {/each}
             </select>
           </div>
 
           <div class="form-group">
             <label for="pin_count">Pin Count</label>
-            <input type="number" name="pin_count" id="pin_count" bind:value={formData.pin_count} min="0" step="1" class="form-input">
+            <input type="number" name="pin_count" id="pin_count" bind:value={$formStore.pin_count} min="0" step="1" class="form-input">
           </div>
         </div>
 

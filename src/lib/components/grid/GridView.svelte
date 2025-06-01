@@ -17,36 +17,179 @@
   import { entityFieldMappings, entityColorVariables } from '$lib/types/grid';
   import type { Manufacturer, Supplier, Category, Part, PartVersion } from '$lib/types/types';
   import type { PartStatusEnum } from '$lib/types/enums';
-  import { LifecycleStatusEnum } from '$lib/types/enums';
+  import { LifecycleStatusEnum, WeightUnitEnum, DimensionUnitEnum, PackageTypeEnum, MountingTypeEnum, TemperatureUnitEnum } from '$lib/types/enums';
+  import type { UnifiedPart } from '$lib/types/schemaTypes';
   
   // Dynamic card imports based on entity type
   import ManufacturerCard from '$lib/components/cards/manufacturer.svelte';
   import SupplierCard from '$lib/components/cards/supplier.svelte';
   import CategoryCard from '$lib/components/cards/category.svelte';
-  import PartCard from '$lib/components/cards/PartCard.svelte';
+  import PartCard from '@/components/cards/PartCard.svelte';
   
-  // Helper function to create a properly typed minimal PartVersion object
-  function createMinimalPartVersion(item: GridEntity): PartVersion {
-    return {
-      part_version_id: 'part_id' in item ? String(item.part_id) + '-v1' : crypto.randomUUID(),
-      part_id: 'part_id' in item ? String(item.part_id) : crypto.randomUUID(),
-      part_version: '1.0',
-      part_name: 'part_name' in item ? String(item.part_name) : 'Unnamed Part',
-      // Must use the imported enum value, not a string
-      version_status: LifecycleStatusEnum.DRAFT,
-      created_at: new Date(),
-      updated_at: new Date(),
-      created_by: currentUserId,
-      // Using properties that exist in the PartVersion type
-      description: 'Grid view version',
-      is_hardware: false,
-      is_software: false,
-      is_purchased: false,
-      is_virtual: true,
-      has_rohs: false,
-      has_reach: false,
-      moisture_sensitivity_level: 1
-    } as PartVersion;
+  // Helper function to create a UnifiedPart object for the grid view
+  function createUnifiedPart(item: GridEntity): UnifiedPart {
+    // Extract basic part data from the grid item
+    const partId = 'part_id' in item ? String(item.part_id) : crypto.randomUUID();
+    const partName = 'part_name' in item ? String(item.part_name) : 'Unnamed Part';
+    const partVersionId = 'part_version_id' in item ? String(item.part_version_id) : `${partId}-v1`;
+    const partVersion = 'part_version' in item ? String(item.part_version) : '1.0';
+    const statusInBom = 'status_in_bom' in item ? item.status_in_bom as PartStatusEnum : 'Not Specified' as PartStatusEnum;
+    const lifecycleStatus = 'lifecycle_status' in item ? item.lifecycle_status as LifecycleStatusEnum : LifecycleStatusEnum.DRAFT;
+    const isPublic = 'is_public' in item ? Boolean(item.is_public) : false;
+    const createdAt = 'created_at' in item ? new Date(item.created_at) : new Date();
+    const updatedAt = 'updated_at' in item ? new Date(item.updated_at) : new Date();
+    const creatorId = 'creator_id' in item ? String(item.creator_id) : currentUserId;
+    const updatedBy = 'updated_by' in item ? String(item.updated_by) : undefined;
+    const globalPartNumber = 'global_part_number' in item ? String(item.global_part_number) : undefined;
+    const customFields = 'custom_fields' in item ? item.custom_fields : undefined;
+    
+    // Get optional properties if they exist
+    const internalPartNumber = 'internal_part_number' in item ? item.internal_part_number : undefined;
+    const manufacturerPartNumber = 'manufacturer_part_number' in item ? item.manufacturer_part_number : undefined;
+    const mpn = 'mpn' in item ? item.mpn : undefined;
+    const gtin = 'gtin' in item ? item.gtin : undefined;
+    const categoryIds = 'category_ids' in item ? item.category_ids : undefined;
+    const familyIds = 'family_ids' in item ? item.family_ids : undefined;
+    const groupIds = 'group_ids' in item ? item.group_ids : undefined;
+    const tagIds = 'tag_ids' in item ? item.tag_ids : undefined;
+    const shortDescription = 'short_description' in item ? item.short_description : undefined;
+    const longDescription = 'long_description' in item ? item.long_description : null;
+    const functionalDescription = 'functional_description' in item ? item.functional_description : undefined;
+    
+    // Physical properties
+    const partWeight = 'part_weight' in item ? item.part_weight : undefined;
+    const weightUnit = 'weight_unit' in item ? item.weight_unit as WeightUnitEnum : undefined;
+    const weightValue = 'weight_value' in item ? item.weight_value : undefined;
+    const dimensions = 'dimensions' in item ? item.dimensions : null;
+    const dimensionsUnit = 'dimensions_unit' in item ? item.dimensions_unit as DimensionUnitEnum : undefined;
+    const packageType = 'package_type' in item ? item.package_type as PackageTypeEnum : undefined;
+    const mountingType = 'mounting_type' in item ? item.mounting_type as MountingTypeEnum : undefined;
+    const pinCount = 'pin_count' in item ? item.pin_count : undefined;
+    
+    // Electrical properties
+    const voltageRatingMin = 'voltage_rating_min' in item ? item.voltage_rating_min : undefined;
+    const voltageRatingMax = 'voltage_rating_max' in item ? item.voltage_rating_max : undefined;
+    const currentRatingMin = 'current_rating_min' in item ? item.current_rating_min : undefined;
+    const currentRatingMax = 'current_rating_max' in item ? item.current_rating_max : undefined;
+    const powerRatingMax = 'power_rating_max' in item ? item.power_rating_max : undefined;
+    const tolerance = 'tolerance' in item ? item.tolerance : undefined;
+    const toleranceUnit = 'tolerance_unit' in item ? item.tolerance_unit : undefined;
+    const electricalProperties = 'electrical_properties' in item ? item.electrical_properties : null;
+    
+    // Thermal properties
+    const operatingTempMin = 'operating_temperature_min' in item ? item.operating_temperature_min : undefined;
+    const operatingTempMax = 'operating_temperature_max' in item ? item.operating_temperature_max : undefined;
+    const storageTempMin = 'storage_temperature_min' in item ? item.storage_temperature_min : undefined;
+    const storageTempMax = 'storage_temperature_max' in item ? item.storage_temperature_max : undefined;
+    const temperatureUnit = 'temperature_unit' in item ? item.temperature_unit as TemperatureUnitEnum : undefined;
+    const thermalProperties = 'thermal_properties' in item ? item.thermal_properties : null;
+    
+    // Other properties
+    const mechanicalProperties = 'mechanical_properties' in item ? item.mechanical_properties : null;
+    const materialComposition = 'material_composition' in item ? item.material_composition : null;
+    const environmentalData = 'environmental_data' in item ? item.environmental_data : null;
+    const technicalSpecifications = 'technical_specifications' in item ? item.technical_specifications : null;
+    const properties = 'properties' in item ? item.properties : null;
+    const revisionNotes = 'revision_notes' in item ? item.revision_notes : undefined;
+    const releasedAt = 'released_at' in item ? item.released_at : undefined;
+    
+    // Manufacturer and supplier info
+    const manufacturerId = 'manufacturer_id' in item ? item.manufacturer_id : undefined;
+    const manufacturerName = 'manufacturer_name' in item ? item.manufacturer_name : undefined;
+    const supplierId = 'supplier_id' in item ? item.supplier_id : undefined;
+    const supplierName = 'supplier_name' in item ? item.supplier_name : undefined;
+    
+    // Create the UnifiedPart object with all required fields based on schema
+    const unifiedPart: UnifiedPart = {
+      // Core Part data
+      part_id: partId,
+      creator_id: creatorId,
+      global_part_number: globalPartNumber,
+      status_in_bom: statusInBom,
+      lifecycle_status: lifecycleStatus,
+      is_public: isPublic,
+      created_at: createdAt,
+      updated_by: updatedBy,
+      updated_at: updatedAt,
+      current_version_id: 'current_version_id' in item ? item.current_version_id : partVersionId,
+      custom_fields: customFields,
+      
+      // PartVersion data
+      part_version_id: partVersionId,
+      part_version: partVersion,
+      part_name: partName,
+      version_status: lifecycleStatus,
+      short_description: shortDescription,
+      long_description: longDescription,
+      functional_description: functionalDescription,
+      
+      // Identifiers and categorization
+      internal_part_number: internalPartNumber,
+      manufacturer_part_number: manufacturerPartNumber,
+      mpn: mpn,
+      gtin: gtin,
+      category_ids: categoryIds,
+      family_ids: familyIds,
+      group_ids: groupIds,
+      tag_ids: tagIds,
+      
+      // Physical properties
+      part_weight: partWeight,
+      weight_unit: weightUnit,
+      weight_value: weightValue,
+      dimensions: dimensions,
+      dimensions_unit: dimensionsUnit,
+      package_type: packageType,
+      mounting_type: mountingType,
+      pin_count: pinCount,
+      
+      // Electrical properties
+      voltage_rating_min: voltageRatingMin,
+      voltage_rating_max: voltageRatingMax,
+      current_rating_min: currentRatingMin,
+      current_rating_max: currentRatingMax,
+      power_rating_max: powerRatingMax,
+      tolerance: tolerance,
+      tolerance_unit: toleranceUnit,
+      electrical_properties: electricalProperties,
+      
+      // Thermal properties
+      operating_temperature_min: operatingTempMin,
+      operating_temperature_max: operatingTempMax,
+      storage_temperature_min: storageTempMin,
+      storage_temperature_max: storageTempMax,
+      temperature_unit: temperatureUnit,
+      thermal_properties: thermalProperties,
+      
+      // Mechanical & other properties
+      mechanical_properties: mechanicalProperties,
+      material_composition: materialComposition,
+      environmental_data: environmentalData,
+      
+      // Technical data
+      technical_specifications: technicalSpecifications,
+      properties: properties,
+      
+      // Manufacturer and supplier info
+      manufacturer_id: manufacturerId,
+      manufacturer_name: manufacturerName,
+      supplier_id: supplierId,
+      supplier_name: supplierName,
+      
+      // Revision info
+      revision_notes: revisionNotes,
+      released_at: releasedAt,
+      
+      // Required arrays (empty for grid view)
+      manufacturer_parts: [],
+      supplier_parts: [],
+      attachments: [],
+      representations: [],
+      structure: [],
+      compliance_info: []
+    };
+    
+    return unifiedPart;
   }
   
   function prepareManufacturerData(item: GridEntity): Manufacturer {
@@ -238,40 +381,23 @@
     return category;
   }
   
-  function preparePartData(item: GridEntity): Part {
-    // Check if the item is a Part
+  function preparePartData(item: GridEntity): UnifiedPart {
     if (!('part_id' in item)) {
-      // Return a minimal Part object with required fields
-      return {
-        part_id: '',
-        creator_id: '',
+      console.error('Invalid item passed to preparePartData:', item);
+      // Return a minimal UnifiedPart with all required fields
+      return createUnifiedPart({
+        part_id: crypto.randomUUID(),
+        creator_id: currentUserId,
         is_public: false,
-        status_in_bom: 'active' as PartStatusEnum, // Cast to enum
-        lifecycle_status: 'active' as LifecycleStatusEnum, // Cast to enum
+        status_in_bom: 'Unknown' as PartStatusEnum,
+        lifecycle_status: LifecycleStatusEnum.DRAFT,
         created_at: new Date(),
         updated_at: new Date()
-        // Other fields will be undefined by default
-      };
+      } as GridEntity);
     }
     
-    // Create a properly typed Part object with the required fields only
-    const part: Part = {
-      part_id: item.part_id,
-      creator_id: item.creator_id || '',
-      is_public: item.is_public,
-      status_in_bom: item.status_in_bom,
-      lifecycle_status: item.lifecycle_status,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-      updated_by: item.updated_by,
-      custom_fields: item.custom_fields
-    };
-    
-    // Only add optional fields if they exist in the item
-    if ('global_part_number' in item) part.global_part_number = item.global_part_number;
-    if ('current_version_id' in item) part.current_version_id = item.current_version_id;
-    
-    return part;
+    // Use the more comprehensive createUnifiedPart function we created earlier
+    return createUnifiedPart(item);
   }
 
   // Component props using Svelte 5 runes
@@ -985,10 +1111,9 @@
                 on:deleted={handleItemDeleted}
               />
             {:else if entityType === 'part'}
-              <!-- Create minimal part version for grid view -->
+              <!-- Create unified part for grid view -->
               <PartCard
-                part={preparePartData(item)}
-                currentVersion={createMinimalPartVersion(item)}
+                part={createUnifiedPart(item)}
               />
             {/if}
           </div>

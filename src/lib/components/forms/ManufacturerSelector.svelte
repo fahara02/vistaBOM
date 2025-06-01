@@ -10,14 +10,16 @@
   import { cn } from "$lib/utils.js";
   
   // Import types from our component types file which builds on schemaTypes
-  import type { ManufacturerDisplay, ManufacturerPartInput } from '$lib/types/componentTypes';
+  import type { ManufacturerDisplay } from '$lib/types/componentTypes';
+  import type { ManufacturerPartDefinition } from '$lib/types/schemaTypes';
+  import { LifecycleStatusEnum } from '$lib/types/enums';
   import { createEventDispatcher } from 'svelte';
   
   const dispatch = createEventDispatcher();
   
   // Props with proper types from our component types
   export let manufacturers: ManufacturerDisplay[] = [];
-  export let selectedManufacturerParts: ManufacturerPartInput[] = [];
+  export let selectedManufacturerParts: ManufacturerPartDefinition[] = [];
   export let disabled: boolean = false;
   export let width: string = "w-full";
   
@@ -28,7 +30,7 @@
   let open = false;
   let currentManufacturerId: string = "";
   let editingIndex: number = -1; // -1 means we're adding a new manufacturer part
-  let currentPart: ManufacturerPartInput = createEmptyManufacturerPart();
+  let currentPart: ManufacturerPartDefinition = createEmptyManufacturerPart();
   let showForm = false;
   
   // Ensure we have valid manufacturer data
@@ -41,15 +43,22 @@
   }
 
   // Create a new empty manufacturer part object
-  function createEmptyManufacturerPart(): ManufacturerPartInput {
+  function createEmptyManufacturerPart(): ManufacturerPartDefinition {
     return {
       manufacturer_id: "",
       manufacturer_part_number: "",
-      description: "",
+      manufacturer_part_description: "",
       datasheet_url: "",
       product_url: "",
       is_recommended: false
     };
+  }
+  
+  // For debugging purposes
+  $: {
+    if (selectedManufacturerParts.length > 0) {
+      console.log('Current manufacturer parts:', selectedManufacturerParts);
+    }
   }
   
   // Handle adding or updating a manufacturer part
@@ -59,23 +68,40 @@
       return;
     }
     
-    // We don't need to set manufacturer_name on the part object anymore
-    // It's derived from the manufacturer data when needed for display
+    // Create a plain object with no function references and exactly matching ManufacturerPartDefinition schema
+    const cleanPart: ManufacturerPartDefinition = {
+      manufacturer_id: currentPart.manufacturer_id,
+      manufacturer_part_number: currentPart.manufacturer_part_number,
+      manufacturer_part_description: currentPart.manufacturer_part_description || '',
+      datasheet_url: currentPart.datasheet_url || '',
+      product_url: currentPart.product_url || '',
+   
+      is_recommended: !!currentPart.is_recommended // Ensure boolean
+    };
+    
+    // Log the manufacturer data for debugging
+    console.log('Adding manufacturer part with data:', cleanPart);
+    console.log('Manufacturer ID:', cleanPart.manufacturer_id);
+    console.log('Part number:', cleanPart.manufacturer_part_number);
     
     if (editingIndex >= 0) {
       // Update existing manufacturer part
-      selectedManufacturerParts[editingIndex] = { ...currentPart };
+      selectedManufacturerParts[editingIndex] =  JSON.parse(JSON.stringify(cleanPart));
       selectedManufacturerParts = [...selectedManufacturerParts]; // Trigger reactivity
     } else {
       // Add new manufacturer part
-      selectedManufacturerParts = [...selectedManufacturerParts, { ...currentPart }];
+      selectedManufacturerParts = [...selectedManufacturerParts,  JSON.parse(JSON.stringify(cleanPart))];
     }
     
-    // Notify parent of the change
-    dispatch('change', selectedManufacturerParts);
+    // Notify parent of the change using a clean array with no function references
+    dispatch('change', [...selectedManufacturerParts]);
     
     // Reset form
     resetForm();
+    
+    // Log for debugging
+    console.log('Updated manufacturer parts array:', selectedManufacturerParts);
+    console.log('Serialized manufacturer parts:', JSON.stringify(selectedManufacturerParts));
   }
   
   // Edit an existing manufacturer part
@@ -99,6 +125,8 @@
   
   // Function to get the manufacturer name by ID
   function getManufacturerName(id: string): string {
+    if (!id) return "Select manufacturer...";
+    
     const manufacturer = manufacturers.find(m => m.id === id);
     if (!manufacturer) {
       console.warn(`Manufacturer with ID ${id} not found in`, manufacturers);
@@ -138,6 +166,7 @@
             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manufacturer</th>
             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part Number</th>
             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product URL</th>
             <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Recommended</th>
             <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
           </tr>
@@ -152,8 +181,15 @@
                 {mfgPart.manufacturer_part_number}
               </td>
               <td class="px-4 py-2">
-                {#if mfgPart.description}
-                  {mfgPart.description.length > 60 ? `${mfgPart.description.substring(0, 60)}...` : mfgPart.description}
+                {#if mfgPart.manufacturer_part_description}
+                  {mfgPart.manufacturer_part_description.length > 60 ? `${mfgPart.manufacturer_part_description.substring(0, 60)}...` : mfgPart.manufacturer_part_description}
+                {/if}
+              </td>
+              <td class="px-4 py-2">
+                {#if mfgPart.product_url}
+                  <a href={mfgPart.product_url} target="_blank" class="text-blue-600 hover:underline truncate block max-w-[180px]">
+                    {mfgPart.product_url.length > 25 ? `${mfgPart.product_url.substring(0, 25)}...` : mfgPart.product_url}
+                  </a>
                 {/if}
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">
@@ -208,6 +244,7 @@
           <Popover.Root bind:open let:ids>
             <Popover.Trigger asChild let:builder>
               <Button
+                id="manufacturer-trigger"
                 builders={[builder]}
                 variant="outline"
                 role="combobox"
@@ -235,20 +272,33 @@
                   {:else}
                     {#each manufacturers as manufacturer}
                       <Command.Item
-                        on:click={() => {
-                          currentPart.manufacturer_id = manufacturer.id;
-                          open = false;
-                          console.log('Selected manufacturer:', manufacturer.name, 'with ID:', manufacturer.id);
-                          // Trigger reactivity by reassigning the object
-                          currentPart = {...currentPart};
-                        }}
+                        class="cursor-pointer hover:bg-gray-100"
                       >
-                        <div class="flex items-center w-full">
+                        <button
+                          type="button"
+                          class="flex items-center w-full text-left"
+                          on:click={() => {
+                            // Set the manufacturer ID
+                            currentPart.manufacturer_id = manufacturer.id;
+                            
+                            // Log for debugging
+                            console.log('Selected manufacturer:', manufacturer.name, 'with ID:', manufacturer.id);
+                            
+                            // Trigger reactivity by creating a new object reference
+                            currentPart = {...currentPart};
+                            
+                            // Close dropdown with a slight delay to ensure the UI updates first
+                            setTimeout(() => {
+                              open = false;
+                              closeAndFocusTrigger('manufacturer-trigger');
+                            }, 50);
+                          }}
+                        >
                           <Check
                             class="mr-2 h-4 w-4 {currentPart.manufacturer_id !== manufacturer.id ? 'opacity-0' : ''}"
                           />
                           <span>{manufacturer.name}</span>
-                        </div>
+                        </button>
                       </Command.Item>
                     {/each}
                   {/if}
@@ -277,7 +327,7 @@
         <input 
           type="text" 
           id="description" 
-          bind:value={currentPart.description}
+          bind:value={currentPart.manufacturer_part_description}
           class="enhanced-input"
           placeholder="Brief description of the part"
         />
@@ -323,6 +373,8 @@
         </div>
       </div>
       
+  
+      
       <!-- Is Recommended -->
       <div class="form-field">
         <div class="checkbox-container">
@@ -367,14 +419,7 @@
   <input 
     type="hidden" 
     name="manufacturer_parts" 
-    value={JSON.stringify(selectedManufacturerParts.map(part => ({
-      manufacturerId: part.manufacturer_id,
-      partNumber: part.manufacturer_part_number,
-      description: part.description || '',
-      datasheetUrl: part.datasheet_url || '',
-      productUrl: part.product_url || '',
-      isRecommended: part.is_recommended
-    })))} 
+    value={JSON.stringify(selectedManufacturerParts)} 
   />
 </div>
 

@@ -51,8 +51,10 @@ function normalizeManufacturerParts(parts: ManufacturerPart[]): ManufacturerPart
     return parts.map(mp => ({
         manufacturer_id: mp.manufacturer_id || '',
         manufacturer_part_number: mp.manufacturer_part_number || '',
-        is_recommended: false, // Default value since is_recommended doesn't exist on ManufacturerPart
-        lifecycle_status: null
+        manufacturer_part_description: mp.manufacturer_part_description || '',
+        datasheet_url: mp.datasheet_url || '',
+        product_url: mp.product_url || '',
+        is_recommended: !!mp.is_recommended // Ensure boolean value
     }));
 }
 
@@ -504,6 +506,15 @@ export async function partAction(event: RequestEvent): Promise<{ form: SuperVali
             
             unifiedPartData.representations = normalizeRepresentations(representations);
         }
+        
+        // Handle enum fields that might be empty strings - convert to null for validation
+        const enumFields = ['temperature_unit', 'weight_unit', 'dimensions_unit', 'package_type', 'mounting_type'];
+        enumFields.forEach(field => {
+            if (field in unifiedPartData && unifiedPartData[field as keyof typeof unifiedPartData] === '') {
+                console.log(`Converting empty enum field ${field} to null for schema validation`);
+                (unifiedPartData as any)[field] = null;
+            }
+        });
         
         // Validate the unified part data against our schema
         const validationResult = unifiedPartSchema.safeParse(unifiedPartData);

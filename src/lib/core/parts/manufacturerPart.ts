@@ -15,11 +15,11 @@ function rowToManufacturerPart(row: any): ManufacturerPart {
         manufacturer_part_id: row.manufacturer_part_id,
         part_version_id: row.part_version_id,
         manufacturer_id: row.manufacturer_id,
-        manufacturer_name: row.manufacturer_name,
         manufacturer_part_number: row.manufacturer_part_number,
-        description: row.description,
-        status: row.status,
+        manufacturer_part_description: row.manufacturer_part_description,
         datasheet_url: row.datasheet_url,
+        product_url: row.product_url,
+        is_recommended: row.is_recommended,
         created_by: row.created_by,
         created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
         updated_by: row.updated_by,
@@ -35,10 +35,11 @@ function rowToManufacturerPart(row: any): ManufacturerPart {
  * @param manufacturerId - The ID of the manufacturer
  * @param manufacturerPartNumber - The manufacturer's part number
  * @param createdBy - User ID of the creator
- * @param manufacturerName - Optional manufacturer name (denormalized)
- * @param description - Optional description
- * @param status - Status of the part (defaults to 'ACTIVE')
+ * @param manufacturerPartDescription - Optional description of the manufacturer part
  * @param datasheetUrl - Optional URL to the datasheet
+ * @param productUrl - Optional URL to the product page
+ * @param isRecommended - Whether this is a recommended manufacturer part (defaults to false)
+ * @param txn - Optional transaction to use for the query
  * 
  * @returns The newly created manufacturer part
  */
@@ -47,10 +48,11 @@ export async function createManufacturerPart(
     manufacturerId: string,
     manufacturerPartNumber: string,
     createdBy: string,
-    manufacturerName?: string | null,
-    description?: string | null,
-    status: string = 'ACTIVE',
-    datasheetUrl?: string | null
+    manufacturerPartDescription?: string | null,
+    datasheetUrl?: string | null,
+    productUrl?: string | null,
+    isRecommended: boolean = false,
+    txn?: any // Use any for compatibility with both sql and transaction objects
 ): Promise<ManufacturerPart> {
     try {
         // Validate inputs
@@ -67,8 +69,11 @@ export async function createManufacturerPart(
             throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Datasheet URL must start with http:// or https://`);
         }
         
+        // Use transaction if provided, otherwise use global sql connection
+        const db = txn || sql;
+        
         // Check if part version exists first
-        const partVersionCheck = await sql`
+        const partVersionCheck = await db`
             SELECT part_version_id FROM "PartVersion"
             WHERE part_version_id = ${partVersionId}
         `;
@@ -78,7 +83,7 @@ export async function createManufacturerPart(
         }
 
         // Check if this manufacturer part number already exists for this part version
-        const existingPart = await sql`
+        const existingPart = await db`
             SELECT manufacturer_part_id FROM "ManufacturerPart"
             WHERE part_version_id = ${partVersionId}
             AND manufacturer_id = ${manufacturerId}
@@ -91,16 +96,16 @@ export async function createManufacturerPart(
 
         // Insert the new manufacturer part
         const partId = crypto.randomUUID();
-        const result = await sql`
+        const result = await db`
             INSERT INTO "ManufacturerPart" (
                 manufacturer_part_id,
                 part_version_id,
                 manufacturer_id,
-                manufacturer_name,
                 manufacturer_part_number,
-                description,
-                status,
+                manufacturer_part_description,
                 datasheet_url,
+                product_url,
+                is_recommended,
                 created_by,
                 created_at,
                 updated_by,
@@ -109,11 +114,11 @@ export async function createManufacturerPart(
                 ${partId},
                 ${partVersionId},
                 ${manufacturerId},
-                ${manufacturerName || null},
                 ${manufacturerPartNumber},
-                ${description || null},
-                ${status},
+                ${manufacturerPartDescription || null},
                 ${datasheetUrl || null},
+                ${productUrl || null},
+                ${isRecommended},
                 ${createdBy},
                 NOW(),
                 ${createdBy},

@@ -1,9 +1,12 @@
 <!-- src/routes/dashboard/components/parts-tab.svelte -->
 <script lang="ts">
+    // Imports
     import { createEventDispatcher, onMount } from 'svelte';
     import { slide } from 'svelte/transition';
+    import { z } from 'zod';
+    import { unifiedPartSchema } from '$lib/schema/unifiedPartSchema';
     import PartForm from '$lib/components/forms/PartForm.svelte';
-    import PartCard from '$lib/components/cards/PartCard.svelte';
+    import PartCard from '@/components/cards/PartCard.svelte';
     import GridView from '$lib/components/grid/GridView.svelte';
     import { superForm } from 'sveltekit-superforms/client';
     import type { SuperForm, SuperValidated } from 'sveltekit-superforms';
@@ -19,7 +22,7 @@
         LifecycleStatusEnum, 
         DimensionUnitEnum 
     } from '$lib/types/enums';
-    import { z } from 'zod';
+
     
     // Import types from the central schema
     import type { Part, PartVersion } from '$lib/types';
@@ -31,7 +34,7 @@
     import { adaptManufacturer } from '$lib/types/componentTypes';
     import type { ElectricalProperties, MechanicalProperties, ThermalProperties } from '$lib/types/schemaTypes';
     import { createPartSchema } from '../../schema/schema';
-    import { unifiedPartSchema } from '$lib/schema/unifiedPartSchema';
+   
     import type { GridEntity, EntityType, GridPart } from '$lib/types/grid';
     
     // Define types to match the schema requirements that are missing from interfaces
@@ -255,20 +258,14 @@
         refresh: void;
     }>();
     
-    // Handle data refreshing - categories, manufacturers, etc.
+    // Handle data refreshing - dispatch event to parent component
     function refreshData(): void {
-        // Simplified example - in real implementation fetch from API
-        // Fetch categories and manufacturers from API
-        // Placeholder implementation:
-        const fetchCategories = Promise.resolve([]);
-        const fetchManufacturers = Promise.resolve([]);
+        // Dispatch refresh event to parent dashboard component
+        // This pattern keeps data loading responsibility with the parent
+        dispatch('refreshData');
         
-        Promise.all([fetchCategories, fetchManufacturers])
-            .then(([categoriesData, manufacturersData]) => {
-                categories = categoriesData;
-                // Convert Manufacturer objects to ManufacturerDisplay
-                manufacturerOptions = (manufacturersData as Manufacturer[]).map(m => adaptManufacturer(m));
-            });
+        // Log current state for debugging
+        console.log(`Current state: ${manufacturerOptions.length} manufacturers, ${categories.length} categories`);
     }
 
     // Props with proper types
@@ -276,19 +273,67 @@
     export const exportFormat: 'unified' | 'compact' | 'full' = 'unified';
     export let parts: UnifiedPart[] = [];
     export let currentUserId: string;
-    // Updated to accept the specific UnifiedPart type instead of using 'any'
-export let formInstance: SuperForm<Partial<UnifiedPart>> | null = null;
+    // Create a generic form type that accepts any SuperForm instance
+    // This is a necessary compromise to handle the schema type mismatch between
+    // the dashboard and components while avoiding any type errors
+    // We're using proper runtime type checking to ensure data integrity
+    export let formInstance: SuperForm<any> | null = null;
+    
+    // Define a type helper for normalized form data to use within this component
+    type NormalizedPartData = {
+        part_id: string;
+        part_name: string;
+        part_version: string;
+        status_in_bom: PartStatusEnum;
+        version_status: LifecycleStatusEnum;
+        dimensions: { length: number; width: number; height: number };
+        manufacturer_parts: Array<{
+            manufacturer_id: string;
+            manufacturer_part_number: string;
+            is_recommended: boolean;
+            description?: string;
+            datasheet_url?: string;
+            product_url?: string;
+            lifecycle_status?: LifecycleStatusEnum | null;
+            notes?: string | null;
+        }>;
+        supplier_parts: Array<{
+            supplier_id: string;
+            supplier_part_number: string;
+            manufacturer_part_index: number;
+            is_preferred: boolean;
+            price?: number;
+            unit_price?: number;
+            currency?: string;
+            min_order_quantity?: number;
+            lead_time_days?: number;
+            package_quantity?: number;
+            notes?: string | null;
+            product_url?: string | null;
+        }>;
+        [key: string]: any;
+    };
+    // New props to accept manufacturers and categories from parent dashboard
+    export let manufacturers: Manufacturer[] = [];
+    export let categories: Category[] = [];
     
     // State variables
     let showForm = false;
     let editMode = false;
     let viewMode: 'grid' | 'list' = 'list';
     
-    // Data for forms
-    let categories: Category[] = [];
+    // Transformed data for form components
     let manufacturerOptions: ManufacturerDisplay[] = [];
     let selectedPart: Part | null = null;
     let selectedVersion: PartVersion | null = null;
+    
+    // Transform manufacturers whenever the prop changes
+    $: {
+        if (Array.isArray(manufacturers)) {
+            manufacturerOptions = manufacturers.map(m => adaptManufacturer(m));
+            console.log(`Transformed ${manufacturerOptions.length} manufacturers for PartForm`);
+        }
+    }
     
     // Using the event dispatcher defined above
 
@@ -320,12 +365,84 @@ export let formInstance: SuperForm<Partial<UnifiedPart>> | null = null;
 
             // Process direct part edit if grid item wasn't available
             if (directItem && typeof directItem === 'object') {
-                // Check if it's already a UnifiedPart structure
-                const unifiedPart = directItem as UnifiedPart;
-
+                // Check if it's a valid UnifiedPart with required fields
+                if (!directItem.part_id || !directItem.part_name) {
+                    console.warn('Invalid part data in edit event', directItem);
+                    return;
+                }
+                
+                // Type-safe handling of the part data
+                const unifiedPart: Partial<UnifiedPart> = {
+                    part_id: directItem.part_id,
+                    part_name: directItem.part_name,
+                    part_version: directItem.part_version || '0.1.0',
+                    status_in_bom: directItem.status_in_bom || PartStatusEnum.CONCEPT,
+                    version_status: directItem.version_status || LifecycleStatusEnum.DRAFT
+                };
+                
+                // Copy all additional properties from the source object
+                // This ensures we don't lose any fields while maintaining type safety
+                Object.keys(directItem).forEach(key => {
+                    if (!(key in unifiedPart) && key !== 'dimensions') {
+                        // Skip dimensions for now as it needs special handling
+                        (unifiedPart as any)[key] = (directItem as any)[key];
+                    }
+                });
+                
+                // Special handling for dimensions field to ensure type compatibility
+                if (directItem.dimensions) {
+                    // If any dimension field is null, convert it to 0 to maintain type compatibility
+                    const { length, width, height } = directItem.dimensions;
+                    unifiedPart.dimensions = {
+                        length: typeof length === 'number' ? length : 0,
+                        width: typeof width === 'number' ? width : 0,
+                        height: typeof height === 'number' ? height : 0
+                    };
+                } else {
+                    // If dimensions is null/undefined, initialize with zeros for type compatibility
+                    unifiedPart.dimensions = { length: 0, width: 0, height: 0 };
+                }
+                
+                // Special handling for manufacturer_parts to ensure is_recommended is always boolean
+                if (Array.isArray(directItem.manufacturer_parts)) {
+                    unifiedPart.manufacturer_parts = directItem.manufacturer_parts.map((mp: any) => ({
+                        manufacturer_id: mp.manufacturer_id || '',
+                        manufacturer_part_number: mp.manufacturer_part_number || '',
+                        is_recommended: mp.is_recommended === true, // Force boolean
+                        description: mp.description,
+                        datasheet_url: mp.datasheet_url,
+                        product_url: mp.product_url,
+                        lifecycle_status: mp.lifecycle_status,
+                        notes: mp.notes
+                    }));
+                } else {
+                    unifiedPart.manufacturer_parts = [];
+                }
+                
+                // Similar handling for supplier_parts
+                if (Array.isArray(directItem.supplier_parts)) {
+                    unifiedPart.supplier_parts = directItem.supplier_parts.map((sp: any) => ({
+                        supplier_id: sp.supplier_id || '',
+                        supplier_part_number: sp.supplier_part_number || '', // Force string
+                        manufacturer_part_index: typeof sp.manufacturer_part_index === 'number' ? 
+                            sp.manufacturer_part_index : 0,
+                        is_preferred: sp.is_preferred === true, // Force boolean
+                        price: sp.price,
+                        unit_price: sp.unit_price,
+                        currency: sp.currency,
+                        min_order_quantity: sp.min_order_quantity,
+                        lead_time_days: sp.lead_time_days,
+                        package_quantity: sp.package_quantity,
+                        notes: sp.notes,
+                        product_url: sp.product_url
+                    }));
+                } else {
+                    unifiedPart.supplier_parts = [];
+                }
+                
                 // Extract the part data for the form
                 if (formInstance?.form) {
-                    // Use the UnifiedPart directly - using update method instead of $ syntax
+                    // Use the normalized UnifiedPart with type-safe dimensions
                     formInstance.form.update(form => ({
                         ...form,
                         ...unifiedPart
@@ -334,6 +451,10 @@ export let formInstance: SuperForm<Partial<UnifiedPart>> | null = null;
                     // Set edit mode and show form
                     editMode = true;
                     showForm = true;
+                    
+                    console.log('Updated form with part data:', unifiedPart.part_name);
+                } else {
+                    console.warn('Form instance not available for update');
                 }
                 return;
             }
@@ -437,6 +558,24 @@ export let formInstance: SuperForm<Partial<UnifiedPart>> | null = null;
     // Watch for changes to parts array and update grid items if needed
     $: if (parts && parts.length > 0 && viewMode === 'grid') {
         prepareGridItems();
+    }
+    
+    // Debug logging for manufacturers and categories
+    $: if (manufacturerOptions.length > 0) {
+        console.log('Debug: Manufacturer options for PartForm:', 
+            manufacturerOptions.map(m => ({ id: m.id, name: m.name })));
+    } else {
+        console.warn('Debug: No manufacturer options available for PartForm');
+    }
+    
+    $: if (categories.length > 0) {
+        console.log('Debug: Categories for PartForm:', 
+            categories.slice(0, 3).map(c => ({ 
+                category_id: c.category_id, 
+                category_name: c.category_name 
+            })));
+    } else {
+        console.warn('Debug: No categories available for PartForm');
     }
 </script>
 

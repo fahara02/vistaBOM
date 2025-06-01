@@ -272,14 +272,10 @@ export interface StructuredDescription {
  */
 export interface ManufacturerPartDefinition {
   manufacturer_id: string;
-  manufacturer_name?: string;
   manufacturer_part_number: string;
-  mpn?: string;
-  description?: string | null;
+  manufacturer_part_description?: string | null;
   datasheet_url?: string | null;
   product_url?: string | null;
-  notes?: string | null;
-  lifecycle_status?: LifecycleStatusEnum | null;
   is_recommended: boolean;
 }
 
@@ -359,11 +355,11 @@ export interface ManufacturerPart {
   manufacturer_part_id: string;
   part_version_id: string;
   manufacturer_id: string;
-  manufacturer_name?: string | null; // Denormalized for convenience
   manufacturer_part_number: string;
-  description?: string | null;
-  status: string; // e.g., 'ACTIVE', 'OBSOLETE', 'EOL', 'NRND'
+  manufacturer_part_description ?: string | null; 
   datasheet_url?: string | null;
+  product_url?:string|null;
+  is_recommended:boolean|null;
   created_by: string;
   created_at: Date;
   updated_by?: string | null;
