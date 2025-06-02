@@ -19,7 +19,8 @@ import type {
     RepresentationDefinition,
     ComplianceDefinition,
     PartStructureDefinition,
-    StructuredDescription
+    StructuredDescription,
+    Category
 } from '$lib/types/schemaTypes';
 import type { UnifiedPartSchema } from '$lib/schema/unifiedPartSchema';
 // Import primitive types
@@ -157,6 +158,7 @@ import {
 import {
     addPartToFamily
 } from './parts/partFamily';
+import { getCategory} from './category';
 
 
 /**
@@ -1013,39 +1015,15 @@ async function loadCategoriesForPart(
 	extendedVersion: PartVersion & {categoryIds?: string; categories?: Array<{id: string; name: string}>}
 ): Promise<void> {
 	try {
-		// Check if we should use PartCategory or PartVersionCategory
-		const partCategoryTableCheck = await sql`
-			SELECT EXISTS (
-				SELECT FROM information_schema.tables 
-				WHERE table_schema = 'public' AND table_name = 'PartCategory'
-			) as exists
+		// Query directly from PartVersionCategory table which is the correct source of categories
+		const categoriesResult: Array<{category_id: string; category_name: string}> = await sql`
+			SELECT 
+				pvc.category_id::TEXT AS category_id,
+				c.category_name::TEXT AS category_name
+			FROM "PartVersionCategory" pvc
+			JOIN "Category" c ON pvc.category_id = c.category_id
+			WHERE pvc.part_version_id = ${partVersionId}
 		`;
-		
-		const hasPartCategoryTable = partCategoryTableCheck[0]?.exists;
-		
-		let categoriesResult: Array<{category_id: string; category_name: string}> = [];
-		
-		if (hasPartCategoryTable) {
-			// Try with PartCategory table
-			categoriesResult = await sql`
-				SELECT 
-					pc.category_id::TEXT AS category_id,
-					c.category_name::TEXT AS category_name
-				FROM "PartCategory" pc
-				JOIN "Category" c ON pc.category_id = c.category_id
-				WHERE pc.part_id = ${partVersionId}
-			`;
-		} else {
-			// Try with PartVersionCategory
-			categoriesResult = await sql`
-				SELECT 
-					pvc.category_id::TEXT AS category_id,
-					c.category_name::TEXT AS category_name
-				FROM "PartVersionCategory" pvc
-				JOIN "Category" c ON pvc.category_id = c.category_id
-				WHERE pvc.part_version_id = ${partVersionId}
-			`;
-		}
 		
 		// Map category IDs to string format for the form
 		if (categoriesResult && categoriesResult.length > 0) {
@@ -1096,68 +1074,7 @@ async function loadManufacturersForPart(
 	}
 }
 
-/**
- * Create a new part with its initial version
- * @param input Form data containing part and version details
- * @param userId User ID of the creator
- * @returns The created part with its initial version
- * @throws Error if input validation fails or database operation fails
- */
-// export async function createPart(input: PartFormData, userId: string) {
-//     try {
-//         // Validate input
-//         if (!input || !userId) {
-//             throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Missing required input or userId for part creation`);
-//         }
 
-//         console.log('[createPart] Creating new part with input data');
-        
-//         // Generate UUIDs for part and version
-//         const partId = crypto.randomUUID();
-//         const versionId = crypto.randomUUID();
-        
-//         // Begin a transaction for atomic operations
-//         const result = await sql.begin(async (tx) => {
-//             console.log('[createPart] Starting transaction');
-            
-//             // Cast the transaction to PostgresTransaction to satisfy TypeScript
-//             const transaction = tx as unknown as PostgresTransaction;
-            
-//             // 1. Insert the part record
-//             await insertPartRecord(transaction, partId, userId, input);
-            
-//             // 2. Insert the part version record
-//             await insertPartVersionRecord(transaction, versionId, partId, userId, input);
-            
-//             // 3. Update the part's current version
-//             await transaction`
-//             UPDATE "Part" 
-//             SET current_version_id = ${versionId} 
-//             WHERE part_id = ${partId}
-//             `;
-//             console.log('[createPart] Current version updated successfully');
-
-//             // 4. Add related data
-//             await addPartRelationships(transaction, partId, versionId, userId, input);
-            
-//             // 5. Return the created part with its version
-//             const createdPart = await transaction`
-//                 SELECT p.*, pv.*
-//                 FROM "Part" p
-//                 LEFT JOIN "PartVersion" pv ON p.current_version_id = pv.part_version_id
-//                 WHERE p.part_id = ${partId}
-//             `;
-
-//             return normalizePart(createdPart[0]);
-//         });
-
-//         console.log('[createPart] Successfully created part with all related data');
-//         return result;
-//     } catch (error) {
-//         console.error('[createPart] Error creating part:', error);
-//         throw error;
-//     }
-// }
 
 /**
  * Helper function to insert the part record
@@ -1899,7 +1816,7 @@ export async function updatePartVersion(
 }
 
 /**
- * Delete a part and all its related data (cascades to versions)
+ * Delete a part and all its related data
  * 
  * @param partId The ID of the part to delete
  * @throws Error if part not found or cannot be deleted
@@ -1908,53 +1825,186 @@ export async function deletePart(partId: string): Promise<void> {
 	try {
 		// Validate the input
 		if (!partId || partId.trim() === '') {
+			console.error(`[deletePart] VALIDATION ERROR: Invalid part ID`);
 			throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part ID`);
 		}
 	
-		console.log(`[deletePart] Deleting part with ID: ${partId}`);
+		console.log(`[deletePart] ====== START DELETION for part ID: ${partId} ======`);
+		
+		// Check if part exists before attempting transaction
+		const checkExists = await sql`SELECT part_id FROM "Part" WHERE part_id = ${partId}`;
+		console.log(`[deletePart] Check part exists: Found ${checkExists.length} parts with ID ${partId}`);
+		
+		if (checkExists.length === 0) {
+			console.error(`[deletePart] Part not found with ID: ${partId}`);
+			throw new Error(`${PART_ERRORS.NOT_FOUND}: Part not found with ID: ${partId}`);
+		}
+		
+		// Get all part versions to delete their dependencies first
+		const partVersions = await sql`
+			SELECT part_version_id FROM "PartVersion" WHERE part_id = ${partId}
+		`;
+		const versionIds = partVersions.map(v => v.part_version_id);
+		console.log(`[deletePart] Found ${versionIds.length} part versions to delete`);
 		
 		// Use a transaction for atomic delete operation
-		await sql.begin(async (transaction) => {
-			// First lock the part row to prevent concurrent modifications
-			// This helps prevent the "tuple concurrently updated" error
-			const lockResult = await transaction`
-				SELECT part_id FROM "Part" WHERE part_id = ${partId} FOR UPDATE
-			`;
-			
-			if (lockResult.length === 0) {
-				throw new Error(`${PART_ERRORS.NOT_FOUND}: Part not found with ID: ${partId}`);
-			}
-			
-			console.log(`[deletePart] Part ${partId} found and locked for deletion`);
-			
-			try {
-				// Delete part structure links (to avoid foreign key constraint issues)
-				await transaction`
-					DELETE FROM "PartStructure" 
-					WHERE parent_part_id = ${partId} OR child_part_id = ${partId}
-				`;
-				console.log(`[deletePart] Deleted part structure links`);
+		try {
+			console.log(`[deletePart] Starting SQL transaction for deletion`);
+			await sql.begin(async (transaction) => {
+				console.log(`[deletePart] Transaction started`);
 				
-				// Delete the part (relies on CASCADE for versions and other related data)
-				const deleteResult = await transaction`
-					DELETE FROM "Part" WHERE part_id = ${partId} RETURNING part_id
-				`;
-				
-				if (deleteResult.length === 0) {
-					throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to delete part with ID: ${partId}`);
+				// First lock the part row to prevent concurrent modifications
+				try {
+					console.log(`[deletePart] Attempting to lock part row`);
+					const lockResult = await transaction`
+						SELECT part_id FROM "Part" WHERE part_id = ${partId} FOR UPDATE
+					`;
+					
+					if (lockResult.length === 0) {
+						console.error(`[deletePart] Could not lock part: not found`);
+						throw new Error(`${PART_ERRORS.NOT_FOUND}: Part not found with ID: ${partId}`);
+					}
+					
+					console.log(`[deletePart] Part ${partId} found and locked for deletion`);
+				} catch (lockError) {
+					console.error(`[deletePart] Error locking part row:`, lockError);
+					throw new Error(`Error locking part row: ${lockError instanceof Error ? lockError.message : 'Unknown error'}`);
 				}
 				
-				console.log(`[deletePart] Part ${partId} successfully deleted within transaction`);
-			} catch (deleteError) {
-				// Log detailed error for database problems
-				console.error(`[deletePart] Database error during deletion:`, deleteError);
-				throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Database error during part deletion: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`);
-			}
-		});
+				// 1. Delete from PartGroupLink
+				try {
+					console.log(`[deletePart] Deleting from PartGroupLink`);
+					const groupLinkResult = await transaction`
+						DELETE FROM "PartGroupLink" 
+						WHERE part_id = ${partId}
+						RETURNING part_group_link_id
+					`;
+					console.log(`[deletePart] Deleted ${groupLinkResult.length} part group links`);
+				} catch (groupLinkError) {
+					console.error(`[deletePart] Error deleting from PartGroupLink:`, groupLinkError);
+					throw new Error(`Error deleting from PartGroupLink: ${groupLinkError instanceof Error ? groupLinkError.message : 'Unknown error'}`);
+				}
+				
+				// 2. Delete from PartStructure
+				try {
+					console.log(`[deletePart] Deleting from PartStructure`);
+					const structureResult = await transaction`
+						DELETE FROM "PartStructure" 
+						WHERE parent_part_id = ${partId} OR child_part_id = ${partId}
+						RETURNING part_structure_id
+					`;
+					console.log(`[deletePart] Deleted ${structureResult.length} part structure links`);
+				} catch (structureError) {
+					console.error(`[deletePart] Error deleting from PartStructure:`, structureError);
+					throw new Error(`Error deleting from PartStructure: ${structureError instanceof Error ? structureError.message : 'Unknown error'}`);
+				}
+				
+				// 3. For each part version, delete dependent records
+				for (const versionId of versionIds) {
+					try {
+						console.log(`[deletePart] Processing dependent tables for part version ${versionId}`);
+						
+						// 3.1. Delete from PartValidation
+						await transaction`
+							DELETE FROM "PartValidation" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.2. Delete from PartRevision
+						await transaction`
+							DELETE FROM "PartRevision" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.3. Delete from PartVersionTag
+						await transaction`
+							DELETE FROM "PartVersionTag" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.4. Delete from PartVersionCategory
+						await transaction`
+							DELETE FROM "PartVersionCategory" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.5. Delete from PartCompliance
+						await transaction`
+							DELETE FROM "PartCompliance" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.6. Delete from PartAttachment
+						await transaction`
+							DELETE FROM "PartAttachment" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.7. Delete from PartRepresentation
+						await transaction`
+							DELETE FROM "PartRepresentation" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.8. Get all ManufacturerPart IDs to delete SupplierPart records
+						const manufacturerParts = await transaction`
+							SELECT manufacturer_part_id FROM "ManufacturerPart" WHERE part_version_id = ${versionId}
+						`;
+						
+						// 3.9. Delete from SupplierPart for each ManufacturerPart
+						for (const mfgPart of manufacturerParts) {
+							await transaction`
+								DELETE FROM "SupplierPart" WHERE manufacturer_part_id = ${mfgPart.manufacturer_part_id}
+							`;
+						}
+						
+						// 3.10. Delete from ManufacturerPart
+						await transaction`
+							DELETE FROM "ManufacturerPart" WHERE part_version_id = ${versionId}
+						`;
+						
+						console.log(`[deletePart] Successfully deleted all dependent records for part version ${versionId}`);
+					} catch (versionDependenciesError) {
+						console.error(`[deletePart] Error deleting dependencies for part version ${versionId}:`, versionDependenciesError);
+						throw new Error(`Error deleting version dependencies: ${versionDependenciesError instanceof Error ? versionDependenciesError.message : 'Unknown error'}`);
+					}
+				}
+				
+				// 4. Delete from PartVersion
+				try {
+					console.log(`[deletePart] Deleting all PartVersion records`);
+					const versionResult = await transaction`
+						DELETE FROM "PartVersion" WHERE part_id = ${partId}
+						RETURNING part_version_id
+					`;
+					console.log(`[deletePart] Deleted ${versionResult.length} part versions`);
+				} catch (versionError) {
+					console.error(`[deletePart] Error deleting from PartVersion:`, versionError);
+					throw new Error(`Error deleting from PartVersion: ${versionError instanceof Error ? versionError.message : 'Unknown error'}`);
+				}
+				
+				// 5. Finally delete the Part record
+				try {
+					console.log(`[deletePart] Executing final DELETE for Part`);
+					const deleteResult = await transaction`
+						DELETE FROM "Part" WHERE part_id = ${partId}
+						RETURNING part_id
+					`;
+					
+					if (deleteResult.length === 0) {
+						console.error(`[deletePart] Part deletion failed: no rows deleted`);
+						throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to delete part with ID: ${partId}`);
+					}
+					
+					console.log(`[deletePart] Part ${partId} successfully deleted`);
+				} catch (deleteError) {
+					console.error(`[deletePart] Error in final DELETE statement:`, deleteError);
+					throw new Error(`Error in final DELETE: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`);
+				}
+			});
+			console.log(`[deletePart] Transaction completed successfully`);
+		} catch (transactionError) {
+			console.error(`[deletePart] Transaction failed:`, transactionError);
+			throw new Error(`Transaction failed: ${transactionError instanceof Error ? transactionError.message : 'Unknown error'}`);
+		}
 		
-		console.log(`[deletePart] Successfully deleted part with ID: ${partId} and all related data`);
+		console.log(`[deletePart] ====== COMPLETED DELETION for part ID: ${partId} ======`);
 	} catch (error) {
-		console.error(`[deletePart] Error deleting part ${partId}:`, error);
+		console.error(`[deletePart] ====== ERROR deleting part ${partId} ======`);
+		console.error(`[deletePart] Error details:`, error);
 		// With sql.begin(), rollback happens automatically on error
 		throw error;
 	}
@@ -2772,6 +2822,21 @@ export async function addCompletePart(partData: {
                 }
             }
             
+            // 8. Process categories if provided
+            if (partData.categories && partData.categories.length > 0) {
+                try {
+                    console.log(`[addCompletePart] Saving ${partData.categories.length} categories for part version ${versionId}`);
+                    await saveCategoriesToPartVersion(versionId, partData.categories, partData.createdBy);
+                    console.log(`[addCompletePart] Successfully saved categories for part version ${versionId}`);
+                } catch (categoryError) {
+                    console.error(`[addCompletePart] Error saving categories for part version ${versionId}:`, categoryError);
+                    // Continue with part creation even if category association fails
+                    // We don't want to fail the entire part creation just because of categories
+                }
+            } else {
+                console.log(`[addCompletePart] No categories provided for part version ${versionId}`);
+            }
+            
             // Cast the results to the expected return types to satisfy TypeScript
             // This is safe because we know the structure matches what's needed
             return {
@@ -2782,6 +2847,69 @@ export async function addCompletePart(partData: {
     } catch (error) {
         console.error('[addCompletePart] Error creating complete part:', error);
         throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Error creating complete part: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Save categories for a part version
+ * 
+ * @param partVersionId The part version ID to save categories for
+ * @param categoryIds Array of category IDs to associate with the part version
+ * @param userId ID of the user making the change
+ * @returns Boolean indicating success
+ */
+export async function saveCategoriesToPartVersion(partVersionId: string, categoryIds: string[], userId: string): Promise<boolean> {
+    try {
+        // Validate input
+        if (!partVersionId || partVersionId.trim() === '') {
+            throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part version ID`);
+        }
+        
+        if (!Array.isArray(categoryIds)) {
+            console.warn(`[saveCategoriesToPartVersion] No categories provided for part version ${partVersionId}`);
+            return true; // Not an error, just no categories to save
+        }
+        
+        // Filter out empty or invalid category IDs
+        const validCategoryIds = categoryIds.filter(id => id && id.trim() !== '');
+        
+        console.log(`[saveCategoriesToPartVersion] Saving ${validCategoryIds.length} categories for part version ${partVersionId}`);
+        
+        // Start a transaction to ensure consistency
+        return await sql.begin(async transaction => {
+            // First, delete existing category associations for this part version
+            await transaction`
+                DELETE FROM "PartVersionCategory"
+                WHERE part_version_id = ${partVersionId}
+            `;
+            
+            // If there are no categories to save, we're done
+            if (validCategoryIds.length === 0) {
+                console.log(`[saveCategoriesToPartVersion] No valid categories to save for part version ${partVersionId}`);
+                return true;
+            }
+            
+            // Insert new category associations
+            const now = new Date();
+            for (const categoryId of validCategoryIds) {
+                await transaction`
+                    INSERT INTO "PartVersionCategory" (
+                        part_version_id,
+                        category_id
+                    ) VALUES (
+                        ${partVersionId},
+                        ${categoryId}
+                    )
+                    ON CONFLICT (part_version_id, category_id) DO NOTHING
+                `;
+            }
+            
+            console.log(`[saveCategoriesToPartVersion] Successfully saved ${validCategoryIds.length} categories for part version ${partVersionId}`);
+            return true;
+        });
+    } catch (error) {
+        console.error(`[saveCategoriesToPartVersion] Error saving categories for part version ${partVersionId}:`, error);
+        throw new Error(`Error saving categories: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -3339,9 +3467,60 @@ export async function createUnifiedPart(
       }
       
       // 11. Process categories if provided
-      if (Array.isArray(unifiedPartData.categories) && unifiedPartData.categories.length > 0) {
-        for (const categoryId of unifiedPartData.categories) {
-          if (categoryId) {
+      try {
+        let categoryIdsToSave: string[] = [];
+        
+        // Process category_ids field (string or array of strings)
+        if (unifiedPartData.category_ids) {
+          if (typeof unifiedPartData.category_ids === 'string' && unifiedPartData.category_ids.trim() !== '') {
+            // Single ID as string
+            console.log(`[createUnifiedPart] Processing category_ids as string: ${unifiedPartData.category_ids}`);
+            categoryIdsToSave.push(unifiedPartData.category_ids.trim());
+          } else if (Array.isArray(unifiedPartData.category_ids)) {
+            // Array of IDs
+            console.log(`[createUnifiedPart] Processing ${unifiedPartData.category_ids.length} category_ids`);
+            categoryIdsToSave = [
+              ...categoryIdsToSave, 
+              ...unifiedPartData.category_ids.filter(id => typeof id === 'string' && id.trim() !== '')
+            ];
+          }
+        }
+        
+        // Also process categories array (for backward compatibility)
+        if (Array.isArray(unifiedPartData.categories) && unifiedPartData.categories.length > 0) {
+          console.log(`[createUnifiedPart] Processing ${unifiedPartData.categories.length} categories`);
+          
+          // Extract category IDs from the categories array
+          const categoryIds = unifiedPartData.categories.map(category => {
+            if (typeof category === 'string') {
+              return category; // Already a category ID
+            } else if (typeof category === 'object' && category !== null) {
+              if ('category_id' in category && typeof category.category_id === 'string') {
+                return category.category_id; // Extract ID from category object
+              } else if ('id' in category && typeof category.id === 'string') {
+                return category.id; // Extract ID from simplified category object (id/name format)
+              }
+            }
+            return null; // Invalid category format
+          }).filter((id): id is string => id !== null && id !== undefined && id !== '');
+          
+          categoryIdsToSave = [...categoryIdsToSave, ...categoryIds];
+        }
+        
+        // Remove duplicates
+        categoryIdsToSave = [...new Set(categoryIdsToSave)];
+        
+        if (categoryIdsToSave.length > 0) {
+          console.log(`[createUnifiedPart] Saving ${categoryIdsToSave.length} categories for part version ${versionId}`);
+          
+          // Delete any existing categories first to avoid duplicates
+          await transaction`
+            DELETE FROM "PartVersionCategory"
+            WHERE part_version_id = ${versionId}
+          `;
+          
+          // Insert each category
+          for (const categoryId of categoryIdsToSave) {
             await transaction`
               INSERT INTO "PartVersionCategory" (
                 part_version_id,
@@ -3350,10 +3529,16 @@ export async function createUnifiedPart(
                 ${versionId},
                 ${categoryId}
               )
+              ON CONFLICT (part_version_id, category_id) DO NOTHING
             `;
           }
+          console.log(`[createUnifiedPart] Successfully saved ${categoryIdsToSave.length} categories for part version ${versionId}`);
+        } else {
+          console.log(`[createUnifiedPart] No categories to save for part version ${versionId}`);
         }
-        console.log('[createUnifiedPart] Categories linked successfully');
+      } catch (categoryError) {
+        console.error(`[createUnifiedPart] Error saving categories for part version ${versionId}:`, categoryError);
+        // Continue with part creation even if category association fails
       }
       
       // 12. Process part families if provided
@@ -3423,6 +3608,8 @@ export async function createUnifiedPart(
         }
         console.log('[createUnifiedPart] Custom fields saved successfully');
       }
+      
+     
       
       // 15. Fetch the created part and version data
       const createdPartData = await transaction`
@@ -3958,23 +4145,39 @@ export async function updateUnifiedPart(
       }
       
       // 8.9 Handle categories if provided
-      if (Array.isArray(unifiedPartData.categories) && unifiedPartData.categories.length > 0) {
-        console.log('[updateUnifiedPart] Processing categories');
+      if (Array.isArray(unifiedPartData.categories)) {
+        console.log(`[updateUnifiedPart] Processing ${unifiedPartData.categories.length} categories for part version ${newVersionId}`);
         
-        for (const categoryId of unifiedPartData.categories) {
-          if (categoryId && typeof categoryId === 'string') {
-            try {
-              // Use explicit string parameters instead of template literals to avoid type issues
-              await transaction.unsafe(
-                `INSERT INTO "PartVersionCategory" (part_version_id, category_id) VALUES ($1, $2)`,
-                [newVersionId, categoryId]
-              );
-            } catch (categoryError: unknown) {
-              console.error('[updateUnifiedPart] Error linking category:', categoryError);
-              // Don't fail the entire transaction for category errors
+        try {
+          // Extract category IDs from the categories array
+          // This handles both cases: when categories is an array of strings (IDs) or an array of category objects
+          const categoryIds = unifiedPartData.categories.map(category => {
+            if (typeof category === 'string') {
+              return category; // Already a category ID
+            } else if (typeof category === 'object' && category !== null) {
+              if ('category_id' in category && typeof category.category_id === 'string') {
+                return category.category_id; // Extract ID from category object
+              } else if ('id' in category && typeof category.id === 'string') {
+                return category.id; // Extract ID from simplified category object (id/name format)
+              }
             }
+            return null; // Invalid category format
+          }).filter((id): id is string => id !== null && id !== undefined && id !== '');
+          
+          if (categoryIds.length > 0) {
+            // Use the saveCategoriesToPartVersion function to handle categories consistently
+            await saveCategoriesToPartVersion(newVersionId, categoryIds, userId);
+            console.log(`[updateUnifiedPart] Successfully saved ${categoryIds.length} categories for part version ${newVersionId}`);
+          } else {
+            console.log(`[updateUnifiedPart] No valid category IDs found to save`);
           }
+        } catch (categoryError) {
+          console.error(`[updateUnifiedPart] Error saving categories for part version ${newVersionId}:`, categoryError);
+          // Don't fail the entire transaction for category errors
+          // We want the part update to succeed even if category association fails
         }
+      } else {
+        console.log(`[updateUnifiedPart] No categories provided for part version ${newVersionId}`);
       }
       
       // 8.10 Handle part families if provided
@@ -4121,108 +4324,7 @@ export async function updateUnifiedPart(
   }
 }
 
-// export async function updatePartWithStatus(
-//   partId: string,
-//   newVersionId: string,
-//   newStatus: PartStatusEnum,
-//   userId?: string
-// ): Promise<void> {
-//   try {
-//     console.log(`[updatePartWithStatus] Updating part ${partId} with new version ${newVersionId} and status ${newStatus}`);
-    
-//     // Validate inputs
-//     if (!partId || partId.trim() === '') {
-//       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part ID`);
-//     }
-    
-//     if (!newVersionId || newVersionId.trim() === '') {
-//       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid version ID`);
-//     }
-    
-//     if (!Object.values(PartStatusEnum).includes(newStatus)) {
-//       throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Invalid part status: ${newStatus}`);
-//     }
-    
-//     // Begin transaction for atomic updates
-//     await sql.begin(async (transaction) => {
-//       console.log('[updatePartWithStatus] Transaction started');
-      
-//       // First, verify the version exists
-//       const versionCheck = await transaction`
-//         SELECT part_version_id, part_id FROM "PartVersion" 
-//         WHERE part_version_id = ${newVersionId}
-//       `;
-      
-//       if (versionCheck.length === 0) {
-//         throw new Error(`${PART_ERRORS.NOT_FOUND}: Part version with ID ${newVersionId} not found`);
-//       }
-      
-//       // Verify the version belongs to this part
-//       if (versionCheck[0].part_id !== partId) {
-//         throw new Error(`${PART_ERRORS.VALIDATION_ERROR}: Version ${newVersionId} does not belong to part ${partId}`);
-//       }
-      
-//       // Lock the part row to prevent concurrent modifications
-//       const lockResult = await transaction`
-//         SELECT part_id FROM "Part" WHERE part_id = ${partId} FOR UPDATE
-//       `;
-      
-//       if (lockResult.length === 0) {
-//         throw new Error(`${PART_ERRORS.NOT_FOUND}: Part with ID ${partId} not found or could not be locked`);
-//       }
-      
-//       console.log('[updatePartWithStatus] Part row locked for update');
-      
-//       // Update the part with the new version ID and status
-//       const updateResult = await transaction`
-//         UPDATE "Part"
-//         SET 
-//           current_version_id = ${newVersionId},
-//           status_in_bom = ${newStatus}::part_status_enum,
-//           updated_at = ${sql.unsafe('NOW()')},
-//           updated_by = ${userId || null}
-//         WHERE part_id = ${partId}
-//         RETURNING part_id
-//       `;
-      
-//       if (updateResult.length === 0) {
-//         throw new Error(`${PART_ERRORS.GENERAL_ERROR}: Failed to update part ${partId}`);
-//       }
-      
-//       console.log('[updatePartWithStatus] Part updated successfully');
-      
-//       // If we have a userId, create a revision record for this update
-//       if (userId) {
-//         try {
-//           await createPartRevision(
-//             newVersionId,
-//             '', // revision number - automatically assigned
-//             userId,
-//             'STATUS_CHANGE',
-//             `Changed part status to ${newStatus} and set as current version`,
-//             '', // justification
-//             ['status_in_bom', 'current_version_id'],
-//             {}, // previous values - would require an additional query to get
-//             { status_in_bom: newStatus, current_version_id: newVersionId },
-//             'APPROVED',
-//             userId,
-//             new Date(),
-//             ''
-//           );
-//           console.log('[updatePartWithStatus] Created revision record for status change');
-//         } catch (revisionError: unknown) {
-//           // Don't fail the update if revision creation fails
-//           console.error('[updatePartWithStatus] Error creating revision record:', revisionError);
-//         }
-//       }
-//     });
-    
-//     console.log('[updatePartWithStatus] Transaction committed successfully');
-//   } catch (error: unknown) {
-//     console.error('[updatePartWithStatus] Error:', error);
-//     throw new Error(`${PART_ERRORS.GENERAL_ERROR}: ${error instanceof Error ? error.message : String(error)}`);
-//   }
-// }
+
 
 /**
  * Get a complete part as a UnifiedPart object
@@ -4457,6 +4559,55 @@ export async function getUnifiedPart(partId: string): Promise<UnifiedPart | null
       console.error('Error handling part version tags:', error);
       unifiedPart.part_version_tags = [];
     }
+
+    
+  // 8.5. Get categories for the part version
+  try {
+    console.log(`[getUnifiedPart] Loading categories for part version ${currentVersion.part_version_id}`);
+    
+    // Initialize with empty arrays first to avoid any undefined issues
+    unifiedPart.categories = [];
+    unifiedPart.category_ids = '';
+    
+    // Fetch categories from the database
+    const categoryDetails = await getCategoryDetailsForPartVersion(currentVersion.part_version_id);
+    console.log(`[getUnifiedPart] Raw category details for part version ${currentVersion.part_version_id}:`, JSON.stringify(categoryDetails));
+    
+    if (categoryDetails && categoryDetails.length > 0) {
+      // Set category_ids as a comma-separated string for backward compatibility
+      // This is critical for the PartCard component which can use either format
+      unifiedPart.category_ids = categoryDetails.map(cat => cat.id).join(',');
+      console.log(`[getUnifiedPart] Set category_ids to: '${unifiedPart.category_ids}'`);
+      
+      // Create properly formatted Category objects that conform to what the UI expects
+      const formattedCategories = categoryDetails.map(cat => ({
+        category_id: cat.id,
+        category_name: cat.name,
+        // Add minimal required properties for Category type
+        is_public: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+        created_by: '',
+        is_deleted: false,
+        category_path: cat.name
+      }));
+      
+      // Log what we're providing to help with debugging
+      console.log(`[getUnifiedPart] Loaded ${categoryDetails.length} categories for part version ${currentVersion.part_version_id}`);
+      console.log('[getUnifiedPart] Formatted categories:', JSON.stringify(formattedCategories));
+      
+      // Assign the properly formatted categories
+      unifiedPart.categories = formattedCategories;
+      
+      // Add category_ids directly to the root of unifiedPart for backward compatibility
+      // Some UI components might be looking for this field
+      console.log(`[getUnifiedPart] Final category_ids value: '${unifiedPart.category_ids}'`);
+    } else {
+      console.log(`[getUnifiedPart] No categories found for part version ${currentVersion.part_version_id}`);
+    }
+  } catch (error) {
+    console.error(`[getUnifiedPart] Error loading categories:`, error);
+  }
     
     // 9. Get part structure (BOM relationships)
     // Using the existing BOM structure function

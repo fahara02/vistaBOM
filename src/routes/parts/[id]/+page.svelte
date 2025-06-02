@@ -1,11 +1,20 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import PartCard from '@/components/cards/PartCard.svelte';
-  import type { UnifiedPart } from '$lib/types/schemaTypes';
+  import type { UnifiedPart, ManufacturerPartDefinition } from '$lib/types/schemaTypes';
+  import type { Part, PartVersion } from '$lib/types';
   export let data: PageData;
   
+  // Define a type with the extra properties that we know exist on currentVersion
+  // This follows the project type extension pattern:
+  // "For extended types, use intersection: export let entity: Entity & { parent_name?: string }"
+  type ExtendedVersion = PartVersion & {
+    category_ids?: string[] | string;
+    manufacturer_parts?: ManufacturerPartDefinition[];
+  }
+  
   // Convert the part and currentVersion to a UnifiedPart object
-  function createUnifiedPart(part: typeof data.part, currentVersion: typeof data.currentVersion): UnifiedPart {
+  function createUnifiedPart(part: Part, currentVersion: ExtendedVersion): UnifiedPart {
     return {
       // Core Part data
       part_id: part.part_id,
@@ -55,8 +64,9 @@
       mechanical_properties: currentVersion.mechanical_properties,
       thermal_properties: currentVersion.thermal_properties,
       
-      // Empty arrays for relationships (these would need to be loaded separately)
-      manufacturer_parts: [],
+      // These would be overwritten with empty arrays, but we need to preserve the data from backend
+      category_ids: currentVersion.category_ids,
+      manufacturer_parts: currentVersion.manufacturer_parts,
       supplier_parts: [],
       attachments: [],
       representations: [],
@@ -65,7 +75,18 @@
     } as UnifiedPart;
   }
   
-  const unifiedPart = createUnifiedPart(data.part, data.currentVersion);
+  // Cast the currentVersion to our extended type to ensure TypeScript recognizes the properties
+  const typedCurrentVersion = data.currentVersion as ExtendedVersion;
+  
+  // Console log to verify data coming from the server
+  console.log('Part data from server:', {
+    'data.part': data.part,
+    'data.currentVersion': typedCurrentVersion,
+    'data.currentVersion.category_ids': typedCurrentVersion.category_ids,
+    'data.currentVersion.manufacturer_parts': typedCurrentVersion.manufacturer_parts
+  });
+
+  const unifiedPart = createUnifiedPart(data.part, typedCurrentVersion);
 </script>
 
 <svelte:head>

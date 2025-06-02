@@ -61,65 +61,7 @@
     }
  
     
-    // This function is no longer needed as we're working directly with UnifiedPart objects
-    // but we'll keep a simplified version for backwards compatibility
-    function getUnifiedPartFromLegacyFormat(item: any): UnifiedPart {
-        // If it's already a UnifiedPart, return it as is
-        if (item.part_id && item.part_name) {
-            return item as UnifiedPart;
-        }
-        
-        // If it has the legacy nested structure, convert to UnifiedPart
-        if (item.part && item.currentVersion) {
-            const part = item.part;
-            const currentVersion = item.currentVersion;
-            
-            return {
-                part_id: part.part_id,
-                part_version_id: currentVersion.part_version_id || '', // Add required field
-                part_name: currentVersion.part_name || 'Unnamed Part',
-                part_version: currentVersion.part_version || '0.1.0',
-                global_part_number: part.global_part_number || '',
-                status_in_bom: part.status_in_bom || PartStatusEnum.CONCEPT,
-                version_status: currentVersion.version_status || LifecycleStatusEnum.DRAFT,
-                lifecycle_status: part.lifecycle_status || LifecycleStatusEnum.DRAFT,
-                is_public: Boolean(part.is_public),
-                short_description: currentVersion.short_description || '',
-                long_description: currentVersion.long_description || '',
-                functional_description: currentVersion.functional_description || '',
-                created_at: part.created_at || new Date(),
-                updated_at: part.updated_at || new Date(),
-                creator_id: part.creator_id || '',
-                manufacturer_parts: [],
-                supplier_parts: [],
-                attachments: [],
-                representations: [],
-                structure: [],
-                compliance_info: []
-            } as UnifiedPart;
-        }
-        
-        // Return a minimal UnifiedPart with available data
-        return {
-            part_id: item.part_id || '',
-            part_version_id: item.part_version_id || '', // Add required field
-            part_name: item.part_name || 'Unnamed Part',
-            part_version: item.part_version || '0.1.0',
-            status_in_bom: item.status_in_bom || PartStatusEnum.CONCEPT,
-            version_status: item.version_status || LifecycleStatusEnum.DRAFT,
-            lifecycle_status: item.lifecycle_status || LifecycleStatusEnum.DRAFT,
-            is_public: Boolean(item.is_public),
-            created_at: item.created_at || new Date(),
-            updated_at: item.updated_at || new Date(),
-            creator_id: item.creator_id || '',
-            manufacturer_parts: [],
-            supplier_parts: [],
-            attachments: [],
-            representations: [],
-            structure: [],
-            compliance_info: []
-        } as UnifiedPart;
-    }
+
     
     // Handle GridView edit event
     function handleGridPartEdit(gridItem: GridEntity) {
@@ -129,6 +71,9 @@
             // This is safer than using a direct type assertion with 'as UnifiedPart'
             const gridItemPart = gridItem as GridPart;
             // We keep track of the current version as a reference but don't need to use direct assertions
+            
+            // Track the current part ID for edit mode
+            currentPartId = gridItemPart.part_id;
             
             // Initialize a flattened structure that matches UnifiedPart interface
             // combining both Part and PartVersion fields into a single object
@@ -161,7 +106,9 @@
                 manufacturer_part_number: gridItemPart.manufacturer_part_number,
                 mpn: gridItemPart.mpn,
                 gtin: gridItemPart.gtin,
-                category_ids: gridItemPart.category_ids,
+                category_ids: Array.isArray(gridItemPart.categories) && gridItemPart.categories.length > 0 
+                    ? gridItemPart.categories.map(c => c.category_id).join(',') 
+                    : null,
                 family_ids: gridItemPart.family_ids,
                 group_ids: gridItemPart.group_ids,
                 tag_ids: gridItemPart.tag_ids,
@@ -225,26 +172,78 @@
                 released_at: gridItemPart.released_at,
                 full_description: gridItemPart.full_description || gridItemPart.long_description
             };
-                        
-            // Log key fields to verify they're being set
-            console.log('✅ FORM DATA SET WITH ALL FIELDS:');
-            console.log('- part_name:', formData.part_name);
-            console.log('- part_version:', formData.part_version);
-            console.log('- version_status:', formData.version_status);
-            console.log('- short_description:', formData.short_description);
+            
+            // Update the form instance if available
+            if (formInstance?.form) {
+                // Use the normalized UnifiedPart with type-safe dimensions
+                formInstance.form.update(form => ({
+                    ...form,
+                    ...formData
+                }));
+                
+                // Set edit mode and show form - CRITICAL FOR FORM DISPLAY
+                editMode = true;
+                showForm = true;
+                
+                // Also dispatch the editPart event to ensure parent components are notified
+                dispatch('editPart', { 
+                    part: formData as UnifiedPart, 
+                    currentVersion: null 
+                });
+                
+                console.log('✅ FORM DATA SET WITH ALL FIELDS:');
+                console.log('- part_name:', formData.part_name);
+                console.log('- part_version:', formData.part_version);
+                console.log('- version_status:', formData.version_status);
+                console.log('- showForm set to:', showForm);
+                console.log('- editMode set to:', editMode);
+            } else {
+                console.error('Form instance not available for update - cannot edit part');
+            }
         } else {
             console.warn('Unsupported entity type in handleGridPartEdit', gridItem);
         }
     }
     
     // Handle part deletion from GridView
-    function handlePartDelete(event: CustomEvent<{ itemId: string }>): void {
+    async function handlePartDelete(event: CustomEvent<{ itemId: string }>): Promise<void> {
         const partId = event.detail.itemId;
-        // Implementation for delete functionality
-        console.log(`Delete part with ID: ${partId}`);
-        // You would typically call an API to delete the part
-        // After deletion is complete, refresh the parts list
-        dispatch('refreshData');
+        console.log(`Deleting part with ID: ${partId}`);
+        
+        try {
+            // This is the correct SvelteKit 5 format for programmatic action invocation
+            const url = `/parts/${partId}?/delete`;
+            console.log(`Using delete URL: ${url}`);
+            
+            // Send a simple POST request - SvelteKit knows which action to run from the URL
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            console.log(`Delete response status: ${response.status}`);
+            
+            if (response.ok) {
+                console.log(`Successfully deleted part with ID: ${partId}`);
+                // After successful deletion, refresh the parts list
+                dispatch('refreshData');
+            } else {
+                console.error(`Failed to delete part with ID: ${partId}. Status: ${response.status}`);
+                // Try to get error details if available
+                const errorText = await response.text().catch(() => '');
+                console.error('Error response:', errorText);
+                
+                // Even with error, refresh the data to ensure UI is consistent
+                dispatch('refreshData');
+            }
+        } catch (error) {
+            console.error(`Error during part deletion for ID: ${partId}`, error);
+            // Refresh the data to ensure UI is consistent even after error
+            dispatch('refreshData');
+        }
     }
     
     // Event dispatcher with properly typed events
@@ -279,40 +278,7 @@
     // We're using proper runtime type checking to ensure data integrity
     export let formInstance: SuperForm<any> | null = null;
     
-    // Define a type helper for normalized form data to use within this component
-    type NormalizedPartData = {
-        part_id: string;
-        part_name: string;
-        part_version: string;
-        status_in_bom: PartStatusEnum;
-        version_status: LifecycleStatusEnum;
-        dimensions: { length: number; width: number; height: number };
-        manufacturer_parts: Array<{
-            manufacturer_id: string;
-            manufacturer_part_number: string;
-            is_recommended: boolean;
-            description?: string;
-            datasheet_url?: string;
-            product_url?: string;
-            lifecycle_status?: LifecycleStatusEnum | null;
-            notes?: string | null;
-        }>;
-        supplier_parts: Array<{
-            supplier_id: string;
-            supplier_part_number: string;
-            manufacturer_part_index: number;
-            is_preferred: boolean;
-            price?: number;
-            unit_price?: number;
-            currency?: string;
-            min_order_quantity?: number;
-            lead_time_days?: number;
-            package_quantity?: number;
-            notes?: string | null;
-            product_url?: string | null;
-        }>;
-        [key: string]: any;
-    };
+   
     // New props to accept manufacturers and categories from parent dashboard
     export let manufacturers: Manufacturer[] = [];
     export let categories: Category[] = [];
@@ -321,6 +287,7 @@
     let showForm = false;
     let editMode = false;
     let viewMode: 'grid' | 'list' = 'list';
+    let currentPartId: string | null = null; // Track the current part being edited
     
     // Transformed data for form components
     let manufacturerOptions: ManufacturerDisplay[] = [];
@@ -345,6 +312,7 @@
             editMode = false;
             selectedPart = null;
             selectedVersion = null;
+            currentPartId = null; // Reset the current part ID when closing form
         }
     }
 
@@ -502,6 +470,26 @@
             // Create a grid entity from the UnifiedPart
             return {
                 ...unifiedPart,
+                // CRITICAL FIX: Add category_ids from categories array for display in PartCard
+                // Debug logs to understand category data flow
+                ...(()=>{
+                    console.log('DEBUG CATEGORIES in parts-tab:', {
+                        partName: unifiedPart.part_name,
+                        categories: unifiedPart.categories,
+                        categoriesType: Array.isArray(unifiedPart.categories) ? 'array' : typeof unifiedPart.categories,
+                        categoriesLength: Array.isArray(unifiedPart.categories) ? unifiedPart.categories.length : 0,
+                        categoryIds: unifiedPart.category_ids,
+                        categoryIdsType: typeof unifiedPart.category_ids
+                    });
+                    return {};
+                })(),
+                categories: unifiedPart.categories || [],  
+                category_ids: Array.isArray(unifiedPart.categories) && unifiedPart.categories.length > 0
+                    ? unifiedPart.categories.map(c => {
+                        console.log('DEBUG: Category in map:', c);
+                        return c.category_id;
+                    }).join(',')
+                    : (unifiedPart.category_ids || null),
                 entityType: 'part' as EntityType,
                 _currentVersion: {
                     part_version: unifiedPart.part_version,

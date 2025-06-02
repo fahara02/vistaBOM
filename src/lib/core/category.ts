@@ -1,3 +1,4 @@
+//src/lib/core/category.ts
 /**
  * Core functionality for category management
  */
@@ -7,24 +8,6 @@ import crypto from 'crypto';
 // Import schema-driven types
 import type { Category } from '$lib/types/schemaTypes';
 
-// Create a Category type alias for components to use
-export interface UiCategory {
-    id: string;
-    name: string;
-    path: string;
-    parentId?: string | null;
-    description?: string | null;
-    isPublic: boolean;
-    createdBy: string;
-    createdAt: Date;
-    updatedBy?: string | null;
-    updatedAt: Date;
-    isDeleted: boolean;
-    customFields?: Record<string, any> | null;
-    parentName?: string;
-    childCount?: number;
-    depth?: number;
-}
 
 // Import JSON specific types
 import type { JsonValue } from '$lib/types/primitive';
@@ -46,59 +29,7 @@ export const CATEGORY_ERRORS = {
     GENERAL_ERROR: 'An error occurred during the category operation'
 };
 
-/**
- * Extended Category interface for internal use with both camelCase and snake_case properties
- * This provides backwards compatibility with existing code while maintaining type safety
- * Uses schema-driven design from categorySchema
- * Added index signature to make it compatible with DbRow
- */
-interface CategoryWithId extends Omit<Category, 'custom_fields'> {
-    // Index signature for DbRow compatibility
-    [key: string]: any;
-    // Standard API properties (camelCase)
-    id: string;
-    name: string;
-    parentId?: string | null; // Allow null for DB compatibility
-    description?: string | null;
-    path: string;
-    createdBy: string;
-    createdAt: Date;
-    updatedBy?: string | null;
-    updatedAt: Date;
-    isPublic: boolean;
-    isDeleted: boolean;
-    deletedAt?: Date | null;
-    deletedBy?: string | null;
-    
-    // UI helper properties
-    parentName?: string;
-    childCount?: number;
-    partsCount?: number;
-    depth?: number;
-    breadcrumbs?: CategoryWithId[];
-    customFields?: Record<string, JsonValue> | null;
-    
-    // Database column names (snake_case) - extended from Category with more precise null handling
-    category_id: string;
-    category_name: string;
-    parent_id: string | null;
-    category_description: string | null;
-    category_path: string;
-    created_by: string;
-    created_at: Date;
-    updated_by: string | null;
-    updated_at: Date;
-    is_public: boolean;
-    is_deleted: boolean;
-    deleted_at: Date | null;
-    deleted_by: string | null;
-    custom_fields?: Record<string, JsonValue> | null; // Strongly typed JSON field
-    
-    // Database join fields
-    parent_name?: string;
-    child_count?: number;
-    parts_count?: number;
-}
+
 
 /**
  * Sanitizes a category name for use in ltree paths.
@@ -134,7 +65,7 @@ export async function createCategory(params: {
     description?: string | null;
     isPublic?: boolean;
     customFields?: Record<string, JsonValue> | null;
-}): Promise<CategoryWithId> {
+}): Promise<Category> {
  
     const { 
         name, 
@@ -327,7 +258,7 @@ function deserializeCustomFields(json: unknown | null | undefined): Record<strin
  * @param row - Raw database row
  * @returns Normalized category object
  */
-function normalizeCategory(row: DbRow): CategoryWithId {
+function normalizeCategory(row: DbRow): Category {
     // Ensure we have all required fields or throw an error
     if (!row.category_id || !row.category_name || !row.category_path ||
         !row.created_by || !row.created_at || !row.updated_at) {
@@ -349,49 +280,22 @@ function normalizeCategory(row: DbRow): CategoryWithId {
     const customFields = deserializeCustomFields(row.custom_fields);
     
     // Create a normalized category object with both styles of property names
-    const category: CategoryWithId = {
+    const category: Category = {
         // Standard API properties (camelCase)
-        id: row.category_id as string,
-        name: row.category_name as string,
-        parentId: (row.parent_id as string) || undefined,
-        description: (row.category_description as string) || undefined,
-        path: row.category_path as string,
-        createdBy: row.created_by as string,
-        createdAt: created_at,
-        updatedBy: (row.updated_by as string) || undefined,
-        updatedAt: updated_at,
-        isPublic: Boolean(row.is_public),
-        isDeleted: Boolean(row.is_deleted),
-        deletedAt: deleted_at || undefined,
-        deletedBy: (row.deleted_by as string) || undefined,
-        
-        // UI helper properties from joins with safer parsing
-        parentName: (row.parent_name as string) || undefined,
-        childCount: parseInt(row.child_count as string) || undefined,
-        partsCount: parseInt(row.parts_count as string) || undefined,
-        depth: parseInt(row.depth as string) || undefined,
-        customFields: customFields,
-        
-        // Database column names (snake_case) with proper typing
         category_id: row.category_id as string,
         category_name: row.category_name as string,
-        parent_id: (row.parent_id as string) || null,
-        category_description: (row.category_description as string) || null,
+        parent_id: (row.parent_id as string) || undefined,
+        category_description: (row.category_description as string) || undefined,
         category_path: row.category_path as string,
         created_by: row.created_by as string,
         created_at: created_at,
-        updated_by: (row.updated_by as string) || null,
+        updated_by: (row.updated_by as string) || undefined,
         updated_at: updated_at,
         is_public: Boolean(row.is_public),
         is_deleted: Boolean(row.is_deleted),
-        deleted_at: deleted_at,
-        deleted_by: (row.deleted_by as string) || null,
-        custom_fields: customFields,
-        
-        // Database join fields with safer parsing
-        parent_name: (row.parent_name as string) || undefined,
-        child_count: parseInt(row.child_count as string) || undefined,
-        parts_count: parseInt(row.parts_count as string) || undefined
+        deleted_at: deleted_at || undefined,
+        deleted_by: (row.deleted_by as string) || undefined,
+     
     };
 
     return category;
@@ -402,7 +306,7 @@ function normalizeCategory(row: DbRow): CategoryWithId {
  * @param id - Category UUID
  * @returns The category with normalized structure or null if not found
  */
-export async function getCategory(id: string): Promise<CategoryWithId | null> {
+export async function getCategory(id: string): Promise<Category | null> {
     try {
         const result = await sql`
             SELECT * 
@@ -440,7 +344,7 @@ export async function updateCategory(
         isPublic?: boolean;
     },
     userId: string
-): Promise<CategoryWithId> {
+): Promise<Category> {
     // First check that the category exists
     const existing = await getCategory(id);
     if (!existing) {
@@ -590,7 +494,7 @@ export async function getAllCategories(options?: {
     excludeDeleted?: boolean;
     createdBy?: string;
     parentId?: string | null;
-}): Promise<CategoryWithId[]> {
+}): Promise<Category[]> {
     try {
         const { isPublic, excludeDeleted = false, createdBy, parentId } = options || {};
         
@@ -642,7 +546,7 @@ export async function getAllCategories(options?: {
  * @param categoryId - Parent category ID
  * @returns Array of child categories in path order
  */
-export async function getCategoryChildren(categoryId: string): Promise<CategoryWithId[]> {
+export async function getCategoryChildren(categoryId: string): Promise<Category[]> {
     try {
         const result = await sql`
             SELECT * FROM "Category"
@@ -678,7 +582,7 @@ export async function moveCategory(
     categoryId: string,
     newParentId: string | null,
     userId: string
-): Promise<CategoryWithId> {
+): Promise<Category> {
     // Use transactions with porsager/postgres
     await sql`BEGIN`;
     try {
@@ -695,10 +599,10 @@ export async function moveCategory(
         }
 
         // Calculate new path
-        const newParentPath = newParentId ? (await getCategory(newParentId))?.path || '' : '';
+        const newParentPath = newParentId ? (await getCategory(newParentId))?.category_path || '' : '';
         const newPath = newParentPath
-            ? `${newParentPath}.${sanitizeLtreeLabel(category.name)}`
-            : sanitizeLtreeLabel(category.name);
+            ? `${newParentPath}.${sanitizeLtreeLabel(category.category_name)}`
+            : sanitizeLtreeLabel(category.category_name);
 
         // Update category and descendants
         await sql`
@@ -719,7 +623,7 @@ export async function moveCategory(
         
         await sql.unsafe(updateQuery, [
             newPath,
-            category.path,
+            category.category_path,
             categoryId
         ]);
 
@@ -745,7 +649,7 @@ export async function moveCategory(
  * @param categoryId - The ID of the category to get breadcrumbs for
  * @returns Array of ancestor categories in path order, including the target category
  */
-export async function getCategoryBreadcrumbs(categoryId: string): Promise<CategoryWithId[]> {
+export async function getCategoryBreadcrumbs(categoryId: string): Promise<Category[]> {
     try {
         // First validate the category exists
         const category = await getCategory(categoryId);
@@ -808,7 +712,7 @@ export async function searchCategories(params: {
     limit?: number;
     offset?: number;
     createdBy?: string;
-}): Promise<CategoryWithId[]> {
+}): Promise<Category[]> {
     const {
         query,
         isPublic = true,
@@ -932,21 +836,21 @@ export async function getCategoryCustomFields(categoryId: string): Promise<Recor
  * Build a hierarchical tree of categories
  * @returns Array of root categories with their children nested
  */
-export async function getCategoryTree(): Promise<CategoryWithId[]> {
+export async function getCategoryTree(): Promise<Category[]> {
     try {
         // Get all categories ordered by path
         const categories = await getAllCategories({ excludeDeleted: true });
         
         // Create a map for fast lookups - use string keys only
-        const categoryMap = new Map<string, CategoryWithId & { children: CategoryWithId[] }>();
+        const categoryMap = new Map<string, Category& { children: Category[] }>();
         
         // Initialize result array for root categories
-        const rootCategories: (CategoryWithId & { children: CategoryWithId[] })[] = [];
+        const rootCategories: (Category & { children: Category[] })[] = [];
         
         // First pass: create category objects with empty children arrays
         for (const category of categories) {
             // Extract id first since we need it as the map key
-            const id = category.id || category.category_id;
+            const id = category.category_id ;
             
             // Convert DB snake_case to UI camelCase using normalize function
             const normalizedCategory = normalizeCategory(category);
@@ -961,13 +865,13 @@ export async function getCategoryTree(): Promise<CategoryWithId[]> {
         // Second pass: build the tree structure
         for (const category of categories) {
             // Get the normalized category with children array
-            const id = category.id || category.category_id;
+            const id =  category.category_id;
             const categoryWithChildren = categoryMap.get(id);
             
             if (!categoryWithChildren) continue; // Skip if not found for some reason
             
             // Convert null to undefined to make TypeScript happy
-            const parentId = categoryWithChildren.parentId;
+            const parentId = categoryWithChildren.parent_id;
             
             if (parentId) {
                 // Only process if parentId is a valid string
@@ -1068,7 +972,7 @@ export async function updateCategoryCustomFields(
  * @param categoryId - The ID of the category to retrieve
  * @returns The category with counts or null if not found
  */
-export async function getCategoryWithCounts(categoryId: string): Promise<CategoryWithId | null> {
+export async function getCategoryWithCounts(categoryId: string): Promise<Category| null> {
     try {
         /**
          * Execute query with JOINs for efficient data retrieval
@@ -1094,7 +998,7 @@ export async function getCategoryWithCounts(categoryId: string): Promise<Categor
         
         // Normalize category and add custom fields
         const category = normalizeCategory(result[0]);
-        category.customFields = customFields;
+      
         
         return category;
     } catch (error) {

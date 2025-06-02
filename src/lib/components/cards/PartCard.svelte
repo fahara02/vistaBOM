@@ -6,17 +6,102 @@
   // Props
   export let part: UnifiedPart;
 
-  // Debug - log part data on component initialization
+  // Debug - log part data on component initialization to verify data flow
   console.log('PartCard received part data:', {
     'part.part_weight': part.part_weight,
     'part.weight_unit': part.weight_unit,
-    'typeof part.part_weight': typeof part.part_weight,
-    'JSON.stringify of whole part': JSON.stringify(part)
+    'part.manufacturer_parts': part.manufacturer_parts,
+    'part.category_ids': part.category_ids
+  });
+  
+  // Enhanced debug logging to verify received data
+  console.log('PartCard: Processing part data for display', {
+    'part_id': part.part_id,
+    'part_name': part.part_name,
+    'category_ids type': part.category_ids ? (Array.isArray(part.category_ids) ? 'array' : typeof part.category_ids) : 'undefined',
+    'category_ids': part.category_ids,
+    'manufacturer_parts type': part.manufacturer_parts ? (Array.isArray(part.manufacturer_parts) ? 'array' : typeof part.manufacturer_parts) : 'undefined',
+    'manufacturer_parts length': part.manufacturer_parts?.length
+  });
+  
+  // CRITICAL DEBUG - log complete part data on component initialization to diagnose display issues
+  console.log('COMPLETE PART DATA RECEIVED BY PARTCARD:', part);
+  
+  // Detailed debug for critical display fields
+  console.log('CRITICAL FIELDS FOR DISPLAY IN PARTCARD:', {
+    'part.manufacturer_parts': part.manufacturer_parts,
+    'manufacturer_parts type': part.manufacturer_parts ? (Array.isArray(part.manufacturer_parts) ? 'array' : typeof part.manufacturer_parts) : 'undefined',
+    'manufacturer_parts length': part.manufacturer_parts?.length || 0,
+    'part.category_ids': part.category_ids,
+    'category_ids type': part.category_ids ? (Array.isArray(part.category_ids) ? 'array' : typeof part.category_ids) : 'undefined',
+    'category_ids content': Array.isArray(part.category_ids) ? part.category_ids : 
+      (typeof part.category_ids === 'string' ? part.category_ids.split(',') : [])
   });
   
   // Derived values
-  $: hasManufacturerData = !!part.manufacturer_name || (part.manufacturer_parts && part.manufacturer_parts.length > 0);
-  $: hasSupplierData = !!part.supplier_name || (part.supplier_parts && part.supplier_parts.length > 0);
+  $: hasManufacturerData = !!part.manufacturer_name || 
+    (part.manufacturer_parts && part.manufacturer_parts.length > 0);
+  $: hasSupplierData = !!part.supplier_name || 
+    (part.supplier_parts && part.supplier_parts.length > 0);
+  
+  // Type safety helper for array handling without extending UnifiedPart
+  type CategoryIdType = string | string[] | null | undefined;
+  
+  // Check if we have valid category_ids to display
+  // Enhanced category detection that's more resilient to different data formats
+  $: hasCategoryIds = (
+    // Check for category_ids string or array
+    (!!part.category_ids && (
+      (Array.isArray(part.category_ids) && part.category_ids.length > 0) ||
+      (typeof part.category_ids === 'string' && part.category_ids.trim() !== '')
+    )) || 
+    // Check for categories array with different possible structures
+    (Array.isArray(part.categories) && part.categories.length > 0)
+  );
+  
+  // Debug logging to trace category data
+  $: {
+    console.log('PartCard CATEGORY DEBUG:', {
+      partId: part.part_id,
+      partName: part.part_name,
+      hasCategoryIds,
+      categoryIds: part.category_ids,
+      categoryIdsType: typeof part.category_ids,
+      categories: part.categories,
+      categoriesType: Array.isArray(part.categories) ? 'array' : typeof part.categories,
+      categoriesLength: Array.isArray(part.categories) ? part.categories.length : 0
+    });
+  }
+  
+  // SIMPLIFIED HANDLING - Convert category_ids to a consistent array format for rendering
+  // This handles both schema-compliant string format and array format used by UI
+  $: categoryArray = (() => {
+   // Check for categories array first (this is what we receive from the server)
+    if (Array.isArray(part.categories) && part.categories.length > 0) {
+      return part.categories.map(c => c.category_name || c.category_id).filter(Boolean);
+    }
+    // No other categories data
+    if (!part.category_ids) return [];
+    
+    // String format - split by comma if needed
+    if (typeof part.category_ids === 'string') {
+      return part.category_ids.includes(',') 
+        ? part.category_ids.split(',').map(c => c.trim()).filter(Boolean)
+        : [part.category_ids.trim()].filter(Boolean);
+    }
+    
+    // Array format - use as is with type safety
+    if (Array.isArray(part.category_ids)) {
+      // Use a controlled type assertion for the array case
+      return (part.category_ids as string[])
+        .map(c => typeof c === 'string' ? c.trim() : '')
+        .filter(Boolean);
+    }
+    
+    // Fallback - should never reach here with proper typing
+    return [];
+  })();
+  
   $: hasAttachments = part.attachments && part.attachments.length > 0;
   $: hasRepresentations = part.representations && part.representations.length > 0;
   $: hasComplianceInfo = part.compliance_info && part.compliance_info.length > 0;
@@ -95,10 +180,11 @@
       </div>
     {/if}
     
-    {#if part.categories && part.categories.length > 0}
+    <!-- Display categories from category_ids -->
+    {#if hasCategoryIds}
       <div class="part-categories">
-        {#each part.categories as category}
-          <span class="category-tag">{category.category_name}</span>
+        {#each categoryArray as category}
+          <span class="category-tag">{category}</span>
         {/each}
       </div>
     {/if}
@@ -134,6 +220,7 @@
                   <div class="info-value">{part.manufacturer_name}</div>
                 </div>
               {/if}
+              <!-- Just show manufacturer name in overview, full manufacturer parts details are in their own section below -->
             </div>
           </div>
         </div>
@@ -655,9 +742,121 @@
       </div>
     </div>
   </section>
+
+  <!-- Manufacturer Parts Section (when available) -->
+  {#if part.manufacturer_parts && part.manufacturer_parts.length > 0}
+    <section class="part-section manufacturer-section">
+      <div class="section-header">
+        <h2>Manufacturer Parts</h2>
+      </div>
+      
+      <div class="section-content">
+        <div class="manufacturer-parts-table">
+          <div class="table-header">
+            <div class="col-manufacturer">Manufacturer</div>
+            <div class="col-mpn">Part Number</div>
+            <div class="col-recommended">Status</div>
+            <div class="col-datasheet">Resources</div>
+          </div>
+          
+          {#each part.manufacturer_parts as mfrPart}
+            <div class="table-row">
+              <div class="col-manufacturer">
+                <!-- Use manufacturer name if available, otherwise show "Unknown" -->
+                {(mfrPart.manufacturer_id ? (mfrPart.manufacturer_id.split('-')[0]) : 'Unknown')}
+              </div>
+              <div class="col-mpn">
+                {mfrPart.manufacturer_part_number}
+              </div>
+              <div class="col-recommended">
+                {mfrPart.is_recommended ? '✓' : ''}
+              </div>
+              <div class="col-datasheet">
+                {#if mfrPart.datasheet_url}
+                  <a href={formatUrl(mfrPart.datasheet_url)} target="_blank" rel="noopener noreferrer">View</a>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    </section>
+  {/if}
 </div>
 
 <style>
+  /* Component Styling */
+  
+  /* Categories display */
+  .part-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  
+  .category-tag {
+    background-color: #e2e8f0;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.875rem;
+    color: #475569;
+  }
+  
+  /* Manufacturer parts table styling */
+  .manufacturer-section {
+    margin-top: 1.5rem;
+  }
+  
+  .manufacturer-parts-table {
+    width: 100%;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .table-header, .table-row {
+    display: grid;
+    grid-template-columns: 1.5fr 1.5fr 1fr 1fr;
+    align-items: center;
+  }
+  
+  .table-header {
+    background-color: #f8fafc;
+    font-weight: 600;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .table-header > div, .table-row > div {
+    padding: 0.75rem;
+  }
+  
+  .table-row {
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .table-row:last-child {
+    border-bottom: none;
+  }
+  
+  .table-row:hover {
+    background-color: #f8fafc;
+  }
+  
+  .col-recommended {
+    text-align: center;
+    color: #10b981;
+    font-size: 1.125rem;
+  }
+  
+  .col-datasheet a {
+    color: #3b82f6;
+    text-decoration: none;
+  }
+  
+  .col-datasheet a:hover {
+    text-decoration: underline;
+  }
   /* Base Part Card Styles */
   .part-card {
     max-width: 1200px;

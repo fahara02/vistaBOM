@@ -2596,7 +2596,7 @@ onMount(async () => {
           <label for="material_composition">Material Composition (JSON)</label>
           <textarea name="material_composition" id="material_composition" 
                     value={jsonEditors.material_composition} 
-                    on:input={() => onJsonEditorChange('material_composition', jsonEditors.material_composition)} rows="5" class="form-textarea"></textarea>
+                    on:input={() => onJsonEditorChange('material_composition', jsonEditors.material_composition)} rows="5" class="form-textarea s-hgijtH5qMvxW"></textarea>
           <p class="hint">Enter material composition in JSON format, e.g. {`{"body": "aluminum", "pins": "gold plated copper"}`}</p>
         </div>
 
@@ -2604,16 +2604,8 @@ onMount(async () => {
           <label for="mechanical_properties">Additional Mechanical Properties (JSON)</label>
           <textarea name="mechanical_properties" id="mechanical_properties" 
                     value={jsonEditors.mechanical_properties} 
-                    on:input={() => onJsonEditorChange('mechanical_properties', jsonEditors.mechanical_properties)} rows="5" class="form-textarea"></textarea>
+                    on:input={() => onJsonEditorChange('mechanical_properties', jsonEditors.mechanical_properties)} rows="5" class="form-textarea s-hgijtH5qMvxW"></textarea>
           <p class="hint">Enter properties in JSON format, e.g. {`{"tensile_strength": "500 MPa"}`}</p>
-        </div>
-
-        <div class="form-group">
-          <label for="material_composition">Material Composition (JSON)</label>
-          <textarea name="material_composition" id="material_composition" 
-                    value={jsonEditors.material_composition} 
-                    on:input={() => onJsonEditorChange('material_composition', jsonEditors.material_composition)} rows="5"></textarea>
-          <p class="hint">Enter material details in JSON format, e.g. {`{"metals": ["copper", "gold"]}`}</p>
         </div>
       </div>
     </div>

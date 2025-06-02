@@ -24,7 +24,7 @@
   import ManufacturerCard from '$lib/components/cards/manufacturer.svelte';
   import SupplierCard from '$lib/components/cards/supplier.svelte';
   import CategoryCard from '$lib/components/cards/category.svelte';
-  import PartCard from '@/components/cards/PartCard.svelte';
+  import PartCard from '$lib/components/cards/PartCard.svelte';
   
   // Helper function to create a UnifiedPart object for the grid view
   function createUnifiedPart(item: GridEntity): UnifiedPart {
@@ -48,8 +48,30 @@
     const manufacturerPartNumber = 'manufacturer_part_number' in item ? item.manufacturer_part_number : undefined;
     const mpn = 'mpn' in item ? item.mpn : undefined;
     const gtin = 'gtin' in item ? item.gtin : undefined;
-    const categoryIds = 'category_ids' in item ? item.category_ids : undefined;
-    const familyIds = 'family_ids' in item ? item.family_ids : undefined;
+    
+    // Preserve relationship data - CRITICAL for proper display in dashboard
+    // Get category IDs - handle both string and array formats
+    const finalCategoryIds = 'categories' in item && Array.isArray(item.categories) && item.categories.length > 0 ?
+    item.categories.map(c => c.category_id) :
+    ('category_ids' in item ? 
+      (Array.isArray(item.category_ids) ? item.category_ids : 
+        (typeof item.category_ids === 'string' ? item.category_ids.split(',').filter(Boolean) : [])) : 
+      []);
+    
+    
+    
+    // Get manufacturer parts - this is critical for display in PartCard
+    const manufacturerParts = 'manufacturer_parts' in item && Array.isArray(item.manufacturer_parts) ? 
+      item.manufacturer_parts : [];
+    
+    // Handle family IDs properly - also needs to be string | null in UnifiedPart
+    const familyIdsArray = 'family_ids' in item ? 
+      (Array.isArray(item.family_ids) ? item.family_ids : 
+        (typeof item.family_ids === 'string' ? [item.family_ids] : [])) : 
+      [];
+    const familyIds = familyIdsArray.length > 0 ? familyIdsArray.join(',') : null;
+    
+    // Other property handling
     const groupIds = 'group_ids' in item ? item.group_ids : undefined;
     const tagIds = 'tag_ids' in item ? item.tag_ids : undefined;
     const shortDescription = 'short_description' in item ? item.short_description : undefined;
@@ -128,7 +150,9 @@
       manufacturer_part_number: manufacturerPartNumber,
       mpn: mpn,
       gtin: gtin,
-      category_ids: categoryIds,
+      // Convert category_ids to the expected format per schema
+      // If we're in a context that expects string, join the array
+      category_ids: finalCategoryIds.length > 0 ? finalCategoryIds.join(',') : null,
       family_ids: familyIds,
       group_ids: groupIds,
       tag_ids: tagIds,
@@ -179,15 +203,28 @@
       // Revision info
       revision_notes: revisionNotes,
       released_at: releasedAt,
-      
-      // Required arrays (empty for grid view)
-      manufacturer_parts: [],
+      // Add the categories array to the returned object
+categories: 'categories' in item && Array.isArray(item.categories) ? 
+  item.categories : [],
+      // Arrays for relationship objects
+      manufacturer_parts: manufacturerParts,
+      // Store a properly formatted category_ids string for the schema requirement
+      // We'll parse this back into an array in the PartCard component
       supplier_parts: [],
       attachments: [],
       representations: [],
       structure: [],
       compliance_info: []
     };
+    
+    // DEBUG: Log the categories before returning
+    console.log('GridView createUnifiedPart categories DEBUG:', {
+      itemHasCategories: 'categories' in item,
+      itemCategoriesIsArray: 'categories' in item && Array.isArray(item.categories),
+      itemCategoriesLength: 'categories' in item && Array.isArray(item.categories) ? item.categories.length : 0,
+      unifiedPartCategories: unifiedPart.categories,
+      categoriesInResult: Array.isArray(unifiedPart.categories) ? unifiedPart.categories.length : 0
+    });
     
     return unifiedPart;
   }
@@ -739,15 +776,6 @@
     dispatch('delete', { 
       itemId: getItemId(item)
     });
-    
-    // Also provide additional context as custom event properties
-    const deleteEvent = new CustomEvent('deleteContext', {
-      detail: {
-        entityType: entityType,
-        item: item
-      }
-    });
-    dispatchEvent(deleteEvent);
   }
 
   // Truncate text to specified length
@@ -871,25 +899,6 @@
     return processedItem;
   }
 </script>
-
-<!-- Hidden forms for delete actions that will be submitted via JavaScript -->
-{#each items as item}
-  <form 
-    method="POST" 
-    action={fieldMappings.deleteAction} 
-    id="delete-{entityType}-{getItemId(item)}" 
-    class="hidden"
-    use:enhance={() => {
-      return async ({ result }) => {
-        if (result.type === 'success') {
-          dispatch('refresh');
-        }
-      };
-    }}
-  >
-    <input type="hidden" name="{fieldMappings.id}" value={getItemId(item)} />
-  </form>
-{/each}
 
 <div 
   class="grid-container"
@@ -1162,39 +1171,9 @@
     border-radius: 6px;
   }
   
-  /* Hidden forms */
-  .hidden {
-    display: none !important;
-  }
   
-  /* These styles are commented out to fix lint warnings. They will be used in future loading state implementation */
-  /*
-  .grid-loading {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: hsl(var(--card) / 0.7);
-    z-index: 5;
-  }
   
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid hsl(var(--muted));
-    border-top-color: hsl(var(--primary));
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  */
+
   
   /* Focus outline for keyboard navigation */
   .grid-item:focus-visible {
@@ -1202,17 +1181,7 @@
     outline-offset: 2px;
   }
   
-  /* This style is commented out to fix lint warnings. Will be used for future error handling implementation */
-  /*
-  .load-error {
-    padding: 16px;
-    text-align: center;
-    color: hsl(var(--muted-foreground));
-    border: 1px dashed hsl(var(--border));
-    border-radius: 8px;
-    margin: 16px 0;
-  }
-  */
+
 
   /* Grid layout */
   .grid-layout {

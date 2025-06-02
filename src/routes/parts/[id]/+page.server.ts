@@ -1,3 +1,5 @@
+//src/routes/parts/[id]/+page.server.ts
+
 import type { PageServerLoad, Actions } from './$types';
 import { getPartWithCurrentVersion, deletePart } from '@/core/parts';
 import { redirect, error } from '@sveltejs/kit';
@@ -47,8 +49,30 @@ export const actions: Actions = {
       }
 
       console.log(`[parts/[id]/+page.server.ts][delete] Deleting part with ID: ${id}`);
-      await deletePart(id);
-      throw redirect(303, '/parts');
+      
+      try {
+        // Wrap deletePart in its own try/catch to get more specific error information
+        await deletePart(id);
+        console.log(`[parts/[id]/+page.server.ts][delete] Successfully deleted part ID: ${id}`);
+        // Successful deletion - redirect to parts list
+        throw redirect(303, '/parts');
+      } catch (deleteErr) {
+        // Log the specific database error
+        console.error(`[parts/[id]/+page.server.ts][delete] Database error:`, deleteErr);
+        
+        // Check for specific error conditions
+        const errorMsg = deleteErr instanceof Error ? deleteErr.message : 'Unknown database error';
+        
+        // Look for specific patterns in the error message to provide better feedback
+        if (errorMsg.includes('foreign key constraint')) {
+          throw error(400, `Cannot delete part: It is referenced by other items in the system`);
+        } else if (errorMsg.includes('not found')) {
+          throw error(404, `Part with ID ${id} not found`);
+        } else {
+          // Generic database error
+          throw error(500, `Database error: ${errorMsg}`);
+        }
+      }
     } catch (err) {
       console.error(`[parts/[id]/+page.server.ts][delete] Error deleting part:`, err);
       
@@ -57,8 +81,9 @@ export const actions: Actions = {
         throw err;
       }
       
-      // Otherwise wrap as a server error
-      throw error(500, 'Failed to delete part');
+      // Otherwise wrap as a server error with more detail
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      throw error(500, `Failed to delete part: ${errorMessage}`);
     }
   }
 };

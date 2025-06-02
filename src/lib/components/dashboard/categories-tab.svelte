@@ -11,7 +11,7 @@
     import { z } from 'zod';
  
     // Import types
-    import type { Category, JsonValue } from '$lib/types/types';
+    import type { Category, JsonValue } from '$lib/types/schemaTypes';
     import type { GridEntity } from '$lib/types/grid';
     
     // Define a CategoryWithParent interface that extends Category with parent_name
@@ -229,20 +229,38 @@
             }
             
             // Step 2: If parent_id exists but no parent_name, try to resolve from local categories
-            else if (cat.parent_id) {
-                // Find the parent category by ID
-                const parent = categories.find(p => p.category_id === cat.parent_id);
-                if (parent && parent.category_name) {
-                    parentName = parent.category_name;
+            // else if (cat.parent_id) {
+            //     // Find the parent category by ID
+            //     const parent = categories.find(p => p.category_id === cat.parent_id);
+            //     if (parent && parent.category_name) {
+            //         parentName = parent.category_name;
 
+            //     }
+            //     // CRITICAL: If we still don't have a parent name but have an ID, log this as an error
+            //     else {
+            //         console.error(`Failed to resolve parent name for category ${cat.category_name} with parent ID ${cat.parent_id}`);
+            //         // Use a placeholder to avoid showing the UUID
+            //         parentName = 'Unknown Parent';
+            //     }
+            // }
+            // Step 2: If parent_id exists but no parent_name, try to resolve from local categories
+            else if (cat.parent_id) {
+                // First try using allCategories which has ALL categories including parents
+                const parentFromAll = allCategories.find(p => p.category_id === cat.parent_id);
+                if (parentFromAll && parentFromAll.category_name) {
+                    parentName = parentFromAll.category_name;
+                } else {
+                    // Fall back to filtered categories
+                    const parent = categories.find(p => p.category_id === cat.parent_id);
+                    if (parent && parent.category_name) {
+                        parentName = parent.category_name;
+                    } else {
+                        // KEEP the error log for debugging purposes
+                        console.error(`Failed to resolve parent name for category ${cat.category_name} with parent ID ${cat.parent_id}`);
+                        parentName = 'Unknown Parent';
+                    }
                 }
-                // CRITICAL: If we still don't have a parent name but have an ID, log this as an error
-                else {
-                    console.error(`Failed to resolve parent name for category ${cat.category_name} with parent ID ${cat.parent_id}`);
-                    // Use a placeholder to avoid showing the UUID
-                    parentName = 'Unknown Parent';
-                }
-            }
+}
             
             // Simply ensure the parent_name field is correctly set from the database
             
@@ -260,7 +278,9 @@
                 created_by: cat.created_by || currentUserId,
                 // Use the parent_name from server or find it in categories array
                 parent_name: cat.parent_name || (cat.parent_id ? 
-                    categories.find(p => p.category_id === cat.parent_id)?.category_name || 'Unknown Parent' : 
+                    allCategories.find(p => p.category_id === cat.parent_id)?.category_name || 
+                    categories.find(p => p.category_id === cat.parent_id)?.category_name || 
+                    'Unknown Parent' : 
                     undefined)
             };
             

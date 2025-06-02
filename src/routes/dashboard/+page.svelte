@@ -660,7 +660,7 @@
 				manufacturer_part_number: mp.manufacturer_part_number,
 				manufacturer_id: mp.manufacturer_id,
 				is_recommended: mp.is_recommended === true,
-				description: mp.description || undefined,
+				description: mp.manufacturer_part_description || undefined,
 				datasheet_url: mp.datasheet_url || undefined,
 				product_url: mp.product_url || undefined
 			})),
